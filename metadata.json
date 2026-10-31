@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix PAMAREA Enterprise Security Dashboard",
+  "description": "Sistem Manajemen Patroli \u0026 Pengamanan Terpadu PAMAREA: monitoring patroli real-time, manajemen titik checkpoint NFC/RFID, jadwal shift, temuan lapangan, dan tanggap darurat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
