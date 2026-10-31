@@ -53,6 +53,10 @@ export interface AssignNfcRequest {
   patrolPointId: string;
   nfcTagId: string;
 }
+export interface UnassignNfcRequest {
+  patrolPointId: string;
+  reason?: string;
+}
 
 // Request untuk melepas assignment
 export interface RemoveNfcAssignmentRequest {

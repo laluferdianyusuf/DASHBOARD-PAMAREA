@@ -12,7 +12,6 @@ import type {
   UpdateNfcTagRequest,
 } from "../../types/nfc/nfc";
 
-// POST /nfc-tags
 export const createNfcTag = async (
   payload: CreateNfcTagRequest,
 ): Promise<NfcTagDetailResponse> => {
@@ -24,7 +23,6 @@ export const createNfcTag = async (
   return response.data;
 };
 
-// GET /nfc-tags
 export const getNfcTags = async (
   query?: NfcTagQuery,
 ): Promise<NfcTagResponse[]> => {
@@ -35,7 +33,6 @@ export const getNfcTags = async (
   return response.data;
 };
 
-// GET /nfc-tags/unassigned
 export const getUnassignedNfcTags = async (): Promise<
   UnassignedNfcTagResponse[]
 > => {
@@ -46,7 +43,6 @@ export const getUnassignedNfcTags = async (): Promise<
   return response.data;
 };
 
-// GET /nfc-tags/uid/:uid
 export const getNfcTagByUid = async (
   uid: string,
 ): Promise<NfcTagBasicResponse> => {
@@ -57,91 +53,85 @@ export const getNfcTagByUid = async (
   return response.data;
 };
 
-// GET /nfc-tags/:id
 export const getNfcTagById = async (
   id: string,
 ): Promise<NfcTagDetailResponse> => {
-  const response = await apiClient.get<NfcTagDetailResponse>(`/nfc-tags/${id}`);
+  const response = await apiClient.get<NfcTagDetailResponse>(
+    `/nfc-tags/${encodeURIComponent(id)}`,
+  );
 
   return response.data;
 };
 
-// PATCH /nfc-tags/:id
 export const updateNfcTag = async (
   id: string,
   payload: UpdateNfcTagRequest,
 ): Promise<NfcTagDetailResponse> => {
   const response = await apiClient.patch<NfcTagDetailResponse>(
-    `/nfc-tags/${id}`,
+    `/nfc-tags/${encodeURIComponent(id)}`,
     payload,
   );
 
   return response.data;
 };
 
-// PATCH /nfc-tags/:id/activate
 export const activateNfcTag = async (
   id: string,
 ): Promise<NfcTagDetailResponse> => {
   const response = await apiClient.patch<NfcTagDetailResponse>(
-    `/nfc-tags/${id}/activate`,
+    `/nfc-tags/${encodeURIComponent(id)}/activate`,
   );
 
   return response.data;
 };
 
-// PATCH /nfc-tags/:id/deactivate
 export const deactivateNfcTag = async (
   id: string,
 ): Promise<NfcTagDetailResponse> => {
   const response = await apiClient.patch<NfcTagDetailResponse>(
-    `/nfc-tags/${id}/deactivate`,
+    `/nfc-tags/${encodeURIComponent(id)}/deactivate`,
   );
 
   return response.data;
 };
 
-// PATCH /nfc-tags/:id/damaged
 export const markNfcTagDamaged = async (
   id: string,
 ): Promise<NfcTagDetailResponse> => {
   const response = await apiClient.patch<NfcTagDetailResponse>(
-    `/nfc-tags/${id}/damaged`,
+    `/nfc-tags/${encodeURIComponent(id)}/damaged`,
   );
 
   return response.data;
 };
 
-// PATCH /nfc-tags/:id/lost
 export const markNfcTagLost = async (
   id: string,
 ): Promise<NfcTagDetailResponse> => {
   const response = await apiClient.patch<NfcTagDetailResponse>(
-    `/nfc-tags/${id}/lost`,
+    `/nfc-tags/${encodeURIComponent(id)}/lost`,
   );
 
   return response.data;
 };
 
-// POST /nfc-tags/:id/replace
 export const replaceNfcTag = async (
   id: string,
   payload: ReplaceNfcTagRequest,
 ): Promise<ReplaceNfcTagResponse> => {
   const response = await apiClient.post<ReplaceNfcTagResponse>(
-    `/nfc-tags/${id}/replace`,
+    `/nfc-tags/${encodeURIComponent(id)}/replace`,
     payload,
   );
 
   return response.data;
 };
 
-// DELETE /nfc-tags/:id
 export const deleteNfcTag = async (
   id: string,
 ): Promise<NfcTagDetailResponse> => {
   const response = await apiClient.delete<NfcTagDetailResponse>(
-    `/nfc-tags/${id}`,
+    `/nfc-tags/${encodeURIComponent(id)}`,
   );
 
   return response.data;

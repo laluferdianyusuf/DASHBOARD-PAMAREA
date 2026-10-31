@@ -2,9 +2,9 @@ import type {
   NfcAssignmentStatus,
   NfcStatus,
   PatrolPointStatus,
+  PhotoRequirement,
   QuestionStatus,
   QuestionType,
-  PhotoRequirement,
 } from "../enums/prisma-enums";
 import type { PatrolSchedulePoint } from "../schedule/schedule-point";
 
@@ -142,7 +142,7 @@ export interface CreatePatrolPointRequest {
   siteId: string;
   code: string;
   name: string;
-  description?: string;
+  description?: string | null;
   latitude: number;
   longitude: number;
   radiusMeters?: number;
@@ -152,7 +152,7 @@ export interface CreatePatrolPointRequest {
 export interface UpdatePatrolPointRequest {
   code?: string;
   name?: string;
-  description?: string;
+  description?: string | null;
   latitude?: number;
   longitude?: number;
   radiusMeters?: number;

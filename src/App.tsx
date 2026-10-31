@@ -38,7 +38,7 @@ import { CutiIzinView } from "./components/CutiIzinView";
 import { JadwalPatroliView } from "./components/JadwalPatroliView";
 import { KalenderShiftView } from "./components/KalenderShiftView";
 import { KelolaPenggunaView } from "./components/KelolaPenggunaView";
-import ManajemenRondeView from "./components/ManajemenRondeView";
+import LoginForm from "./components/LoginForm";
 import { QuestionBuilderView } from "./components/QuestionBuilderView";
 import { RiwayatPatroliView } from "./components/RiwayatPatroliView";
 import { TagNfcView } from "./components/TagNfcView";
@@ -47,7 +47,6 @@ import { TemuanPatroliView } from "./components/TemuanPatroliView";
 import { TitikPatroliView } from "./components/TitikPatroliView";
 import { TukarShiftView } from "./components/TukarShiftView";
 import { AuthProvider } from "./contexts/AuthProvider";
-import { useMe } from "./hooks/auth";
 import { ScheduleProvider } from "./contexts/ScheduleProvider";
 import LoginForm from "./components/LoginForm";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -457,7 +456,7 @@ export default function App() {
                 <div className="min-w-0 flex-1">
                   <Header
                     currentTab={currentTab}
-                    selectedSite={selectedSite}
+                    selectedSite={siteId}
                     onSelectSite={setSelectedSite}
                   />
                 </div>
@@ -470,13 +469,13 @@ export default function App() {
 
                 {/* MONITORING */}
                 {currentTab === "monitoring" && (
-                  <MonitoringView selectedSite={selectedSite} />
+                  <MonitoringView selectedSite={siteId} />
                 )}
 
                 {/* JADWAL PATROLI */}
                 {currentTab === "jadwal" && (
                   <JadwalPatroliView
-                    selectedSite={selectedSite}
+                    selectedSite={siteId}
                     onNavigate={setCurrentTab}
                     schedules={schedules}
                     onUpdateSchedules={setSchedules}
@@ -531,49 +530,33 @@ export default function App() {
 
                 {/* TITIK PATROLI */}
                 {currentTab === "titik" && (
-                  <TitikPatroliView
-                    selectedSite={selectedSite}
-                    checkpoints={checkpoints}
-                    nfcTags={tags}
-                    onUpdateCheckpoints={setCheckpoints}
-                    onUnassignNfc={handleUnassignTagFromCheckpoint}
-                    onAssignNfc={handleAssignNfcConnection}
-                  />
+                  <TitikPatroliView selectedSite={siteId} />
                 )}
 
                 {/* PERANGKAT NFC */}
-                {currentTab === "nfc" && (
-                  <TagNfcView
-                    selectedSite={selectedSite}
-                    tags={tags}
-                    checkpoints={checkpoints}
-                    onUpdateTags={setTags}
-                    onUnassignTag={handleUnassignCheckpointFromTag}
-                    onAssignTag={handleAssignNfcConnection}
-                  />
-                )}
+                {currentTab === "nfc" && <TagNfcView selectedSite={siteId} />}
 
                 {/* CHECKLIST */}
                 {currentTab === "question-builder" && <QuestionBuilderView />}
 
                 {/* RIWAYAT PATROLI */}
                 {currentTab === "riwayat" && (
-                  <RiwayatPatroliView selectedSite={selectedSite} />
+                  <RiwayatPatroliView selectedSite={siteId} />
                 )}
 
                 {/* TEMUAN PATROLI */}
                 {currentTab === "temuan" && (
-                  <TemuanPatroliView selectedSite={selectedSite} />
+                  <TemuanPatroliView selectedSite={siteId} />
                 )}
 
                 {/* KELOLA PENGGUNA */}
                 {currentTab === "pengguna" && (
-                  <KelolaPenggunaView selectedSite={selectedSite} />
+                  <KelolaPenggunaView selectedSite={siteId} />
                 )}
 
                 {/* ANALITIK & AUDIT */}
                 {currentTab === "analytic-audit" && (
-                  <AnalyticAuditView selectedSite={selectedSite} />
+                  <AnalyticAuditView selectedSite={siteId} />
                 )}
               </main>
             </SidebarInset>

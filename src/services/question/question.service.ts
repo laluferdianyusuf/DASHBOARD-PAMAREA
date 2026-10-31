@@ -1,16 +1,16 @@
 import { apiClient } from "../../lib/apiClient";
 
 import type {
-  Question,
   CreateQuestionPayload,
-  UpdateQuestionPayload,
-  QuestionQuery,
+  Question,
   QuestionDeleteOptionResponse,
+  QuestionQuery,
+  UpdateQuestionPayload,
 } from "../../types/question/question";
 
 import type {
-  QuestionOption,
   CreateQuestionOptionPayload,
+  QuestionOption,
   UpdateQuestionOptionPayload,
 } from "../../types/question/question-option";
 

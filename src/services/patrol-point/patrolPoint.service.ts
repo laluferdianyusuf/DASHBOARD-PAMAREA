@@ -67,10 +67,13 @@ export const updatePatrolPoint = async (
   id: string,
   payload: UpdatePatrolPointRequest,
 ): Promise<PatrolPointResponse> => {
+  console.log(payload);
+
   const response = await apiClient.patch<PatrolPointResponse>(
     `/patrol-points/${id}`,
     payload,
   );
+  console.log(response);
 
   return response.data;
 };
