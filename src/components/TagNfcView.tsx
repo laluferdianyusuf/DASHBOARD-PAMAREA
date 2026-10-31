@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import {
   AlertTriangle,
@@ -60,7 +60,8 @@ import {
 import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
 import type { NfcTagResponse } from "../types/nfc/nfc";
 import { PatrolPointResponse } from "../types/patrol-point/patrolPoint";
-import { TagNfcDialogs } from "./TagNfcDialogs";
+import { TagNfcDialogs } from "./tagNfc/TagNfcDialogs";
+import TagNfcPagination from "./tagNfc/TagNfcPagination";
 
 interface CheckpointOption {
   id: string;
@@ -292,6 +293,9 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
+  const [pageSize, setPageSize] = useState("10");
+  const [currentPage, setCurrentPage] = useState(1);
+
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
 
   const [diagnosingTag, setDiagnosingTag] = useState<NfcTagItem | null>(null);
@@ -378,6 +382,43 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
       return true;
     });
   }, [nfcTags, selectedSite, selectedStatus, searchQuery]);
+
+  const totalItems = filteredTags.length;
+
+  const itemsPerPage = Number(pageSize);
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+
+  const paginatedTags = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+
+    return filteredTags.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredTags, currentPage, itemsPerPage]);
+
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+
+  const handlePageChange = (page: number) => {
+    if (page < 1 || page > totalPages) return;
+
+    setCurrentPage(page);
+  };
+
+  const handlePageSizeChange = (value: string) => {
+    setPageSize(value);
+    setCurrentPage(1);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedStatus, selectedSite]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const availableCheckpoints = useMemo(() => {
     return checkpoints.filter((checkpoint) => {
@@ -846,7 +887,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredTags.map((tag) => {
+                paginatedTags.map((tag) => {
                   const assigned = isTagAssigned(tag);
 
                   const checkpointName = getAssignmentCheckpointName(tag);
@@ -1042,6 +1083,17 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
           </Table>
         </div>
       </div>
+
+      <TagNfcPagination
+        totalItems={totalItems}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        startItem={startItem}
+        endItem={endItem}
+        onPageChange={handlePageChange}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       <TagNfcDialogs
         diagnosingTag={diagnosingTag}

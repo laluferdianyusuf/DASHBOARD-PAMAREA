@@ -1,14 +1,6 @@
-import {
-  CheckCircle2,
-  Edit,
-  Link2,
-  Plus,
-  RefreshCw,
-  Search,
-  Unlink,
-  X,
-} from "lucide-react";
-import React, { useMemo, useState } from "react";
+import { CheckCircle2, Edit, Link2, Search, Unlink, X } from "lucide-react";
+
+import React, { useEffect, useMemo, useState } from "react";
 
 import {
   useCreatePatrolPoint,
@@ -24,30 +16,8 @@ import type {
 
 import type { PatrolPointStatus } from "../types/enums/prisma-enums";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-
-import { Input } from "@/components/ui/input";
 
 import {
   InputGroup,
@@ -55,16 +25,12 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 
-import { Label } from "@/components/ui/label";
-
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
-
-import { Separator } from "@/components/ui/separator";
 
 import {
   Table,
@@ -78,26 +44,29 @@ import {
 import { useNfcTags } from "../hooks/nfc/useNfc";
 
 import { getErrorMessage } from "../helpers/getErrorMessage";
+
 import {
   useAssignNfc,
   useUnassignNfc,
 } from "../hooks/patrol-point-nfc/usePatroPointNfc";
-import type { NfcAssignment } from "../types";
+
 import type { NfcTagResponse } from "../types/nfc/nfc";
+
+import AssignNfcDialog from "./patrolPoints/AssignNfcDialog";
+
+import {
+  getActiveAssignment,
+  getStatusClass,
+  getStatusLabel,
+} from "../utils/patrolPointUtils";
+import PointFormDialog from "./patrolPoints/PointFormDialog";
+import { PointForm } from "./patrolPoints/TitikPatroliFormDialog";
+import { TitikPatroliHeader } from "./patrolPoints/TitikPatroliHeader";
+import { TitikPatroliPagination } from "./patrolPoints/TitikPatroliPagination";
+import UnassignNfcDialog from "./patrolPoints/UnassignNfcDialog";
 
 interface TitikPatroliViewProps {
   selectedSite: string;
-}
-
-interface PointForm {
-  siteId: string;
-  code: string;
-  name: string;
-  description: string;
-  latitude: string;
-  longitude: string;
-  radiusMeters: string;
-  status: PatrolPointStatus;
 }
 
 const EMPTY_FORM: PointForm = {
@@ -110,62 +79,6 @@ const EMPTY_FORM: PointForm = {
   radiusMeters: "10",
   status: "INACTIVE" as PatrolPointStatus,
 };
-
-const getActiveAssignment = (
-  point: PatrolPointResponse,
-): NfcAssignment | undefined => {
-  const nfcAssignments = point.nfcAssignments?.find(
-    (assignment) => assignment.status === "ACTIVE" && !assignment.unassignedAt,
-  );
-
-  return nfcAssignments;
-};
-
-const getStatusLabel = (status: string) => {
-  switch (status) {
-    case "ACTIVE":
-      return "Aktif";
-
-    case "INACTIVE":
-      return "Nonaktif";
-
-    case "MAINTENANCE":
-      return "Pemeliharaan";
-
-    default:
-      return status;
-  }
-};
-
-const getStatusClass = (status: string) => {
-  switch (status) {
-    case "ACTIVE":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-
-    case "INACTIVE":
-      return "border-slate-200 bg-slate-50 text-slate-600";
-
-    case "MAINTENANCE":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-
-    default:
-      return "border-slate-200 bg-slate-50 text-slate-600";
-  }
-};
-
-const Field = ({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) => (
-  <div className="space-y-1.5">
-    <Label className="text-xs font-medium text-slate-600">{label}</Label>
-
-    {children}
-  </div>
-);
 
 export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
   selectedSite,
@@ -190,18 +103,26 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
   const assignNfcMutation = useAssignNfc();
 
   const unassignNfcMutation = useUnassignNfc();
-
   const checkpoints = (
     Array.isArray(pointsData) ? pointsData : []
   ) as PatrolPointResponse[];
 
   const nfcTags = (Array.isArray(nfcData) ? nfcData : []) as NfcTagResponse[];
 
+  const availableNfcTags = useMemo(
+    () => nfcTags.filter((tag) => tag.status === "UNASSIGNED"),
+    [nfcTags],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
 
   const [selectedStatus, setSelectedStatus] = useState("all");
 
   const [selectedNfcStatus, setSelectedNfcStatus] = useState("all");
+
+  const [pageSize, setPageSize] = useState("10");
+
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
@@ -273,6 +194,45 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
     });
   }, [checkpoints, searchQuery, selectedStatus, selectedNfcStatus]);
 
+  const totalItems = filteredCheckpoints.length;
+
+  const itemsPerPage = Number(pageSize);
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+
+  const paginatedCheckpoints = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+
+    return filteredCheckpoints.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredCheckpoints, currentPage, itemsPerPage]);
+
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+
+  const handlePageSizeChange = (value: string | null) => {
+    if (!value) return;
+
+    setPageSize(value);
+    setCurrentPage(1);
+  };
+
+  const handlePageChange = (page: number) => {
+    if (page < 1 || page > totalPages) return;
+
+    setCurrentPage(page);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedStatus, selectedNfcStatus, selectedSite]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   const updateForm = <K extends keyof PointForm>(
     key: K,
     value: PointForm[K],
@@ -312,6 +272,8 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
   };
 
   const closeFormDialog = () => {
+    if (isSubmitting) return;
+
     setIsAddModalOpen(false);
 
     setEditingCheckpoint(null);
@@ -370,6 +332,10 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
     radiusMeters: Number(form.radiusMeters),
   });
 
+  // =====================================================
+  // CREATE PATROL POINT
+  // =====================================================
+
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -387,13 +353,19 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
       await createMutation.mutateAsync(payload);
 
-      closeFormDialog();
+      setIsAddModalOpen(false);
+
+      setForm(EMPTY_FORM);
 
       showToast("Titik patroli berhasil ditambahkan.");
     } catch (err) {
       setFormError(getErrorMessage(err));
     }
   };
+
+  // =====================================================
+  // UPDATE PATROL POINT
+  // =====================================================
 
   const handleUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -417,7 +389,9 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         payload,
       });
 
-      closeFormDialog();
+      setEditingCheckpoint(null);
+
+      setForm(EMPTY_FORM);
 
       showToast("Titik patroli berhasil diperbarui.");
     } catch (err) {
@@ -425,7 +399,27 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
     }
   };
 
-  const availableNfcTags = nfcTags.filter((tag) => tag.status === "UNASSIGNED");
+  // =====================================================
+  // ASSIGN NFC
+  // =====================================================
+
+  const openAssignDialog = (point: PatrolPointResponse) => {
+    setActionError("");
+
+    setSelectedNfcId("");
+
+    setAssigningCheckpoint(point);
+  };
+
+  const closeAssignDialog = () => {
+    if (isNfcProcessing) return;
+
+    setAssigningCheckpoint(null);
+
+    setSelectedNfcId("");
+
+    setActionError("");
+  };
 
   const handleAssignNfc = async () => {
     if (!assigningCheckpoint || !selectedNfcId) {
@@ -449,6 +443,24 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
     } catch (err) {
       setActionError(getErrorMessage(err));
     }
+  };
+
+  // =====================================================
+  // UNASSIGN NFC
+  // =====================================================
+
+  const openUnassignDialog = (point: PatrolPointResponse) => {
+    setActionError("");
+
+    setUnassigningCheckpoint(point);
+  };
+
+  const closeUnassignDialog = () => {
+    if (isNfcProcessing) return;
+
+    setUnassigningCheckpoint(null);
+
+    setActionError("");
   };
 
   const handleUnassignNfc = async () => {
@@ -477,81 +489,9 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
     }
   };
 
-  const renderFormFields = () => (
-    <div className="space-y-4">
-      <Field label="Kode Titik">
-        <Input
-          required
-          value={form.code}
-          onChange={(event) => updateForm("code", event.target.value)}
-          placeholder="CP-001"
-          className="h-9 rounded text-xs"
-        />
-      </Field>
-
-      <Field label="Nama Titik">
-        <Input
-          required
-          value={form.name}
-          onChange={(event) => updateForm("name", event.target.value)}
-          placeholder="Nama titik patroli"
-          className="h-9 rounded text-xs"
-        />
-      </Field>
-
-      <Field label="Subarea">
-        <Input
-          value={form.description}
-          onChange={(event) => updateForm("description", event.target.value)}
-          placeholder="Subarea lokasi"
-          className="h-9 rounded text-xs"
-        />
-      </Field>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Latitude">
-          <Input
-            required
-            type="number"
-            step="any"
-            value={form.latitude}
-            onChange={(event) => updateForm("latitude", event.target.value)}
-            className="h-9 rounded text-xs"
-          />
-        </Field>
-
-        <Field label="Longitude">
-          <Input
-            required
-            type="number"
-            step="any"
-            value={form.longitude}
-            onChange={(event) => updateForm("longitude", event.target.value)}
-            className="h-9 rounded text-xs"
-          />
-        </Field>
-      </div>
-
-      <Field label="Radius (Meter)">
-        <Input
-          required
-          type="number"
-          min="1"
-          value={form.radiusMeters}
-          onChange={(event) => updateForm("radiusMeters", event.target.value)}
-          className="h-9 rounded text-xs"
-        />
-      </Field>
-
-      {formError && (
-        <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
-          {formError}
-        </div>
-      )}
-    </div>
-  );
   return (
     <div className="space-y-5">
+      {/* TOAST */}
       {toastMessage && (
         <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
           <div className="flex items-center gap-2">
@@ -570,41 +510,12 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         </div>
       )}
 
-      <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">
-            Manajemen Titik Patroli
-          </h1>
-
-          <p className="mt-1 text-xs text-slate-500">
-            Kelola lokasi checkpoint dan penautan NFC.
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 rounded"
-            disabled={isFetching}
-            onClick={() => refetch()}
-          >
-            <RefreshCw
-              className={`mr-1.5 size-4 ${isFetching ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
-
-          <Button
-            size="sm"
-            className="h-9 rounded bg-[#FED400] text-black hover:bg-[#e9c300]"
-            onClick={openAddDialog}
-          >
-            <Plus className="mr-1.5 size-4" />
-            Tambah Titik
-          </Button>
-        </div>
-      </div>
+      {/* HEADER */}
+      <TitikPatroliHeader
+        isFetching={isFetching}
+        onAdd={openAddDialog}
+        onRefresh={refetch}
+      />
 
       <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-3 md:flex-row">
         <InputGroup className="rounded">
@@ -664,25 +575,19 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         </Select>
       </div>
 
+      {/* TABLE */}
       <div className="overflow-hidden rounded border border-slate-200 bg-white">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
                 <TableHead className="text-xs">Kode</TableHead>
-
                 <TableHead className="text-xs">Nama Titik</TableHead>
-
                 <TableHead className="text-xs">Site</TableHead>
-
                 <TableHead className="text-xs">Koordinat</TableHead>
-
                 <TableHead className="text-xs">Radius</TableHead>
-
                 <TableHead className="text-center text-xs">NFC</TableHead>
-
                 <TableHead className="text-center text-xs">Status</TableHead>
-
                 <TableHead className="text-center text-xs">Aksi</TableHead>
               </TableRow>
             </TableHeader>
@@ -723,7 +628,7 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredCheckpoints.map((point) => {
+                paginatedCheckpoints.map((point) => {
                   const assignment = getActiveAssignment(point);
 
                   const assigned = Boolean(assignment);
@@ -803,10 +708,7 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
                               variant="outline"
                               className="flex items-center gap-1 rounded border-rose-200 text-rose-600 hover:bg-rose-50"
                               title="Lepas NFC"
-                              onClick={() => {
-                                setActionError("");
-                                setUnassigningCheckpoint(point);
-                              }}
+                              onClick={() => openUnassignDialog(point)}
                             >
                               <Unlink className="size-3.5" />
                               <span>Lepas</span>
@@ -816,28 +718,25 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
                               type="button"
                               size="sm"
                               variant="outline"
-                              className="rounded flex items-center gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
+                              className="flex items-center gap-1 rounded border-blue-200 text-blue-600 hover:bg-blue-50"
                               title="Tautkan NFC"
-                              onClick={() => {
-                                setActionError("");
-                                setSelectedNfcId("");
-                                setAssigningCheckpoint(point);
-                              }}
+                              onClick={() => openAssignDialog(point)}
                             >
                               <Link2 className="size-3.5" />
                               <span>Tautkan</span>
                             </Button>
                           )}
+
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            className="rounded flx items-center gap-1"
+                            className="flex items-center gap-1 rounded"
                             title="Edit titik"
                             onClick={() => openEditDialog(point)}
                           >
                             <Edit className="size-3.5" />
-                            <span>edit</span>
+                            <span>Edit</span>
                           </Button>
                         </div>
                       </TableCell>
@@ -850,279 +749,67 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         </div>
       </div>
 
-      <Dialog
+      {/* PAGINATION */}
+      <TitikPatroliPagination
+        currentPage={currentPage}
+        endItem={endItem}
+        onPageChange={handlePageChange}
+        onPageSizeChange={handlePageSizeChange}
+        pageSize={pageSize}
+        startItem={startItem}
+        totalItems={totalItems}
+        totalPages={totalPages}
+      />
+
+      <PointFormDialog
         open={isAddModalOpen}
-        onOpenChange={(open) => {
-          if (!open) closeFormDialog();
-        }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
-          <DialogHeader>
-            <DialogTitle className="text-base">
-              Tambah Titik Patroli
-            </DialogTitle>
+        mode="create"
+        form={form}
+        formError={formError}
+        isSubmitting={isSubmitting}
+        isCreatePending={createMutation.isPending}
+        isUpdatePending={updateMutation.isPending}
+        onFormChange={(key, value) => updateForm(key, value)}
+        onSubmit={handleCreate}
+        onClose={closeFormDialog}
+      />
 
-            <DialogDescription className="text-xs">
-              Isi data titik patroli baru.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleCreate} className="space-y-4">
-            {renderFormFields()}
-
-            <Separator />
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded"
-                onClick={closeFormDialog}
-              >
-                Batal
-              </Button>
-
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="rounded bg-blue-600 hover:bg-blue-700"
-              >
-                {createMutation.isPending ? "Menyimpan..." : "Simpan"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
+      <PointFormDialog
         open={Boolean(editingCheckpoint)}
-        onOpenChange={(open) => {
-          if (!open) closeFormDialog();
-        }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
-          <DialogHeader>
-            <DialogTitle className="text-base">Edit Titik Patroli</DialogTitle>
+        mode="edit"
+        form={form}
+        formError={formError}
+        isSubmitting={isSubmitting}
+        isCreatePending={createMutation.isPending}
+        isUpdatePending={updateMutation.isPending}
+        onFormChange={(key, value) => updateForm(key, value)}
+        onSubmit={handleUpdate}
+        onClose={closeFormDialog}
+      />
 
-            <DialogDescription className="text-xs">
-              Perbarui informasi titik patroli.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleUpdate} className="space-y-4">
-            {renderFormFields()}
-
-            <Separator />
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded"
-                onClick={closeFormDialog}
-              >
-                Batal
-              </Button>
-
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="rounded bg-blue-600 hover:bg-blue-700"
-              >
-                {updateMutation.isPending ? "Menyimpan..." : "Simpan Perubahan"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
+      <AssignNfcDialog
         open={Boolean(assigningCheckpoint)}
-        onOpenChange={(open) => {
-          if (!open && !isNfcProcessing) {
-            setAssigningCheckpoint(null);
-            setSelectedNfcId("");
-            setActionError("");
-          }
-        }}
-      >
-        <DialogContent className="max-w-md rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Link2 className="size-5 text-blue-600" />
-              Tautkan NFC
-            </DialogTitle>
+        checkpoint={assigningCheckpoint}
+        availableNfcTags={availableNfcTags}
+        selectedNfcId={selectedNfcId}
+        actionError={actionError}
+        isProcessing={isNfcProcessing}
+        isAssigning={assignNfcMutation.isPending}
+        onSelectedNfcChange={setSelectedNfcId}
+        onConfirm={handleAssignNfc}
+        onClose={closeAssignDialog}
+      />
 
-            <DialogDescription className="text-xs">
-              Pilih NFC yang akan ditautkan ke titik patroli.
-            </DialogDescription>
-          </DialogHeader>
-
-          {assigningCheckpoint && (
-            <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Titik patroli</p>
-
-              <p className="mt-1 text-sm font-semibold">
-                {assigningCheckpoint.name}
-              </p>
-
-              <p className="mt-1 font-mono text-xs text-blue-600">
-                {assigningCheckpoint.code}
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label className="text-xs">Pilih NFC</Label>
-
-            <Select
-              value={selectedNfcId}
-              onValueChange={(value) => setSelectedNfcId(value ?? "")}
-              disabled={isNfcProcessing}
-            >
-              <SelectTrigger className="h-10 w-full rounded text-xs">
-                <span className="truncate">
-                  {selectedNfcId
-                    ? (() => {
-                        const selectedTag = availableNfcTags.find(
-                          (tag) => tag.id === selectedNfcId,
-                        );
-
-                        return selectedTag
-                          ? `${selectedTag.label ?? "Tanpa Label"} - ${selectedTag.uid ?? "No UID"}`
-                          : "NFC tidak ditemukan";
-                      })()
-                    : "Pilih NFC yang tersedia"}
-                </span>
-              </SelectTrigger>
-
-              <SelectContent>
-                {availableNfcTags.length === 0 ? (
-                  <SelectItem value="none" disabled>
-                    Tidak ada NFC tersedia
-                  </SelectItem>
-                ) : (
-                  availableNfcTags.map((tag) => (
-                    <SelectItem key={tag.id} value={tag.id}>
-                      {tag.label ?? "Tanpa Label"} - {tag.uid ?? "No UID"}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-
-            <p className="text-[11px] text-slate-500">
-              Hanya NFC dengan status UNASSIGNED yang dapat dipilih.
-            </p>
-          </div>
-
-          {actionError && (
-            <p className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
-              {actionError}
-            </p>
-          )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              className="rounded"
-              disabled={isNfcProcessing}
-              onClick={() => {
-                setAssigningCheckpoint(null);
-                setSelectedNfcId("");
-                setActionError("");
-              }}
-            >
-              Batal
-            </Button>
-
-            <Button
-              type="button"
-              disabled={
-                isNfcProcessing ||
-                !selectedNfcId ||
-                selectedNfcId === "none" ||
-                availableNfcTags.length === 0
-              }
-              onClick={handleAssignNfc}
-              className="rounded bg-blue-600 hover:bg-blue-700"
-            >
-              {assignNfcMutation.isPending ? "Memproses..." : "Tautkan NFC"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog
+      <UnassignNfcDialog
         open={Boolean(unassigningCheckpoint)}
-        onOpenChange={(open) => {
-          if (!open && !isNfcProcessing) {
-            setUnassigningCheckpoint(null);
-            setActionError("");
-          }
-        }}
-      >
-        <AlertDialogContent className="rounded">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-base">
-              <Unlink className="size-5 text-rose-600" />
-              Lepas Tautan NFC?
-            </AlertDialogTitle>
-
-            <AlertDialogDescription className="text-xs">
-              NFC akan dilepas dari titik patroli. Status titik patroli akan
-              berubah menjadi INACTIVE dan NFC menjadi UNASSIGNED. Riwayat
-              assignment tetap tersimpan di backend.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {unassigningCheckpoint && (
-            <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Titik patroli</p>
-
-              <p className="mt-1 text-sm font-semibold">
-                {unassigningCheckpoint.name}
-              </p>
-
-              <p className="mt-1 font-mono text-xs text-blue-600">
-                {unassigningCheckpoint.code}
-              </p>
-
-              <Separator className="my-2" />
-
-              <p className="text-xs text-slate-500">NFC UID</p>
-
-              <p className="mt-1 font-mono text-xs font-semibold">
-                {getActiveAssignment(unassigningCheckpoint)?.nfcTag?.uid ?? "-"}
-              </p>
-            </div>
-          )}
-
-          {actionError && (
-            <p className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
-              {actionError}
-            </p>
-          )}
-
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded" disabled={isNfcProcessing}>
-              Batal
-            </AlertDialogCancel>
-
-            <AlertDialogAction
-              disabled={isNfcProcessing}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleUnassignNfc();
-              }}
-              className="rounded bg-rose-600 hover:bg-rose-700"
-            >
-              {unassignNfcMutation.isPending ? "Memproses..." : "Lepas NFC"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        checkpoint={unassigningCheckpoint}
+        actionError={actionError}
+        isProcessing={isNfcProcessing}
+        isUnassigning={unassignNfcMutation.isPending}
+        getActiveAssignment={getActiveAssignment}
+        onConfirm={handleUnassignNfc}
+        onClose={closeUnassignDialog}
+      />
     </div>
   );
 };

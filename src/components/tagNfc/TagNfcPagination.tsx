@@ -1,0 +1,167 @@
+import React from "react";
+
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
+
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+
+interface TagNfcPaginationProps {
+  totalItems: number;
+  currentPage: number;
+  pageSize: string;
+  totalPages: number;
+  startItem: number;
+  endItem: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (value: string) => void;
+}
+
+export const TagNfcPagination: React.FC<TagNfcPaginationProps> = ({
+  totalItems,
+  currentPage,
+  pageSize,
+  totalPages,
+  startItem,
+  endItem,
+  onPageChange,
+  onPageSizeChange,
+}) => {
+  const visiblePages = Array.from(
+    { length: totalPages },
+    (_, index) => index + 1,
+  ).filter(
+    (page) =>
+      page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1,
+  );
+
+  return (
+    <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* Informasi jumlah data */}
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+        <span>Menampilkan</span>
+
+        <span className="font-semibold text-slate-900">
+          {startItem}-{endItem}
+        </span>
+
+        <span>dari</span>
+
+        <span className="font-semibold text-slate-900">{totalItems}</span>
+
+        <span>tag NFC</span>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        {/* Pilihan jumlah data */}
+        <div className="flex items-center gap-2">
+          <Label className="whitespace-nowrap text-xs text-slate-500">
+            Tampilkan
+          </Label>
+
+          <Select
+            value={pageSize}
+            onValueChange={(value) => {
+              if (value) onPageSizeChange(value);
+            }}
+          >
+            <SelectTrigger className="h-8 w-20 rounded text-xs">
+              <span>{pageSize}</span>
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <span className="whitespace-nowrap text-xs text-slate-500">
+            per halaman
+          </span>
+        </div>
+
+        {/* Navigasi halaman */}
+        <Pagination className="mx-0 w-auto justify-end">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                href="#"
+                onClick={(event) => {
+                  event.preventDefault();
+                  onPageChange(currentPage - 1);
+                }}
+                className={
+                  currentPage <= 1
+                    ? "pointer-events-none opacity-40"
+                    : "cursor-pointer"
+                }
+              />
+            </PaginationItem>
+
+            {visiblePages.map((page, index) => {
+              const previousPage = visiblePages[index - 1];
+
+              const showEllipsis =
+                previousPage !== undefined && page - previousPage > 1;
+
+              return (
+                <React.Fragment key={page}>
+                  {showEllipsis && (
+                    <PaginationItem>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  )}
+
+                  <PaginationItem>
+                    <PaginationLink
+                      href="#"
+                      isActive={currentPage === page}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        onPageChange(page);
+                      }}
+                      className="cursor-pointer"
+                    >
+                      {page}
+                    </PaginationLink>
+                  </PaginationItem>
+                </React.Fragment>
+              );
+            })}
+
+            <PaginationItem>
+              <PaginationNext
+                href="#"
+                onClick={(event) => {
+                  event.preventDefault();
+                  onPageChange(currentPage + 1);
+                }}
+                className={
+                  currentPage >= totalPages
+                    ? "pointer-events-none opacity-40"
+                    : "cursor-pointer"
+                }
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      </div>
+    </div>
+  );
+};
+
+export default TagNfcPagination;
