@@ -50,8 +50,13 @@ import { TambahJadwalShiftView } from "./components/TambahJadwalShiftView";
 import { TemuanPatroliView } from "./components/TemuanPatroliView";
 import { TitikPatroliView } from "./components/TitikPatroliView";
 import { TukarShiftView } from "./components/TukarShiftView";
+import { AuthProvider } from "./contexts/AuthProvider";
+import { useMe } from "./hooks/auth";
+import { ScheduleProvider } from "./contexts/ScheduleProvider";
+import LoginForm from "./components/LoginForm";
 
 export default function App() {
+  const { data, isPending, isError } = useMe();
   const [currentTab, setCurrentTab] = useState<NavTab>("dashboard");
   const [selectedSite, setSelectedSite] = useState<string>("all");
 
@@ -398,153 +403,166 @@ export default function App() {
     );
   };
 
-  return (
-    <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-[#faf8ff] text-[#131b2e] font-sans selection:bg-[#2563eb] selection:text-white">
-        {/* Sidebar */}
-        <Sidebar
-          currentTab={currentTab}
-          onSelectTab={setCurrentTab}
-          openFindingsCount={openFindingsCount}
-        />
-
-        {/* Main Content */}
-        <SidebarInset className="min-w-0 bg-[#faf8ff]">
-          {/* Header */}
-          <div className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b bg-white px-6">
-            <SidebarTrigger />
-
-            <Separator orientation="vertical" className="h-5" />
-
-            <div className="min-w-0 flex-1">
-              <Header
-                currentTab={currentTab}
-                selectedSite={selectedSite}
-                onSelectSite={setSelectedSite}
-              />
-            </div>
-          </div>
-
-          {/* Workspace */}
-          <main className="w-full flex-1 px-6 py-6 lg:px-8">
-            {/* DASHBOARD */}
-            {currentTab === "dashboard" && (
-              <DashboardView
-                selectedSite={selectedSite}
-                onNavigate={setCurrentTab}
-                checkpoints={checkpoints}
-                findings={FINDINGS}
-              />
-            )}
-
-            {/* MONITORING */}
-            {currentTab === "monitoring" && (
-              <MonitoringView selectedSite={selectedSite} />
-            )}
-
-            {/* JADWAL PATROLI */}
-            {currentTab === "jadwal" && (
-              <JadwalPatroliView
-                selectedSite={selectedSite}
-                onNavigate={setCurrentTab}
-                schedules={schedules}
-                onUpdateSchedules={setSchedules}
-                onAddScheduleAndSyncCalendar={handleAddScheduleAndSyncCalendar}
-              />
-            )}
-
-            {/* KALENDER SHIFT */}
-            {currentTab === "kalender" && (
-              <KalenderShiftView
-                onNavigate={setCurrentTab}
-                calendarDays={calendarDays}
-                selectedDay={selectedCalendarDay}
-                onSelectDay={setSelectedCalendarDay}
-                onAssignOfficerToShift={handleAssignOfficerToShift}
-                onUnassignOfficerFromShift={handleUnassignOfficerFromShift}
-              />
-            )}
-
-            {/* TAMBAH JADWAL */}
-            {currentTab === "tambah-jadwal" && (
-              <TambahJadwalShiftView
-                onNavigate={setCurrentTab}
-                onAddDateRangeScheduleAndSyncCalendar={
-                  handleAddDateRangeScheduleAndSyncCalendar
-                }
-                calendarDays={calendarDays}
-              />
-            )}
-
-            {/* TUKAR SHIFT */}
-            {currentTab === "tukar-shift" && (
-              <TukarShiftView
-                onNavigate={setCurrentTab}
-                calendarDays={calendarDays}
-                swapRecords={swapRecords}
-                onExecuteSwap={handleExecuteSwapShift}
-              />
-            )}
-
-            {/* CUTI & IZIN */}
-            {currentTab === "cuti-izin" && (
-              <CutiIzinView
-                onNavigate={setCurrentTab}
-                calendarDays={calendarDays}
-                leaveRecords={leaveRecords}
-                onSubmitLeave={handleSubmitLeaveRecord}
-              />
-            )}
-
-            {/* TITIK PATROLI */}
-            {currentTab === "titik" && (
-              <TitikPatroliView
-                selectedSite={selectedSite}
-                checkpoints={checkpoints}
-                nfcTags={tags}
-                onUpdateCheckpoints={setCheckpoints}
-                onUnassignNfc={handleUnassignTagFromCheckpoint}
-                onAssignNfc={handleAssignNfcConnection}
-              />
-            )}
-
-            {/* PERANGKAT NFC */}
-            {currentTab === "nfc" && (
-              <TagNfcView
-                selectedSite={selectedSite}
-                tags={tags}
-                checkpoints={checkpoints}
-                onUpdateTags={setTags}
-                onUnassignTag={handleUnassignCheckpointFromTag}
-                onAssignTag={handleAssignNfcConnection}
-              />
-            )}
-
-            {/* CHECKLIST */}
-            {currentTab === "question-builder" && <QuestionBuilderView />}
-
-            {/* RIWAYAT PATROLI */}
-            {currentTab === "riwayat" && (
-              <RiwayatPatroliView selectedSite={selectedSite} />
-            )}
-
-            {/* TEMUAN PATROLI */}
-            {currentTab === "temuan" && (
-              <TemuanPatroliView selectedSite={selectedSite} />
-            )}
-
-            {/* KELOLA PENGGUNA */}
-            {currentTab === "pengguna" && (
-              <KelolaPenggunaView selectedSite={selectedSite} />
-            )}
-
-            {/* ANALITIK & AUDIT */}
-            {currentTab === "analytic-audit" && (
-              <AnalyticAuditView selectedSite={selectedSite} />
-            )}
-          </main>
-        </SidebarInset>
+  // 1. Sedang memeriksa autentikasi
+  if (isPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#faf8ff]">
+        <span className="loading loading-spinner loading-lg text-primary" />
       </div>
-    </SidebarProvider>
+    );
+  }
+
+  // 2. Belum login atau autentikasi gagal
+  if (isError || !data?.data) {
+    return <LoginForm />;
+  }
+
+  return (
+    <AuthProvider user={data?.data}>
+      <ScheduleProvider>
+        <SidebarProvider>
+          <div className="flex min-h-screen w-full bg-[#faf8ff] text-[#131b2e] font-sans selection:bg-[#2563eb] selection:text-white">
+            {/* Sidebar */}
+            <Sidebar
+              currentTab={currentTab}
+              onSelectTab={setCurrentTab}
+              openFindingsCount={openFindingsCount}
+            />
+
+            {/* Main Content */}
+            <SidebarInset className="min-w-0 bg-[#faf8ff]">
+              {/* Header */}
+              <div className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b bg-white px-6">
+                <SidebarTrigger />
+
+                <Separator orientation="vertical" className="h-5" />
+
+                <div className="min-w-0 flex-1">
+                  <Header
+                    currentTab={currentTab}
+                    selectedSite={selectedSite}
+                    onSelectSite={setSelectedSite}
+                  />
+                </div>
+              </div>
+
+              {/* Workspace */}
+              <main className="w-full flex-1 px-6 py-6 lg:px-8">
+                {/* DASHBOARD */}
+                {currentTab === "dashboard" && <DashboardView />}
+
+                {/* MONITORING */}
+                {currentTab === "monitoring" && (
+                  <MonitoringView selectedSite={selectedSite} />
+                )}
+
+                {/* JADWAL PATROLI */}
+                {currentTab === "jadwal" && (
+                  <JadwalPatroliView
+                    selectedSite={selectedSite}
+                    onNavigate={setCurrentTab}
+                    schedules={schedules}
+                    onUpdateSchedules={setSchedules}
+                    onAddScheduleAndSyncCalendar={
+                      handleAddScheduleAndSyncCalendar
+                    }
+                  />
+                )}
+
+                {/* KALENDER SHIFT */}
+                {currentTab === "kalender" && (
+                  <KalenderShiftView
+                    onNavigate={setCurrentTab}
+                    calendarDays={calendarDays}
+                    selectedDay={selectedCalendarDay}
+                    onSelectDay={setSelectedCalendarDay}
+                    onAssignOfficerToShift={handleAssignOfficerToShift}
+                    onUnassignOfficerFromShift={handleUnassignOfficerFromShift}
+                  />
+                )}
+
+                {/* TAMBAH JADWAL */}
+                {currentTab === "tambah-jadwal" && (
+                  <TambahJadwalShiftView
+                    onNavigate={setCurrentTab}
+                    onAddDateRangeScheduleAndSyncCalendar={
+                      handleAddDateRangeScheduleAndSyncCalendar
+                    }
+                    calendarDays={calendarDays}
+                  />
+                )}
+
+                {/* TUKAR SHIFT */}
+                {currentTab === "tukar-shift" && (
+                  <TukarShiftView
+                    onNavigate={setCurrentTab}
+                    calendarDays={calendarDays}
+                    swapRecords={swapRecords}
+                    onExecuteSwap={handleExecuteSwapShift}
+                  />
+                )}
+
+                {/* CUTI & IZIN */}
+                {currentTab === "cuti-izin" && (
+                  <CutiIzinView
+                    onNavigate={setCurrentTab}
+                    calendarDays={calendarDays}
+                    leaveRecords={leaveRecords}
+                    onSubmitLeave={handleSubmitLeaveRecord}
+                  />
+                )}
+
+                {/* TITIK PATROLI */}
+                {currentTab === "titik" && (
+                  <TitikPatroliView
+                    selectedSite={selectedSite}
+                    checkpoints={checkpoints}
+                    nfcTags={tags}
+                    onUpdateCheckpoints={setCheckpoints}
+                    onUnassignNfc={handleUnassignTagFromCheckpoint}
+                    onAssignNfc={handleAssignNfcConnection}
+                  />
+                )}
+
+                {/* PERANGKAT NFC */}
+                {currentTab === "nfc" && (
+                  <TagNfcView
+                    selectedSite={selectedSite}
+                    tags={tags}
+                    checkpoints={checkpoints}
+                    onUpdateTags={setTags}
+                    onUnassignTag={handleUnassignCheckpointFromTag}
+                    onAssignTag={handleAssignNfcConnection}
+                  />
+                )}
+
+                {/* CHECKLIST */}
+                {currentTab === "question-builder" && <QuestionBuilderView />}
+
+                {/* RIWAYAT PATROLI */}
+                {currentTab === "riwayat" && (
+                  <RiwayatPatroliView selectedSite={selectedSite} />
+                )}
+
+                {/* TEMUAN PATROLI */}
+                {currentTab === "temuan" && (
+                  <TemuanPatroliView selectedSite={selectedSite} />
+                )}
+
+                {/* KELOLA PENGGUNA */}
+                {currentTab === "pengguna" && (
+                  <KelolaPenggunaView selectedSite={selectedSite} />
+                )}
+
+                {/* ANALITIK & AUDIT */}
+                {currentTab === "analytic-audit" && (
+                  <AnalyticAuditView selectedSite={selectedSite} />
+                )}
+              </main>
+            </SidebarInset>
+          </div>
+        </SidebarProvider>
+      </ScheduleProvider>
+    </AuthProvider>
   );
 }

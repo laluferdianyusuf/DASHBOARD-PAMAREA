@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   History,
   LayoutDashboard,
+  LucideLogOut,
   MapPin,
   Nfc,
   ShieldCheck,
@@ -29,9 +30,10 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import logo from "@/src/assets/logo.png";
+import { useLogout } from "../hooks/auth";
+import { useNavigate } from "react-router-dom";
 
 export type NavTab =
   | "dashboard"
@@ -75,6 +77,9 @@ export function Sidebar({
   activeIncidentsCount = 0,
   openFindingsCount,
 }: SidebarProps) {
+  const { mutate: logout, isPending } = useLogout();
+  const navigate = useNavigate();
+
   const groups: MenuGroup[] = [
     {
       label: "Dasbor",
@@ -173,6 +178,28 @@ export function Sidebar({
     },
   ];
 
+  const clearLocalSession = () => {
+    navigate("/login", { replace: true });
+
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("access_token");
+  };
+
+  const handleLogout = () => {
+    if (isPending) return;
+
+    logout(undefined, {
+      onSuccess: () => {
+        clearLocalSession();
+      },
+      onError: (error) => {
+        console.error("Logout API gagal:", error);
+        clearLocalSession();
+      },
+    });
+  };
+
   return (
     <ShadcnSidebar
       collapsible="icon"
@@ -185,7 +212,7 @@ export function Sidebar({
             <img
               src={logo}
               alt="PAMAREA Logo"
-              className="size-full object-contain"
+              className="h-12 w-auto object-contain"
             />
           </div>
 
@@ -193,8 +220,8 @@ export function Sidebar({
             <p className="truncate text-sm font-bold tracking-wide text-white">
               PAMAREA
             </p>
-            <p className="truncate text-[9px] tracking-[0.14em] text-slate-400">
-              ENTERPRISE SECURITY
+            <p className="text-xs font-semibold uppercase text-[#009EDA]">
+              Command Center
             </p>
           </div>
         </div>
@@ -292,22 +319,17 @@ export function Sidebar({
       <SidebarFooter className="p-3">
         <Separator className="mb-3 bg-[#263653] group-data-[collapsible=icon]:hidden" />
 
-        {/* Expanded footer */}
-        <div className="flex items-center justify-between gap-2 px-2 group-data-[collapsible=icon]:hidden">
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-slate-300">PAMAREA v2.4.1</p>
-            <p className="mt-1 text-[10px] text-slate-500">
-              Production · ID-JKT
-            </p>
-          </div>
-
-          <Badge
-            variant="outline"
-            className="shrink-0 border-emerald-800 bg-emerald-950/40 text-[10px] text-emerald-400"
+        <div className=" border-t border-[#1C5277]">
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isPending}
+            className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="mr-1.5 size-1.5 rounded-full bg-emerald-400" />
-            Online
-          </Badge>
+            <LucideLogOut size={20} color="red" />
+
+            <span>{isPending ? "Logging out..." : "Logout"}</span>
+          </button>
         </div>
 
         {/* Collapsed footer */}

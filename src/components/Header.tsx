@@ -12,12 +12,6 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -25,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useMe } from "../hooks/auth";
 
 interface HeaderProps {
   currentTab: NavTab;
@@ -93,38 +88,35 @@ const TAB_TITLES: Record<NavTab, { category: string; title: string }> = {
   },
 };
 
-const notifications = [
-  {
-    id: "notif-1",
-    title: "Tombol SOS Gerbang Barat Cakung Aktif",
-    time: "2 menit lalu",
-    severity: "high",
-  },
-  {
-    id: "notif-2",
-    title: "Pintu Darurat Lt. 14 Terganjal",
-    time: "18 menit lalu",
-    severity: "medium",
-  },
-  {
-    id: "notif-3",
-    title: "Regu Alpha Shift Siang Selesai Inspeksi Sektor B",
-    time: "45 menit lalu",
-    severity: "low",
-  },
-];
-
 export const Header: React.FC<HeaderProps> = ({
   currentTab,
   selectedSite,
   onSelectSite,
 }) => {
-  const [showNotifications, setShowNotifications] = useState(false);
-
   const tabInfo = TAB_TITLES[currentTab] || {
     category: "Operasional",
     title: "Operasional Keamanan",
   };
+
+  const { data: meResponse, isLoading } = useMe();
+
+  const user = meResponse?.data;
+
+  const initials =
+    user?.fullName
+      ?.trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((name) => name.charAt(0))
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "U";
+
+  // Mengambil nama role dari backend
+  const userRole = user?.role?.name
+    ?.replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 
   return (
     <div className="flex h-full min-w-0 items-center justify-between gap-4">
@@ -148,137 +140,40 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Global Controls */}
-      <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-        {/* Site Selector */}
-        <div className="hidden items-center gap-2 sm:flex">
-          <Building2 className="size-4 text-slate-500" />
-
-          <Select
-            value={selectedSite}
-            onValueChange={(value) => onSelectSite(value as string)}
-          >
-            <SelectTrigger className="h-9 w-[170px] border-slate-200 bg-slate-50 text-xs">
-              <SelectValue placeholder="Pilih Site" />
-            </SelectTrigger>
-
-            <SelectContent>
-              {SITES.map((site) => (
-                <SelectItem key={site.id} value={site.id}>
-                  {site.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* System Status */}
-        <Badge
-          variant="outline"
-          className="hidden gap-1.5 border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 lg:inline-flex"
-        >
-          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-          Sistem Normal
-        </Badge>
-
-        {/* Notifications */}
-        <Popover open={showNotifications} onOpenChange={setShowNotifications}>
-          <PopoverTrigger>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative size-9 shrink-0 text-slate-600"
-              aria-label="Notifikasi sistem"
-            >
-              <Bell className="size-[18px]" />
-
-              <span className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white">
-                3
-              </span>
-            </Button>
-          </PopoverTrigger>
-
-          <PopoverContent align="end" className="w-[340px] p-0">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">
-                  Notifikasi
-                </p>
-                <p className="text-xs text-slate-500">
-                  Informasi aktivitas keamanan
-                </p>
-              </div>
-
-              <Badge variant="secondary">3 Baru</Badge>
+      <div className="ml-4 flex shrink-0 items-center gap-2">
+        {isLoading ? (
+          <>
+            <div className="h-9 w-9 animate-pulse rounded-full bg-gray-200" />
+            <div className="hidden space-y-1 sm:block">
+              <div className="h-3 w-20 animate-pulse rounded bg-gray-200" />
+              <div className="h-2.5 w-28 animate-pulse rounded bg-gray-200" />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-black">
+              {user?.photoUrl ? (
+                <img
+                  src={user.photoUrl}
+                  alt={user.fullName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-sm font-bold text-white">{initials}</span>
+              )}
             </div>
 
-            <div className="max-h-[320px] overflow-y-auto">
-              {notifications.map((notification) => {
-                const Icon =
-                  notification.severity === "high"
-                    ? TriangleAlert
-                    : notification.severity === "medium"
-                      ? AlertCircle
-                      : Info;
+            <div className="hidden sm:block">
+              <h2 className="text-sm font-semibold text-gray-800">
+                {user?.fullName || "Pengguna"}
+              </h2>
 
-                const iconColor =
-                  notification.severity === "high"
-                    ? "text-red-500"
-                    : notification.severity === "medium"
-                      ? "text-amber-500"
-                      : "text-blue-500";
-
-                return (
-                  <div
-                    key={notification.id}
-                    className="flex gap-3 border-b px-4 py-3 last:border-0 hover:bg-slate-50"
-                  >
-                    <div className="mt-0.5">
-                      <Icon className={`size-4 ${iconColor}`} />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium leading-relaxed text-slate-800">
-                        {notification.title}
-                      </p>
-
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        {notification.time}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+              <p className="text-xs tracking-wide text-gray-500">
+                {userRole || "Pengguna"}
+              </p>
             </div>
-
-            <div className="border-t p-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-xs text-blue-600"
-                onClick={() => setShowNotifications(false)}
-              >
-                Tutup Notifikasi
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        {/* Profile */}
-        <div className="flex shrink-0 items-center gap-2 border-l pl-3">
-          <div className="flex size-8 items-center justify-center rounded-full bg-[#101b35] text-xs font-bold text-white">
-            BP
-          </div>
-
-          <div className="hidden min-w-0 flex-col sm:flex">
-            <span className="truncate text-xs font-semibold text-slate-900">
-              Bambang Prasetyo
-            </span>
-
-            <span className="truncate text-[10px] text-blue-600">
-              Security Superintendent
-            </span>
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
