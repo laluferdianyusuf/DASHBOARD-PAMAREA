@@ -91,6 +91,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuthContext } from "../hooks/auth/useAuthContext";
+import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
+import { usePatrolSchedules } from "../hooks/schedule/usePatrolSchedules";
 
 interface TambahJadwalShiftViewProps {
   onNavigate: (tab: NavTab) => void;
@@ -138,6 +141,12 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
   onNavigate,
   onAddDateRangeScheduleAndSyncCalendar,
 }) => {
+  const { user } = useAuthContext();
+  const siteId = user?.siteId;
+
+  const { data: patrolPoint, isError: isPatrolPointsError } = usePatrolPoints();
+  const { data: patrolSchedules } = usePatrolSchedules();
+
   const [shifts, setShifts] = useState<ShiftConfig[]>(INITIAL_SHIFTS);
 
   const [search, setSearch] = useState("");

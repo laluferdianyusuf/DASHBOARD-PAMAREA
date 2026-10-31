@@ -1,15 +1,10 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { Separator } from "@/components/ui/separator";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DashboardView } from "./components/DashboardView";
 import { Header } from "./components/Header";
 import { MonitoringView } from "./components/MonitoringView";
@@ -55,9 +50,15 @@ import { AuthProvider } from "./contexts/AuthProvider";
 import { useMe } from "./hooks/auth";
 import { ScheduleProvider } from "./contexts/ScheduleProvider";
 import LoginForm from "./components/LoginForm";
+import { useLocation, useNavigate } from "react-router-dom";
 
 export default function App() {
-  const { data, isPending, isError } = useMe();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Periksa apakah access token tersedia
+  const hasAccessToken = Boolean(localStorage.getItem("accessToken"));
+  const { data, isPending, isError } = useMe(hasAccessToken);
   const [currentTab, setCurrentTab] = useState<NavTab>("dashboard");
   const [selectedSite, setSelectedSite] = useState<string>("all");
 
@@ -72,6 +73,16 @@ export default function App() {
     INITIAL_CALENDAR_DAYS,
   );
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(24);
+
+  useEffect(() => {
+    if (!hasAccessToken && location.pathname !== "/login") {
+      navigate("/login", { replace: true });
+    }
+
+    if (hasAccessToken && location.pathname === "/login") {
+      navigate("/", { replace: true });
+    }
+  }, [hasAccessToken, location.pathname, navigate]);
 
   // Swap Shift & Leave Management state
   const [swapRecords, setSwapRecords] = useState<ShiftSwapRecord[]>([
@@ -115,7 +126,7 @@ export default function App() {
 
   const openFindingsCount = FINDINGS.filter(
     (f) =>
-      f.status !== "Selesai Terverifikasi" &&
+      f.status !== "Close" &&
       (selectedSite === "all" || f.siteId === selectedSite),
   ).length;
 
@@ -404,7 +415,12 @@ export default function App() {
     );
   };
 
-  // 1. Sedang memeriksa autentikasi
+  // 1. Belum memiliki access token
+  if (!hasAccessToken) {
+    return <LoginForm />;
+  }
+
+  // 2. Sedang memeriksa autentikasi
   if (isPending) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#faf8ff]">
@@ -413,7 +429,7 @@ export default function App() {
     );
   }
 
-  // 2. Belum login atau autentikasi gagal
+  // 3. Autentikasi gagal atau data user tidak tersedia
   if (isError || !data?.data) {
     return <LoginForm />;
   }

@@ -11,7 +11,6 @@ export const DashboardView = () => {
   const { data: security } = useSecurityUsers();
   const { data: checkpoints } = usePatrolPoints();
   const { data: shift } = usePatrolSchedules();
-  console.log("SECURITY", JSON.stringify(security, null, 2));
 
   const shiftActive = shift?.data.find((s) => s.name);
 
@@ -29,21 +28,21 @@ export const DashboardView = () => {
       title: "Total Security",
       value: security?.data.length,
       type: "Security",
-      icon: <UserGearIcon size={22} color="#2563EB" />,
+      icon: <UserGearIcon size={17} color="#2563EB" />,
       bg: "bg-blue-50",
     },
     {
       title: "Jumlah Area Patrol",
       value: checkpoints?.length,
       type: "Area",
-      icon: <LocationEdit size={22} color="#4F46E5" />,
+      icon: <LocationEdit size={17} color="#4F46E5" />,
       bg: "bg-indigo-50",
     },
     {
       title: "Jumlah Temuan Patrol",
       value: 5,
       type: "Temuan",
-      icon: <WarningIcon size={22} color="#DC2626" />,
+      icon: <WarningIcon size={17} color="#DC2626" />,
       bg: "bg-red-50",
     },
   ];
@@ -64,7 +63,7 @@ export const DashboardView = () => {
           </div>
         </div>
 
-        <div className="lg:items-center justify-start">
+        <div className="lg:items-center">
           <div className="flex shrink-0 lg:items-center gap-2 md:mt-5 sm:mt-5 xs:mt-5">
             {/* Date */}
             <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
@@ -107,7 +106,7 @@ export const DashboardView = () => {
       <div className="mt-5 grid sm:grid-cols-2 gap-3 md:grid-cols-3">
         {/* Total Patrol */}
         {summaryCardData.map((item) => (
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="rounded-sm border border-gray-200 bg-white p-4 shadow-sm hover:shadow-gray-300">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-500">
@@ -125,7 +124,7 @@ export const DashboardView = () => {
                 </div>
               </div>
 
-              <div className={`rounded-lg p-2.5 ${item.bg}`}>{item.icon}</div>
+              <div className={`rounded-sm p-2.5 ${item.bg}`}>{item.icon}</div>
             </div>
 
             {/* <div className="mt-4 flex items-center justify-between">
@@ -214,7 +213,7 @@ export const DashboardView = () => {
       </div>
 
       <div className="mx-auto max-w-7xl mt-5">
-        <div className="mb-6 bg-white rounded-lg p-4 shadow-sm">
+        <div className="mb-6 bg-white rounded-sm p-4 shadow-sm">
           <h1 className="text-xl font-bold text-gray-900">
             Monitoring Area Patroli
           </h1>

@@ -6,7 +6,6 @@ import {
   USER_ACCOUNTS,
   type SecuritySquadItem,
   type UserAccount,
-  type UserRole,
 } from "../data/mockData";
 
 import {
@@ -62,6 +61,26 @@ import {
 } from "@/components/ui/table";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuthContext } from "../hooks/auth/useAuthContext";
+import {
+  useActivateUser,
+  useCreateUser,
+  useDeactivateUser,
+  useDeleteUser,
+  useUpdateUser,
+  useUsers,
+} from "../hooks/users/useUsers";
+import { useCreateTeam, useTeams } from "../hooks/team/useTeams";
+import { useRoles } from "../hooks/role/useRole";
+import {
+  CreateUserRequest,
+  EditUserForm,
+  RoleName,
+  UpdateUserRequest,
+  UserResponse,
+} from "../types";
+import { CreateTeamPayload } from "../types/team/team";
+import { Switch } from "@/components/ui/switch";
 
 interface KelolaPenggunaViewProps {
   selectedSite: string;
@@ -69,39 +88,33 @@ interface KelolaPenggunaViewProps {
 
 type ActiveTab = "personel" | "regu";
 
-const USER_ROLES: UserRole[] = [
-  "Security",
-  "Danru Security",
-  "Shift Security",
-  "Admin Planner",
+const USER_ROLES: RoleName[] = [
+  "SECURITY",
+  "DANRU_SECURITY",
+  "DANRU_SECURITY",
+  "ADMIN",
 ];
 
 const inputClass = "rounded text-xs";
 const buttonClass = "rounded";
 
 const initialUserForm = {
-  npp: "",
+  employeeNumber: "",
   fullName: "",
   username: "",
-  useNppAsUsername: true,
+  useEmployeeAsUsername: true,
   password: "",
-  confirmPassword: "",
   email: "",
   phone: "",
-  role: "Security" as UserRole,
-  squadId: "",
+  role: "SECURITY" as RoleName,
+  siteId: "",
+  teamId: "",
 };
 
 const initialSquadForm = {
   name: "",
-  danru: "",
-  siteId: SITES[0]?.id || "site-a",
-  shiftDefault:
-    "Shift Pagi (07:00 - 15:00)" as SecuritySquadItem["shiftDefault"],
-  memberCount: 6,
-  contactRadio: "",
-  assignedSector: "",
-  status: "Siaga Penuh" as SecuritySquadItem["status"],
+  code: "",
+  decription: "",
 };
 
 const getSiteName = (siteId: string) => {
@@ -113,13 +126,13 @@ const getSiteName = (siteId: string) => {
   );
 };
 
-const getRoleBadgeClass = (role: UserRole) => {
+const getRoleBadgeClass = (role: RoleName | undefined): string => {
   switch (role) {
-    case "Admin Planner":
+    case "ADMIN":
       return "border-purple-200 bg-purple-50 text-purple-700";
-    case "Danru Security":
+    case "DANRU_SECURITY":
       return "border-blue-200 bg-blue-50 text-blue-700";
-    case "Shift Security":
+    case "CHIEF_SECURITY":
       return "border-amber-200 bg-amber-50 text-amber-700";
     default:
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -129,17 +142,33 @@ const getRoleBadgeClass = (role: UserRole) => {
 export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
   selectedSite,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<ActiveTab>("personel");
+  const { user } = useAuthContext();
+  const siteId = user?.siteId;
+  const { data: users } = useUsers();
+  const { data: teams } = useTeams();
 
-  const [users, setUsers] = useState<UserAccount[]>(USER_ACCOUNTS);
-  const [squads, setSquads] = useState<SecuritySquadItem[]>(INITIAL_SQUADS);
+  const { mutateAsync: register, isPending: isRegistering } = useCreateUser();
+  const { mutateAsync: updateUser, isPending: isUpdatingUser } =
+    useUpdateUser();
+  const { mutateAsync: removeUser, isPending: isDeletingUser } =
+    useDeleteUser();
+  const { mutateAsync: deactivated } = useDeactivateUser();
+  const { mutateAsync: activated } = useActivateUser();
+  const { mutateAsync: createTeam, isPending: isCreateTeam } = useCreateTeam();
+  const {
+    data: rolesResponse,
+    isPending: isRolesPending,
+    isError: isRolesError,
+  } = useRoles();
+
+  const [activeSubTab, setActiveSubTab] = useState<ActiveTab>("personel");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRole, setSelectedRole] = useState("all");
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
-  const [deletingUser, setDeletingUser] = useState<UserAccount | null>(null);
+  const [editingUser, setEditingUser] = useState<EditUserForm | null>(null);
+  const [deletingUser, setDeletingUser] = useState<UserResponse | null>(null);
 
   const [changingPasswordUser, setChangingPasswordUser] =
     useState<UserAccount | null>(null);
@@ -164,26 +193,37 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
   const [newSquad, setNewSquad] = useState(initialSquadForm);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [registerError, setRegisterError] = useState("");
+
+  const [selectedUserId, setSelectedUserId] = useState("");
 
   const showToast = (message: string) => {
     setToastMessage(message);
     window.setTimeout(() => setToastMessage(null), 3500);
   };
 
+  const listUser = users?.data ?? [];
+
+  console.log(listUser);
+
+  const roles = rolesResponse?.data ?? [];
+
+  const listTeam = teams ?? [];
+
   const filteredUsers = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
-    return users.filter((user) => {
-      if (selectedRole !== "all" && user.role !== selectedRole) {
+    return listUser.filter((user) => {
+      if (selectedRole !== "all" && user.role?.name !== selectedRole) {
         return false;
       }
 
       if (query) {
         const squadName =
-          squads.find((squad) => squad.id === user.squadId)?.name || "";
+          listTeam.find((squad) => squad.id === user.team?.name)?.name || "";
 
         const matches = [
-          user.npp,
+          user.employeeNumber,
           user.fullName,
           user.username,
           user.email,
@@ -201,12 +241,12 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
 
       return true;
     });
-  }, [users, squads, searchQuery, selectedRole]);
+  }, [users, listTeam, searchQuery, selectedRole]);
 
   const filteredSquads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
-    return squads.filter((squad) => {
+    return listTeam.filter((squad) => {
       if (
         selectedSite !== "all" &&
         squad.siteId !== "all" &&
@@ -216,14 +256,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
       }
 
       if (query) {
-        const matches = [
-          squad.id,
-          squad.name,
-          squad.danru,
-          squad.siteName,
-          squad.assignedSector,
-          squad.contactRadio,
-        ].some((value) =>
+        const matches = [squad.id, squad.name, squad.site].some((value) =>
           String(value || "")
             .toLowerCase()
             .includes(query),
@@ -234,250 +267,361 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
 
       return true;
     });
-  }, [squads, selectedSite, searchQuery]);
+  }, [listTeam, selectedSite, searchQuery]);
 
-  const handleCreateUser = (event: React.FormEvent) => {
+  const handleCreateUser = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    const username = newUser.useNppAsUsername
-      ? newUser.npp.trim()
+    const username = newUser.useEmployeeAsUsername
+      ? newUser.employeeNumber.trim()
       : newUser.username.trim();
 
     if (
-      !newUser.npp.trim() ||
+      !newUser.employeeNumber.trim() ||
       !newUser.fullName.trim() ||
       !username ||
-      !newUser.phone.trim() ||
-      !newUser.squadId
+      !newUser.phone.trim()
     ) {
-      showToast("Lengkapi seluruh field wajib.");
+      setRegisterError("Lengkapi seluruh field wajib.");
       return;
     }
 
     if (
-      users.some(
-        (user) => user.npp.toLowerCase() === newUser.npp.trim().toLowerCase(),
+      listUser.some(
+        (user) =>
+          user.employeeNumber?.toLowerCase() ===
+          newUser.employeeNumber.trim().toLowerCase(),
       )
     ) {
-      showToast("NPP sudah terdaftar.");
+      setRegisterError("NPP sudah terdaftar.");
       return;
     }
 
     if (
-      users.some(
+      listUser.some(
         (user) => user.username.toLowerCase() === username.toLowerCase(),
       )
     ) {
-      showToast("Username sudah digunakan.");
+      setRegisterError("Username sudah digunakan.");
       return;
     }
 
     if (newUser.password.length < 8) {
-      showToast("Password minimal 8 karakter.");
+      setRegisterError("Password minimal 8 karakter.");
       return;
     }
 
-    if (newUser.password !== newUser.confirmPassword) {
-      showToast("Konfirmasi password tidak sama.");
+    const selectedRoleData = roles.find((role) => role.name === newUser.role);
+
+    if (!selectedRoleData) {
+      setRegisterError("Role belum ditemukan. Periksa data role dari backend.");
       return;
     }
 
-    const created: UserAccount = {
-      id: `USR-${Date.now()}`,
-      npp: newUser.npp.trim(),
+    const selectedTeam = teams?.find((team) => team.name === newUser.teamId);
+
+    // if (!selectedTeam) {
+    //   showToast("Regu tidak ditemukan. Silakan pilih regu yang valid.");
+    //   return;
+    // }
+
+    const payload: CreateUserRequest = {
+      employeeNumber: newUser.employeeNumber.trim(),
       fullName: newUser.fullName.trim(),
       username,
-      email: newUser.email.trim(),
       phone: newUser.phone.trim(),
-      role: newUser.role,
-      squadId: newUser.squadId,
+      email: newUser.email.trim(),
+      password: newUser.password,
+      roleId: selectedRoleData.id,
+      siteId,
+      teamId: selectedTeam?.id,
     };
+    try {
+      await register(payload);
 
-    setUsers((previous) => [created, ...previous]);
-
-    setIsAddUserOpen(false);
-    setNewUser(initialUserForm);
-
-    showToast("Akun pengguna berhasil dibuat.");
+      showToast("Akun pengguna berhasil dibuat.");
+      setIsAddUserOpen(false);
+      setNewUser(initialUserForm);
+    } catch (error) {
+      setRegisterError("Gagal saat membuat user");
+    }
   };
 
-  const handleSaveEditUser = (event: React.FormEvent) => {
+  const handleSaveEditUser = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
 
-    if (!editingUser) return;
+    if (!editingUser || !selectedUserId) return;
 
-    if (
-      !editingUser.npp.trim() ||
-      !editingUser.fullName.trim() ||
-      !editingUser.username.trim() ||
-      !editingUser.phone.trim() ||
-      !editingUser.squadId
-    ) {
-      showToast("Lengkapi seluruh field wajib.");
+    const employeeNumber = editingUser.employeeNumber.trim();
+    const fullName = editingUser.fullName.trim();
+    const username = editingUser.username.trim();
+    const phone = editingUser.phone.trim();
+    const email = editingUser.email.trim();
+
+    // Validasi field wajib
+    if (!employeeNumber || !fullName || !username || !phone) {
+      setRegisterError("Lengkapi seluruh field wajib.");
       return;
     }
 
-    const duplicateNpp = users.some(
+    // Validasi duplikasi NPP
+    const duplicateNpp = listUser.some(
       (user) =>
-        user.id !== editingUser.id &&
-        user.npp.toLowerCase() === editingUser.npp.trim().toLowerCase(),
-    );
-
-    const duplicateUsername = users.some(
-      (user) =>
-        user.id !== editingUser.id &&
-        user.username.toLowerCase() ===
-          editingUser.username.trim().toLowerCase(),
+        user.id !== selectedUserId &&
+        user.employeeNumber?.trim().toLowerCase() ===
+          employeeNumber.toLowerCase(),
     );
 
     if (duplicateNpp) {
-      showToast("NPP sudah digunakan akun lain.");
+      setRegisterError("NPP sudah digunakan akun lain.");
       return;
     }
+
+    // Validasi duplikasi username
+    const duplicateUsername = listUser.some(
+      (user) =>
+        user.id !== selectedUserId &&
+        user.username.trim().toLowerCase() === username.toLowerCase(),
+    );
 
     if (duplicateUsername) {
-      showToast("Username sudah digunakan akun lain.");
+      setRegisterError("Username sudah digunakan akun lain.");
       return;
     }
 
-    const updated: UserAccount = {
-      ...editingUser,
-      npp: editingUser.npp.trim(),
-      fullName: editingUser.fullName.trim(),
-      username: editingUser.username.trim(),
-      email: editingUser.email.trim(),
-      phone: editingUser.phone.trim(),
+    // Cari role berdasarkan nama role
+    const selectedRoleData = roles.find(
+      (role) => role.name === editingUser.role,
+    );
+
+    // Pastikan regu yang dipilih valid.
+    // renderSquadSelect harus menyimpan team.id ke dalam teamId.
+    const selectedTeam = listTeam.find(
+      (team) => team.name === editingUser.teamId,
+    );
+
+    // if (!selectedTeam) {
+    //   showToast("Regu tidak ditemukan. Silakan pilih regu yang valid.");
+    //   return;
+    // }
+
+    // Payload khusus untuk backend
+    const payload: UpdateUserRequest = {
+      employeeNumber,
+      fullName,
+      username,
+      email: email || null,
+      phone,
+      roleId: selectedRoleData?.id,
+      teamId: selectedTeam?.id,
+      siteId,
     };
 
-    setUsers((previous) =>
-      previous.map((user) => (user.id === updated.id ? updated : user)),
+    try {
+      await updateUser({
+        id: selectedUserId,
+        payload,
+      });
+
+      setSelectedUserId("");
+      setEditingUser(null);
+
+      showToast("Data akun berhasil diperbarui.");
+    } catch (error) {
+      console.error("Gagal saat update user:", error);
+      if (error && typeof error === "object" && "response" in error) {
+        const response = (
+          error as {
+            response?: {
+              status?: number;
+              data?: {
+                message?: string | string[];
+              };
+            };
+          }
+        ).response;
+
+        if (response?.status === 409) {
+          const message = response.data?.message;
+
+          setRegisterError(
+            Array.isArray(message)
+              ? message.join(", ")
+              : message ||
+                  "Data bertentangan dengan data yang sudah ada. Periksa Satpam ID, username, dan email.",
+          );
+          return;
+        }
+
+        if (response?.status === 400) {
+          const message = response.data?.message;
+
+          setRegisterError(
+            Array.isArray(message)
+              ? message.join(", ")
+              : message || "Data yang dikirim tidak valid.",
+          );
+          return;
+        }
+      }
+      setRegisterError("Gagal saat update user.");
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    const confirmed = window.confirm(
+      "Apakah kamu yakin ingin mengahpus user ini?",
+    );
+    if (!confirmed) return;
+
+    try {
+      await removeUser(userId);
+      setDeletingUser(null);
+      showToast("Akun pengguna berhasil dihapus.");
+    } catch (error) {
+      showToast("Gagal saat menghapus user");
+      console.log("Gagal saat mengahpus user", error);
+    }
+  };
+
+  const deactivatedUser = async (userId: string) => {
+    const confirmed = window.confirm(
+      "Apakah kamu yakin ingin menonaktifkan user ini?",
     );
 
-    setEditingUser(null);
-    showToast("Data akun berhasil diperbarui.");
+    if (!confirmed) return;
+
+    try {
+      await deactivated(userId);
+
+      showToast("User berhasil dinonaktifkan.");
+      showToast("");
+    } catch (error) {
+      console.error("Gagal menonaktifkan user:", error);
+      showToast("Gagal menonaktifkan user. Silakan coba kembali.");
+      showToast("");
+    }
   };
 
-  const handleDeleteUser = () => {
-    if (!deletingUser) return;
-
-    setUsers((previous) =>
-      previous.filter((user) => user.id !== deletingUser.id),
+  const activatedUser = async (userId: string) => {
+    const confirmed = window.confirm(
+      "Apakah kamu yakin ingin mengaktifkan user ini?",
     );
 
-    setDeletingUser(null);
-    showToast("Akun pengguna berhasil dihapus.");
+    if (!confirmed) return;
+
+    try {
+      await activated(userId);
+
+      showToast("User berhasil diaktifkan.");
+      showToast("");
+    } catch (error) {
+      console.error("Gagal mengaktifkan user:", error);
+      showToast("Gagal mengaktifkan user. Silakan coba kembali.");
+      showToast("");
+    }
   };
 
-  const handleChangePassword = (event: React.FormEvent) => {
-    event.preventDefault();
-
-    if (!changingPasswordUser) return;
-
-    if (newPassword.length < 8) {
-      showToast("Password minimal 8 karakter.");
-      return;
-    }
-
-    if (newPassword !== confirmNewPassword) {
-      showToast("Konfirmasi password tidak sama.");
-      return;
-    }
-
-    showToast(`Password ${changingPasswordUser.fullName} berhasil diperbarui.`);
-
-    setChangingPasswordUser(null);
-    setNewPassword("");
-    setConfirmNewPassword("");
-  };
-
-  const handleCreateSquad = (event: React.FormEvent) => {
+  const handleCreateSquad = async (event: React.FormEvent) => {
     event.preventDefault();
 
     if (
+      !newSquad.code.trim() ||
       !newSquad.name.trim() ||
-      !newSquad.danru.trim() ||
-      !newSquad.assignedSector.trim()
+      !newSquad.decription.trim()
     ) {
       showToast("Lengkapi nama regu, Danru, dan sektor.");
       return;
     }
 
-    if (Number(newSquad.memberCount) < 1) {
-      showToast("Jumlah anggota minimal 1.");
-      return;
-    }
-
-    const created: SecuritySquadItem = {
-      id: `SQD-${String(Date.now()).slice(-5)}`,
-      name: newSquad.name.trim(),
-      danru: newSquad.danru.trim(),
-      siteId: newSquad.siteId,
-      siteName: getSiteName(newSquad.siteId),
-      shiftDefault: newSquad.shiftDefault,
-      memberCount: Number(newSquad.memberCount),
-      status: newSquad.status,
-      contactRadio: newSquad.contactRadio.trim(),
-      assignedSector: newSquad.assignedSector.trim(),
+    const payload: CreateTeamPayload = {
+      siteId: siteId ?? null,
+      name: newSquad.name,
+      code: newSquad.code,
+      description: newSquad.decription,
     };
 
-    setSquads((previous) => [...previous, created]);
-    setIsAddSquadOpen(false);
-    setNewSquad(initialSquadForm);
+    console.log("PAYLOAD", JSON.stringify(payload, null, 2));
+    try {
+      await createTeam(payload);
 
-    showToast("Regu berhasil ditambahkan.");
+      setIsAddSquadOpen(false);
+      setNewSquad(initialSquadForm);
+      showToast("Regu berhasil ditambahkan.");
+    } catch (error) {
+      showToast("Gagal Register Regu");
+    }
   };
 
-  const handleSaveEditSquad = (event: React.FormEvent) => {
-    event.preventDefault();
+  // const handleSaveEditSquad = (event: React.FormEvent) => {
+  //   event.preventDefault();
 
-    if (!editingSquad) return;
+  //   if (!editingSquad) return;
 
-    if (
-      !editingSquad.name.trim() ||
-      !editingSquad.danru.trim() ||
-      !editingSquad.assignedSector.trim()
-    ) {
-      showToast("Lengkapi nama regu, Danru, dan sektor.");
-      return;
-    }
+  //   if (
+  //     !editingSquad.name.trim() ||
+  //     !editingSquad.danru.trim() ||
+  //     !editingSquad.assignedSector.trim()
+  //   ) {
+  //     showToast("Lengkapi nama regu, Danru, dan sektor.");
+  //     return;
+  //   }
 
-    const updated: SecuritySquadItem = {
-      ...editingSquad,
-      name: editingSquad.name.trim(),
-      danru: editingSquad.danru.trim(),
-      siteName: getSiteName(editingSquad.siteId),
-      memberCount: Number(editingSquad.memberCount),
-    };
+  //   const updated: SecuritySquadItem = {
+  //     ...editingSquad,
+  //     name: editingSquad.name.trim(),
+  //     danru: editingSquad.danru.trim(),
+  //     siteName: getSiteName(editingSquad.siteId),
+  //     memberCount: Number(editingSquad.memberCount),
+  //   };
 
-    setSquads((previous) =>
-      previous.map((squad) => (squad.id === updated.id ? updated : squad)),
-    );
+  //   setSquads((previous) =>
+  //     previous.map((squad) => (squad.id === updated.id ? updated : squad)),
+  //   );
 
-    setEditingSquad(null);
-    showToast("Data regu berhasil diperbarui.");
-  };
+  //   setEditingSquad(null);
+  //   showToast("Data regu berhasil diperbarui.");
+  // };
 
-  const handleDeleteSquad = () => {
-    if (!deletingSquad) return;
+  // const handleDeleteSquad = () => {
+  //   if (!deletingSquad) return;
 
-    const assignedUsers = users.filter(
-      (user) => user.squadId === deletingSquad.id,
-    );
+  //   const assignedUsers = users.filter(
+  //     (user) => user.squadId === deletingSquad.id,
+  //   );
 
-    if (assignedUsers.length > 0) {
-      showToast(
-        "Regu masih digunakan oleh akun pengguna. Pindahkan anggota terlebih dahulu.",
-      );
-      setDeletingSquad(null);
-      return;
-    }
+  //   if (assignedUsers.length > 0) {
+  //     showToast(
+  //       "Regu masih digunakan oleh akun pengguna. Pindahkan anggota terlebih dahulu.",
+  //     );
+  //     setDeletingSquad(null);
+  //     return;
+  //   }
 
-    setSquads((previous) =>
-      previous.filter((squad) => squad.id !== deletingSquad.id),
-    );
+  //   setSquads((previous) =>
+  //     previous.filter((squad) => squad.id !== deletingSquad.id),
+  //   );
 
-    setDeletingSquad(null);
-    showToast("Regu berhasil dihapus.");
+  //   setDeletingSquad(null);
+  //   showToast("Regu berhasil dihapus.");
+  // };
+
+  const handleOpenEditUser = (user: UserResponse) => {
+    setSelectedUserId(user.id);
+
+    setEditingUsernameSameAsNpp(user.username === user.employeeNumber);
+
+    setEditingUser({
+      employeeNumber: user.employeeNumber ?? "",
+      fullName: user.fullName ?? "",
+      username: user.username ?? "",
+      email: user.email ?? "",
+      phone: user.phone ?? "",
+      role: (user.role?.name ?? "SECURITY") as RoleName,
+      teamId: user.team?.name ?? "",
+    });
   };
 
   const renderInput = (
@@ -508,22 +652,22 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
   );
 
   const renderRoleSelect = (
-    value: UserRole,
-    onChange: (value: UserRole) => void,
+    value: RoleName,
+    onChange: (value: RoleName) => void,
   ) => (
     <div className="space-y-1.5">
       <Label className="text-xs font-medium">Peran</Label>
       <Select
         value={value}
-        onValueChange={(value) => onChange(value as UserRole)}
+        onValueChange={(value) => onChange(value as RoleName)}
       >
         <SelectTrigger className={`${inputClass} w-full`}>
           <SelectValue placeholder="Pilih peran" />
         </SelectTrigger>
         <SelectContent>
-          {USER_ROLES.map((role) => (
-            <SelectItem key={role} value={role}>
-              {role}
+          {roles.map((role) => (
+            <SelectItem key={role.id} value={role.name}>
+              {role.name}
             </SelectItem>
           ))}
         </SelectContent>
@@ -545,9 +689,9 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
           <SelectValue placeholder="Pilih regu" />
         </SelectTrigger>
         <SelectContent>
-          {squads.map((squad) => (
-            <SelectItem key={squad.id} value={squad.id}>
-              {squad.name} - {squad.siteName}
+          {listTeam.map((squad) => (
+            <SelectItem key={squad.id} value={squad.name}>
+              {squad.name} - {squad.site.name}
             </SelectItem>
           ))}
         </SelectContent>
@@ -610,17 +754,20 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
       )}
 
       <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            Kelola Pengguna
-          </h1>
+        <div className="">
+          <div className="flex items-center">
+            <div className="bg-[#00529C] px-1 py-3 h-[px] rounded-xs" />
+            <h1 className="text-xl font-semibold tracking-tight ml-1">
+              Kelola Pengguna
+            </h1>
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Kelola akun pengguna dan regu pengamanan PAMAREA.
           </p>
         </div>
 
         <Button
-          className="rounded gap-2"
+          className="rounded gap-2 bg-[#FED400] text-black hover:bg-yellow-400"
           onClick={() => {
             if (activeSubTab === "personel") {
               setNewUser(initialUserForm);
@@ -647,11 +794,11 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
         <TabsList className="h-9 rounded bg-muted p-1">
           <TabsTrigger value="personel" className="rounded px-3 text-xs">
             <UserRound className="mr-2 size-3.5" />
-            Akun Pengguna ({users.length})
+            Akun Pengguna ({listUser.length})
           </TabsTrigger>
           <TabsTrigger value="regu" className="rounded px-3 text-xs">
             <Users className="mr-2 size-3.5" />
-            Regu ({squads.length})
+            Regu ({listTeam.length})
           </TabsTrigger>
         </TabsList>
 
@@ -719,11 +866,11 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                   <TableRow>
                     <TableHead>NPP</TableHead>
                     <TableHead>Nama Lengkap</TableHead>
-                    <TableHead>Username</TableHead>
-                    <TableHead>Email</TableHead>
+                    {/* <TableHead>Username</TableHead> */}
                     <TableHead>No. HP</TableHead>
                     <TableHead>Peran</TableHead>
                     <TableHead>Regu</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -740,27 +887,23 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                     </TableRow>
                   ) : (
                     filteredUsers.map((user) => {
-                      const squad = squads.find(
-                        (item) => item.id === user.squadId,
+                      const squad = listTeam.find(
+                        (item) => item.id === user.team?.name,
                       );
 
                       return (
                         <TableRow key={user.id}>
                           <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-primary">
-                            {user.npp}
+                            {user.employeeNumber}
                           </TableCell>
 
                           <TableCell className="min-w-[150px] text-xs font-medium">
                             {user.fullName}
                           </TableCell>
 
-                          <TableCell className="whitespace-nowrap font-mono text-xs">
+                          {/* <TableCell className="whitespace-nowrap font-mono text-xs">
                             {user.username}
-                          </TableCell>
-
-                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                            {user.email || "-"}
-                          </TableCell>
+                          </TableCell> */}
 
                           <TableCell className="whitespace-nowrap text-xs">
                             {user.phone || "-"}
@@ -770,16 +913,67 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                             <Badge
                               variant="outline"
                               className={`rounded font-medium ${getRoleBadgeClass(
-                                user.role,
+                                user.role?.name,
                               )}`}
                             >
-                              {user.role}
+                              {user.role?.name}
                             </Badge>
                           </TableCell>
 
                           <TableCell className="whitespace-nowrap text-xs">
-                            {squad?.name || "-"}
+                            {user.team?.name || "-"}
                           </TableCell>
+
+                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                            <Switch
+                              checked={user.status === "ACTIVE"}
+                              aria-label={`${
+                                user.status === "ACTIVE"
+                                  ? "Nonaktifkan"
+                                  : "Aktifkan"
+                              } ${user.fullName}`}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  activatedUser(user.id);
+                                } else {
+                                  deactivatedUser(user.id);
+                                }
+                              }}
+                              className="data-[state=checked]:bg-[#00BB7D] data-[state=unchecked]:bg-gray-300"
+                            />
+                          </TableCell>
+                          {/* <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={user.status === "ACTIVE"}
+                              aria-label={`${
+                                user.status === "ACTIVE"
+                                  ? "Nonaktifkan"
+                                  : "Aktifkan"
+                              } ${user.fullName}`}
+                              onClick={() => {
+                                if (user.status === "ACTIVE") {
+                                  deactivatedUser(user.id);
+                                } else {
+                                  activatedUser(user.id);
+                                }
+                              }}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                                user.status === "ACTIVE"
+                                  ? "bg-emerald-500 focus:ring-emerald-500"
+                                  : "bg-gray-300 focus:ring-gray-400"
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                                  user.status === "ACTIVE"
+                                    ? "translate-x-6"
+                                    : "translate-x-1"
+                                }`}
+                              />
+                            </button>
+                          </TableCell> */}
 
                           <TableCell>
                             <div className="flex items-center justify-end gap-1">
@@ -788,11 +982,14 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                                 size="icon"
                                 className="size-8 rounded"
                                 title="Edit akun"
+                                // onClick={() => {
+                                //   setEditingUsernameSameAsNpp(
+                                //     user.username === user.id,
+                                //   );
+                                //   setEditingUser({ ...user });
+                                // }}
                                 onClick={() => {
-                                  setEditingUsernameSameAsNpp(
-                                    user.username === user.npp,
-                                  );
-                                  setEditingUser({ ...user });
+                                  handleOpenEditUser(user);
                                 }}
                               >
                                 <Edit className="size-3.5" />
@@ -801,23 +998,9 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="size-8 rounded text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                                title="Ganti password"
-                                onClick={() => {
-                                  setChangingPasswordUser(user);
-                                  setNewPassword("");
-                                  setConfirmNewPassword("");
-                                }}
-                              >
-                                <KeyRound className="size-3.5" />
-                              </Button>
-
-                              <Button
-                                variant="ghost"
-                                size="icon"
                                 className="size-8 rounded text-destructive hover:bg-destructive/10 hover:text-destructive"
                                 title="Hapus akun"
-                                onClick={() => setDeletingUser(user)}
+                                onClick={() => handleDeleteUser(user.id)}
                               >
                                 <Trash2 className="size-3.5" />
                               </Button>
@@ -877,13 +1060,8 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                   <TableRow>
                     <TableHead>ID Regu</TableHead>
                     <TableHead>Nama Regu</TableHead>
-                    <TableHead>Komandan Regu</TableHead>
+                    <TableHead>Deskripsi</TableHead>
                     <TableHead>Site</TableHead>
-                    <TableHead>Sektor</TableHead>
-                    <TableHead>Shift Default</TableHead>
-                    <TableHead className="text-center">Anggota</TableHead>
-                    <TableHead>Radio HT</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -902,7 +1080,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                     filteredSquads.map((squad) => (
                       <TableRow key={squad.id}>
                         <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-primary">
-                          {squad.id}
+                          {squad.code}
                         </TableCell>
 
                         <TableCell className="whitespace-nowrap text-xs font-medium">
@@ -910,30 +1088,18 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                         </TableCell>
 
                         <TableCell className="whitespace-nowrap text-xs">
-                          {squad.danru}
+                          {squad.description}
                         </TableCell>
 
                         <TableCell className="whitespace-nowrap text-xs">
-                          {squad.siteName}
+                          {squad.site.name}
                         </TableCell>
 
-                        <TableCell className="min-w-[150px] text-xs">
-                          {squad.assignedSector}
-                        </TableCell>
-
-                        <TableCell className="min-w-[170px] text-xs">
-                          {squad.shiftDefault}
-                        </TableCell>
-
-                        <TableCell className="text-center text-xs font-medium">
+                        {/* <TableCell className="text-center text-xs font-medium">
                           {squad.memberCount}
-                        </TableCell>
+                        </TableCell> */}
 
-                        <TableCell className="whitespace-nowrap font-mono text-xs">
-                          {squad.contactRadio}
-                        </TableCell>
-
-                        <TableCell>
+                        {/* <TableCell>
                           <Badge
                             variant="outline"
                             className={`rounded ${
@@ -946,7 +1112,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                           >
                             {squad.status}
                           </Badge>
-                        </TableCell>
+                        </TableCell> */}
 
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
@@ -955,7 +1121,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                               size="icon"
                               className="size-8 rounded"
                               title="Edit regu"
-                              onClick={() => setEditingSquad({ ...squad })}
+                              // onClick={() => setEditingSquad({ ...squad })}
                             >
                               <Edit className="size-3.5" />
                             </Button>
@@ -965,7 +1131,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                               size="icon"
                               className="size-8 rounded text-destructive hover:bg-destructive/10 hover:text-destructive"
                               title="Hapus regu"
-                              onClick={() => setDeletingSquad(squad)}
+                              // onClick={() => setDeletingSquad(squad)}
                             >
                               <Trash2 className="size-3.5" />
                             </Button>
@@ -982,7 +1148,10 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
       </Tabs>
 
       <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
+        <DialogContent
+          onClick={() => setRegisterError("")}
+          className="max-h-[90vh] max-w-xl overflow-y-auto rounded"
+        >
           <DialogHeader>
             <DialogTitle className="text-base">
               Tambah Akun Pengguna
@@ -996,12 +1165,12 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {renderInput(
                 "NPP",
-                newUser.npp,
+                newUser.employeeNumber,
                 (value) =>
                   setNewUser((previous) => ({
                     ...previous,
-                    npp: value,
-                    username: previous.useNppAsUsername
+                    employeeNumber: value,
+                    username: previous.useEmployeeAsUsername
                       ? value
                       : previous.username,
                   })),
@@ -1029,9 +1198,11 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                 <Label className="text-xs font-medium">Username</Label>
                 <Input
                   value={
-                    newUser.useNppAsUsername ? newUser.npp : newUser.username
+                    newUser.useEmployeeAsUsername
+                      ? newUser.employeeNumber
+                      : newUser.username
                   }
-                  disabled={newUser.useNppAsUsername}
+                  disabled={newUser.useEmployeeAsUsername}
                   onChange={(event) =>
                     setNewUser((previous) => ({
                       ...previous,
@@ -1046,13 +1217,15 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                 <div className="flex items-center gap-2 pt-1">
                   <Checkbox
                     id="new-user-same-npp"
-                    checked={newUser.useNppAsUsername}
+                    checked={newUser.useEmployeeAsUsername}
                     onCheckedChange={(checked) =>
                       setNewUser((previous) => ({
                         ...previous,
-                        useNppAsUsername: checked === true,
+                        useEmployeeAsUsername: checked === true,
                         username:
-                          checked === true ? previous.npp : previous.username,
+                          checked === true
+                            ? previous.employeeNumber
+                            : previous.username,
                       }))
                     }
                   />
@@ -1098,40 +1271,6 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">
-                  Konfirmasi Password
-                </Label>
-                <div className="relative">
-                  <Input
-                    type={showConfirmPassword ? "text" : "password"}
-                    value={newUser.confirmPassword}
-                    onChange={(event) =>
-                      setNewUser((previous) => ({
-                        ...previous,
-                        confirmPassword: event.target.value,
-                      }))
-                    }
-                    placeholder="Ulangi password"
-                    required
-                    className="h-9 rounded pr-10 text-xs"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 size-9 rounded"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  >
-                    {showConfirmPassword ? (
-                      <EyeOff className="size-4" />
-                    ) : (
-                      <Eye className="size-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
               {renderInput(
                 "Email",
                 newUser.email,
@@ -1165,13 +1304,14 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                 setNewUser((previous) => ({
                   ...previous,
                   role: value,
+                  teamId: "",
                 })),
               )}
 
-              {renderSquadSelect(newUser.squadId, (value) =>
+              {renderSquadSelect(newUser.teamId, (value) =>
                 setNewUser((previous) => ({
                   ...previous,
-                  squadId: value,
+                  teamId: value,
                 })),
               )}
             </div>
@@ -1187,6 +1327,15 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
             </div>
 
             <Separator />
+
+            {registerError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                <span>{registerError}</span>
+              </div>
+            )}
 
             <DialogFooter>
               <Button
@@ -1208,12 +1357,19 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
       <Dialog
         open={!!editingUser}
         onOpenChange={(open) => {
-          if (!open) setEditingUser(null);
+          if (!open) {
+            setEditingUser(null);
+            setSelectedUserId("");
+          }
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
+        <DialogContent
+          onClick={() => setRegisterError("")}
+          className="max-h-[90vh] max-w-xl overflow-y-auto rounded"
+        >
           <DialogHeader>
             <DialogTitle className="text-base">Edit Akun Pengguna</DialogTitle>
+
             <DialogDescription className="text-xs">
               Perbarui informasi akun dan penempatan regu.
             </DialogDescription>
@@ -1224,13 +1380,13 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {renderInput(
                   "NPP",
-                  editingUser.npp,
+                  editingUser.employeeNumber,
                   (value) =>
                     setEditingUser((previous) =>
                       previous
                         ? {
                             ...previous,
-                            npp: value,
+                            employeeNumber: value,
                             username: editingUsernameSameAsNpp
                               ? value
                               : previous.username,
@@ -1244,27 +1400,32 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                   "Nama Lengkap",
                   editingUser.fullName,
                   (value) =>
-                    setEditingUser({
-                      ...editingUser,
-                      fullName: value,
-                    }),
+                    setEditingUser((previous) =>
+                      previous ? { ...previous, fullName: value } : previous,
+                    ),
                   { required: true },
                 )}
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Username</Label>
+
                   <Input
                     value={editingUser.username}
                     disabled={editingUsernameSameAsNpp}
                     onChange={(event) =>
-                      setEditingUser({
-                        ...editingUser,
-                        username: event.target.value,
-                      })
+                      setEditingUser((previous) =>
+                        previous
+                          ? {
+                              ...previous,
+                              username: event.target.value,
+                            }
+                          : previous,
+                      )
                     }
                     required
                     className={inputClass}
                   />
+
                   <div className="flex items-center gap-2 pt-1">
                     <Checkbox
                       id="edit-user-same-npp"
@@ -1273,16 +1434,23 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                         const useNpp = checked === true;
 
                         setEditingUsernameSameAsNpp(useNpp);
-                        setEditingUser({
-                          ...editingUser,
-                          username: useNpp
-                            ? editingUser.npp
-                            : editingUser.username === editingUser.npp
-                              ? ""
-                              : editingUser.username,
-                        });
+
+                        setEditingUser((previous) =>
+                          previous
+                            ? {
+                                ...previous,
+                                username: useNpp
+                                  ? previous.employeeNumber
+                                  : previous.username ===
+                                      previous.employeeNumber
+                                    ? ""
+                                    : previous.username,
+                              }
+                            : previous,
+                        );
                       }}
                     />
+
                     <Label
                       htmlFor="edit-user-same-npp"
                       className="cursor-pointer text-xs font-normal text-muted-foreground"
@@ -1296,10 +1464,9 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                   "Email",
                   editingUser.email,
                   (value) =>
-                    setEditingUser({
-                      ...editingUser,
-                      email: value,
-                    }),
+                    setEditingUser((previous) =>
+                      previous ? { ...previous, email: value } : previous,
+                    ),
                   { type: "email" },
                 )}
 
@@ -1307,114 +1474,65 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                   "No. HP",
                   editingUser.phone,
                   (value) =>
-                    setEditingUser({
-                      ...editingUser,
-                      phone: value,
-                    }),
+                    setEditingUser((previous) =>
+                      previous ? { ...previous, phone: value } : previous,
+                    ),
                   { type: "tel", required: true },
                 )}
 
                 {renderRoleSelect(editingUser.role, (value) =>
-                  setEditingUser({
-                    ...editingUser,
-                    role: value,
-                  }),
+                  setEditingUser((previous) =>
+                    previous
+                      ? {
+                          ...previous,
+                          role: value,
+                        }
+                      : previous,
+                  ),
                 )}
 
-                {renderSquadSelect(editingUser.squadId, (value) =>
-                  setEditingUser({
-                    ...editingUser,
-                    squadId: value,
-                  }),
+                {renderSquadSelect(editingUser.teamId, (value) =>
+                  setEditingUser((previous) =>
+                    previous
+                      ? {
+                          ...previous,
+                          teamId: value,
+                        }
+                      : previous,
+                  ),
                 )}
               </div>
 
               <Separator />
+              {registerError && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                >
+                  <span>{registerError}</span>
+                </div>
+              )}
 
               <DialogFooter>
                 <Button
                   type="button"
                   variant="outline"
                   className={buttonClass}
-                  onClick={() => setEditingUser(null)}
+                  disabled={isUpdatingUser}
+                  onClick={() => {
+                    setEditingUser(null);
+                    setSelectedUserId("");
+                  }}
                 >
                   Batal
                 </Button>
-                <Button type="submit" className={buttonClass}>
-                  Simpan Perubahan
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
 
-      <Dialog
-        open={!!changingPasswordUser}
-        onOpenChange={(open) => {
-          if (!open) {
-            setChangingPasswordUser(null);
-            setNewPassword("");
-            setConfirmNewPassword("");
-            setShowPassword(false);
-            setShowConfirmPassword(false);
-          }
-        }}
-      >
-        <DialogContent className="max-w-md rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <KeyRound className="size-5 text-blue-600" />
-              Ganti Password
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Atur password baru untuk akun pengguna.
-            </DialogDescription>
-          </DialogHeader>
-
-          {changingPasswordUser && (
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              <div className="border bg-slate-50 p-3">
-                <p className="text-xs text-muted-foreground">Akun pengguna</p>
-                <p className="mt-1 text-sm font-semibold">
-                  {changingPasswordUser.fullName}
-                </p>
-                <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                  {changingPasswordUser.username}
-                </p>
-              </div>
-
-              {renderPasswordInput(
-                "Password Baru",
-                newPassword,
-                setNewPassword,
-                showPassword,
-                setShowPassword,
-                "Minimal 8 karakter",
-              )}
-
-              {renderPasswordInput(
-                "Konfirmasi Password Baru",
-                confirmNewPassword,
-                setConfirmNewPassword,
-                showConfirmPassword,
-                setShowConfirmPassword,
-                "Ulangi password baru",
-              )}
-
-              <Separator />
-
-              <DialogFooter>
                 <Button
-                  type="button"
-                  variant="outline"
+                  type="submit"
                   className={buttonClass}
-                  onClick={() => setChangingPasswordUser(null)}
+                  disabled={isUpdatingUser}
                 >
-                  Batal
-                </Button>
-                <Button type="submit" className={buttonClass}>
-                  Simpan Password
+                  {isUpdatingUser ? "Menyimpan..." : "Simpan Perubahan"}
                 </Button>
               </DialogFooter>
             </form>
@@ -1447,108 +1565,38 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
               )}
 
               {renderInput(
-                "Komandan Regu",
-                newSquad.danru,
+                "Code Regu",
+                newSquad.code,
                 (value) =>
                   setNewSquad((previous) => ({
                     ...previous,
-                    danru: value,
+                    code: value,
                   })),
-                { required: true, placeholder: "Nama Danru" },
-              )}
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Site</Label>
-                <Select
-                  value={newSquad.siteId}
-                  onValueChange={(value) =>
-                    setNewSquad((previous) => ({
-                      ...previous,
-                      siteId: value ?? "",
-                    }))
-                  }
-                >
-                  <SelectTrigger className={inputClass}>
-                    <SelectValue placeholder="Pilih site" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SITES.map((site) => (
-                      <SelectItem key={site.id} value={site.id}>
-                        {site.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Shift Default</Label>
-                <Select
-                  value={newSquad.shiftDefault}
-                  onValueChange={(value) =>
-                    setNewSquad((previous) => ({
-                      ...previous,
-                      shiftDefault: value as SecuritySquadItem["shiftDefault"],
-                    }))
-                  }
-                >
-                  <SelectTrigger className={inputClass}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Shift Pagi (07:00 - 15:00)">
-                      Shift Pagi (07:00 - 15:00)
-                    </SelectItem>
-                    <SelectItem value="Shift Siang (15:00 - 23:00)">
-                      Shift Siang (15:00 - 23:00)
-                    </SelectItem>
-                    <SelectItem value="Shift Malam (23:00 - 07:00)">
-                      Shift Malam (23:00 - 07:00)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {renderInput(
-                "Jumlah Anggota",
-                newSquad.memberCount,
-                (value) =>
-                  setNewSquad((previous) => ({
-                    ...previous,
-                    memberCount: Number(value),
-                  })),
-                { type: "number", required: true, min: 1 },
+                { required: true, placeholder: "REGU A" },
               )}
 
               {renderInput(
-                "Call Sign Radio HT",
-                newSquad.contactRadio,
+                "Description",
+                newSquad.decription,
                 (value) =>
                   setNewSquad((previous) => ({
                     ...previous,
-                    contactRadio: value,
+                    decription: value,
                   })),
-                { placeholder: "Contoh: Alpha-01 (CH-01)" },
+                { placeholder: "Deskripsi" },
               )}
-
-              <div className="sm:col-span-2">
-                {renderInput(
-                  "Sektor Tanggung Jawab",
-                  newSquad.assignedSector,
-                  (value) =>
-                    setNewSquad((previous) => ({
-                      ...previous,
-                      assignedSector: value,
-                    })),
-                  {
-                    required: true,
-                    placeholder: "Contoh: Gedung Utama dan Parkir",
-                  },
-                )}
-              </div>
             </div>
 
             <Separator />
+
+            {registerError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                <span>{registerError}</span>
+              </div>
+            )}
 
             <DialogFooter>
               <Button
@@ -1570,7 +1618,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
       {/* ==================================================== */}
       {/* DIALOG EDIT REGU */}
       {/* ==================================================== */}
-      <Dialog
+      {/* <Dialog
         open={!!editingSquad}
         onOpenChange={(open) => {
           if (!open) setEditingSquad(null);
@@ -1744,12 +1792,12 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
             </form>
           )}
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
 
       {/* ==================================================== */}
       {/* KONFIRMASI HAPUS AKUN */}
       {/* ==================================================== */}
-      <Dialog
+      {/* <Dialog
         open={!!deletingUser}
         onOpenChange={(open) => {
           if (!open) setDeletingUser(null);
@@ -1786,8 +1834,9 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
-      <Dialog
+      </Dialog> */}
+
+      {/* <Dialog
         open={!!deletingSquad}
         onOpenChange={(open) => {
           if (!open) setDeletingSquad(null);
@@ -1822,7 +1871,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
     </div>
   );
 };

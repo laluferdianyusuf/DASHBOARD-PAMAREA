@@ -330,7 +330,7 @@ export function Sidebar({
             type="button"
             onClick={handleLogout}
             disabled={isPending}
-            className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50 group-data-[collapsible=icon]:hidden"
           >
             <LucideLogOut size={20} color="red" />
 
@@ -340,10 +340,14 @@ export function Sidebar({
 
         {/* Collapsed footer */}
         <div className="hidden h-8 items-center justify-center group-data-[collapsible=icon]:flex">
-          <div
-            className="size-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
-            title="System Online"
-          />
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isPending}
+            className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center cursor-pointer"
+          >
+            <LucideLogOut size={20} color="red" />
+          </button>
         </div>
       </SidebarFooter>
 
