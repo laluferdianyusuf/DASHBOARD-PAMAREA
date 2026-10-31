@@ -1,16 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  activateQuestion,
   createQuestion,
   createQuestionOption,
   deactivateQuestion,
   getActiveQuestions,
   getQuestions,
+  updateQuestion,
   updateQuestionOption,
 } from "../../services/question/question.service";
+
 import type {
   CreateQuestionOptionPayload,
   CreateQuestionPayload,
   UpdateQuestionOptionPayload,
+  UpdateQuestionPayload,
 } from "../../types";
 
 export const useQuestions = () => {
@@ -19,10 +23,12 @@ export const useQuestions = () => {
     queryFn: () => getQuestions(),
   });
 };
+
 export const useActiveQuestions = (patrolPointId: string) => {
   return useQuery({
     queryKey: ["questions", patrolPointId],
     queryFn: () => getActiveQuestions(patrolPointId),
+    enabled: Boolean(patrolPointId),
   });
 };
 
@@ -31,11 +37,31 @@ export const useCreateQuestion = () => {
 
   return useMutation({
     mutationFn: (payload: CreateQuestionPayload) => createQuestion(payload),
-
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["questions"],
-      });
+      await queryClient.invalidateQueries({ queryKey: ["questions"] });
+    },
+  });
+};
+
+export const useUpdateQuestion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: UpdateQuestionPayload;
+    }) => updateQuestion(id, payload),
+
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["questions"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["question", variables.id],
+        }),
+      ]);
     },
   });
 };
@@ -45,15 +71,24 @@ export const useDeactivateQuestion = () => {
 
   return useMutation({
     mutationFn: (id: string) => deactivateQuestion(id),
-
     onSuccess: async (_data, id) => {
       await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["questions"],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["question", id],
-        }),
+        queryClient.invalidateQueries({ queryKey: ["questions"] }),
+        queryClient.invalidateQueries({ queryKey: ["question", id] }),
+      ]);
+    },
+  });
+};
+
+export const useActivateQuestion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => activateQuestion(id),
+    onSuccess: async (_data, id) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["questions"] }),
+        queryClient.invalidateQueries({ queryKey: ["question", id] }),
       ]);
     },
   });
@@ -72,9 +107,7 @@ export const useCreateQuestionOption = () => {
     }) => createQuestionOption(questionId, payload),
 
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["questions"],
-      });
+      await queryClient.invalidateQueries({ queryKey: ["questions"] });
     },
   });
 };
@@ -92,9 +125,7 @@ export const useUpdateQuestionOption = () => {
     }) => updateQuestionOption(optionId, payload),
 
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["questions"],
-      });
+      await queryClient.invalidateQueries({ queryKey: ["questions"] });
     },
   });
 };

@@ -1,4 +1,5 @@
 import type { NfcStatus } from "../enums/prisma-enums";
+import { NfcAssignment } from "./nfc-assignment";
 
 // Data pembuat NFC
 export interface NfcCreatedBy {
@@ -37,6 +38,7 @@ export interface NfcTagBasicResponse {
 export interface NfcTagResponse extends NfcTagBasicResponse {
   createdAt: string;
   updatedAt: string;
+  assignments: NfcAssignment[];
   createdBy: NfcCreatedBy;
   _count: {
     assignments: number;
@@ -46,7 +48,7 @@ export interface NfcTagResponse extends NfcTagBasicResponse {
 
 // Data detail NFC
 export interface NfcTagDetailResponse extends NfcTagResponse {
-  assignments: NfcAssignmentResponse[];
+  assignments: NfcAssignment[];
 }
 
 // Data NFC yang belum ditugaskan
@@ -67,7 +69,7 @@ export interface CreateNfcTagRequest {
 // Request memperbarui NFC
 export interface UpdateNfcTagRequest {
   uid?: string;
-  label?: string;
+  label?: string | null;
 }
 
 // Request mengganti NFC

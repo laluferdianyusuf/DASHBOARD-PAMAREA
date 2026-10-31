@@ -6,6 +6,7 @@ export interface QuestionOption {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  isSafe: boolean;
 }
 
 export interface CreateQuestionOptionPayload {

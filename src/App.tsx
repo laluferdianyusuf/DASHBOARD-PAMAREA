@@ -58,6 +58,7 @@ import { useMe } from "./hooks/auth";
 export default function App() {
   const { data, isPending, isError } = useMe();
 
+  const siteId = data?.data.site?.id ?? "";
   const [currentTab, setCurrentTab] = useState<NavTab>("dashboard");
   const [selectedSite, setSelectedSite] = useState<string>("all");
 
@@ -441,7 +442,7 @@ export default function App() {
                 <div className="min-w-0 flex-1">
                   <Header
                     currentTab={currentTab}
-                    selectedSite={selectedSite}
+                    selectedSite={siteId}
                     onSelectSite={setSelectedSite}
                   />
                 </div>
@@ -454,13 +455,13 @@ export default function App() {
 
                 {/* MONITORING */}
                 {currentTab === "monitoring" && (
-                  <MonitoringView selectedSite={selectedSite} />
+                  <MonitoringView selectedSite={siteId} />
                 )}
 
                 {/* JADWAL PATROLI */}
                 {currentTab === "jadwal" && (
                   <JadwalPatroliView
-                    selectedSite={selectedSite}
+                    selectedSite={siteId}
                     onNavigate={setCurrentTab}
                     schedules={schedules}
                     onUpdateSchedules={setSchedules}
@@ -515,49 +516,33 @@ export default function App() {
 
                 {/* TITIK PATROLI */}
                 {currentTab === "titik" && (
-                  <TitikPatroliView
-                    selectedSite={data?.data.site?.id ?? ""}
-                    checkpoints={checkpoints}
-                    nfcTags={tags}
-                    onUpdateCheckpoints={setCheckpoints}
-                    onUnassignNfc={handleUnassignTagFromCheckpoint}
-                    onAssignNfc={handleAssignNfcConnection}
-                  />
+                  <TitikPatroliView selectedSite={siteId} />
                 )}
 
                 {/* PERANGKAT NFC */}
-                {currentTab === "nfc" && (
-                  <TagNfcView
-                    selectedSite={selectedSite}
-                    tags={tags}
-                    checkpoints={checkpoints}
-                    onUpdateTags={setTags}
-                    onUnassignTag={handleUnassignCheckpointFromTag}
-                    onAssignTag={handleAssignNfcConnection}
-                  />
-                )}
+                {currentTab === "nfc" && <TagNfcView selectedSite={siteId} />}
 
                 {/* CHECKLIST */}
                 {currentTab === "question-builder" && <QuestionBuilderView />}
 
                 {/* RIWAYAT PATROLI */}
                 {currentTab === "riwayat" && (
-                  <RiwayatPatroliView selectedSite={selectedSite} />
+                  <RiwayatPatroliView selectedSite={siteId} />
                 )}
 
                 {/* TEMUAN PATROLI */}
                 {currentTab === "temuan" && (
-                  <TemuanPatroliView selectedSite={selectedSite} />
+                  <TemuanPatroliView selectedSite={siteId} />
                 )}
 
                 {/* KELOLA PENGGUNA */}
                 {currentTab === "pengguna" && (
-                  <KelolaPenggunaView selectedSite={selectedSite} />
+                  <KelolaPenggunaView selectedSite={siteId} />
                 )}
 
                 {/* ANALITIK & AUDIT */}
                 {currentTab === "analytic-audit" && (
-                  <AnalyticAuditView selectedSite={selectedSite} />
+                  <AnalyticAuditView selectedSite={siteId} />
                 )}
               </main>
             </SidebarInset>

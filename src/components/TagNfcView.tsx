@@ -1,34 +1,22 @@
-import React, { useState } from "react";
-import {
-  CHECKPOINTS,
-  CheckpointItem,
-  NFC_TAGS,
-  NfcTagItem,
-  SITES,
-} from "../data/mockData";
-import { isValidNfcUid } from "../utils/security-logic";
+import React, { useMemo, useState } from "react";
 
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   Contact2,
   Link2,
   Link2Off,
   Pencil,
-  Plus,
   Radio,
   RefreshCw,
   Search,
-  Settings2,
-  ShieldCheck,
   Trash2,
+  Unlink,
   X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import {
@@ -36,7 +24,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 
 import {
@@ -49,32 +36,68 @@ import {
 } from "@/components/ui/table";
 
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  useActivateNfc,
+  useCreateNfcTag,
+  useDeleteNfcTag,
+  useMarkNfcTagDamaged,
+  useMarkNfcTagLost,
+  useNfcTags,
+  useReplaceNfcTag,
+  useUpdateNfcTag,
+} from "../hooks/nfc/useNfc";
+
+import {
+  useAssignNfc,
+  useUnassignNfc,
+} from "../hooks/patrol-point-nfc/usePatroPointNfc";
+
+import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
+import type { NfcTagResponse } from "../types/nfc/nfc";
+import { PatrolPointResponse } from "../types/patrol-point/patrolPoint";
+import { TagNfcDialogs } from "./TagNfcDialogs";
+
+interface CheckpointOption {
+  id: string;
+  code: string;
+  name: string;
+  siteId: string;
+  siteName?: string;
+  status?: string;
+}
+
+interface NfcAssignment {
+  id?: string;
+  patrolPointId?: string;
+  assignedAt?: string;
+  unassignedAt?: string | null;
+  status?: string;
+  patrolPoint?: {
+    id: string;
+    code: string;
+    name: string;
+    siteId?: string;
+  };
+}
+
+type NfcTagItem = NfcTagResponse & {
+  assignments?: NfcAssignment[];
+  nfcAssignments?: NfcAssignment[];
+  _count?: {
+    assignments?: number;
+    nfcAssignments?: number;
+    patrols: number;
+  };
+};
 
 interface TagNfcViewProps {
   selectedSite: string;
-  tags?: NfcTagItem[];
-  checkpoints?: CheckpointItem[];
-  onUpdateTags?: (tags: NfcTagItem[]) => void;
-  onUnassignTag?: (tagUid: string) => void;
-  onAssignTag?: (tagUid: string, checkpointId: string) => void;
+  checkpoints?: CheckpointOption[];
 }
 
 interface SelectOption {
@@ -82,16 +105,14 @@ interface SelectOption {
   label: string;
 }
 
-interface SelectFieldProps {
+const SelectField: React.FC<{
   label?: string;
   value: string;
   onValueChange: (value: string) => void;
   options: SelectOption[];
   placeholder?: string;
   disabled?: boolean;
-}
-
-const SelectField: React.FC<SelectFieldProps> = ({
+}> = ({
   label,
   value,
   onValueChange,
@@ -99,19 +120,23 @@ const SelectField: React.FC<SelectFieldProps> = ({
   placeholder = "Pilih opsi",
   disabled = false,
 }) => {
+  const selectedOption = options.find((option) => option.value === value);
+
   return (
-    <div className="space-y-1.5">
+    <div className="w-full space-y-1.5">
       {label && (
         <Label className="text-xs font-semibold text-slate-700">{label}</Label>
       )}
 
       <Select
         value={value}
-        onValueChange={(value) => onValueChange(value as string)}
+        onValueChange={(selectedValue) => onValueChange(selectedValue ?? "")}
         disabled={disabled}
       >
         <SelectTrigger className="w-full rounded text-xs">
-          <SelectValue placeholder={placeholder} />
+          <span className="truncate">
+            {selectedOption?.label ?? placeholder}
+          </span>
         </SelectTrigger>
 
         <SelectContent className="rounded">
@@ -130,70 +155,43 @@ const SelectField: React.FC<SelectFieldProps> = ({
   );
 };
 
-const Field: React.FC<{
-  label: string;
-  children: React.ReactNode;
-}> = ({ label, children }) => (
-  <div className="space-y-1.5">
-    <Label className="text-xs font-semibold text-slate-700">{label}</Label>
-    {children}
-  </div>
-);
+const getStatusLabel = (status: string) => {
+  switch (status) {
+    case "ACTIVE":
+      return "Aktif";
 
-const InfoPanel: React.FC<{
-  children: React.ReactNode;
-  className?: string;
-}> = ({ children, className = "" }) => (
-  <div
-    className={`space-y-2 border border-slate-200 bg-slate-50 p-3 rounded ${className}`}
-  >
-    {children}
-  </div>
-);
+    case "UNASSIGNED":
+      return "Belum Ditautkan";
 
-const InfoRow: React.FC<{
-  label: string;
-  value: React.ReactNode;
-}> = ({ label, value }) => (
-  <div className="flex items-start justify-between gap-4 text-xs">
-    <span className="text-slate-500">{label}</span>
-    <span className="text-right font-medium text-slate-900">{value}</span>
-  </div>
-);
+    case "INACTIVE":
+      return "Nonaktif";
 
-const tagTypeOptions: SelectOption[] = [
-  { value: "NFC NTAG213", label: "NFC NTAG213 (13.56 MHz Standard)" },
-  { value: "NTAG215", label: "NTAG215 (504 Bytes)" },
-  { value: "RFID UHF 860MHz", label: "RFID UHF 860MHz (Long Range)" },
-  { value: "Mifare Classic 1K", label: "Mifare Classic 1K" },
-];
+    case "DAMAGED":
+      return "Tag Rusak";
 
-const tagStatusOptions: SelectOption[] = [
-  { value: "Terkoneksi Normal", label: "Terkoneksi Normal" },
-  { value: "Belum Ditautkan", label: "Belum Ditautkan" },
-  { value: "Siaga Kalibrasi", label: "Siaga Kalibrasi" },
-  { value: "Sinyal Lemah", label: "Sinyal Lemah" },
-  { value: "Tag Rusak", label: "Tag Rusak" },
-];
+    case "LOST":
+      return "Tag Hilang";
 
-const encryptionOptions: SelectOption[] = [
-  {
-    value: "AES-128 Enkripsi Aktif",
-    label: "AES-128 Enkripsi Aktif (Anti Kloning)",
-  },
-  {
-    value: "Standard Read-Only",
-    label: "Standard Read-Only",
-  },
-];
+    case "REPLACED":
+      return "Diganti";
+
+    default:
+      return status;
+  }
+};
 
 const getStatusVariant = (status: string) => {
   switch (status) {
-    case "Terkoneksi Normal":
+    case "ACTIVE":
       return "success";
-    case "Belum Ditautkan":
-    case "Siaga Kalibrasi":
+
+    case "UNASSIGNED":
       return "warning";
+
+    case "INACTIVE":
+    case "REPLACED":
+      return "warning";
+
     default:
       return "danger";
   }
@@ -202,7 +200,7 @@ const getStatusVariant = (status: string) => {
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const variant = getStatusVariant(status);
 
-  const styles = {
+  const styles: Record<string, string> = {
     success: "border-emerald-200 bg-emerald-50 text-emerald-700",
     warning: "border-amber-200 bg-amber-50 text-amber-700",
     danger: "border-rose-200 bg-rose-50 text-rose-700",
@@ -213,376 +211,524 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
       variant="outline"
       className={`rounded text-[11px] font-semibold ${styles[variant]}`}
     >
-      {status}
+      {getStatusLabel(status)}
     </Badge>
   );
 };
 
-export const TagNfcView: React.FC<TagNfcViewProps> = ({
-  selectedSite,
-  tags: propTags,
-  checkpoints: propCheckpoints,
-  onUpdateTags,
-  onUnassignTag,
-  onAssignTag,
-}) => {
-  const [localTags, setLocalTags] = useState<NfcTagItem[]>(NFC_TAGS);
+const getTagAssignments = (tag: NfcTagItem): NfcAssignment[] => {
+  return tag.nfcAssignments ?? tag.assignments ?? [];
+};
 
-  const tags = propTags || localTags;
-  const checkpoints = propCheckpoints || CHECKPOINTS;
+const getActiveAssignment = (tag: NfcTagItem): NfcAssignment | undefined => {
+  return getTagAssignments(tag).find((assignment) => {
+    const activeStatus = !assignment.status || assignment.status === "ACTIVE";
 
-  const setTagsList = (updater: (prev: NfcTagItem[]) => NfcTagItem[]) => {
-    if (onUpdateTags) {
-      onUpdateTags(updater(tags));
-    } else {
-      setLocalTags(updater);
-    }
-  };
+    return activeStatus && !assignment.unassignedAt;
+  });
+};
+
+const isTagAssigned = (tag: NfcTagItem): boolean => {
+  return Boolean(getActiveAssignment(tag));
+};
+
+const getAssignmentPatrolPointId = (tag: NfcTagItem): string => {
+  const assignment = getActiveAssignment(tag);
+
+  return assignment?.patrolPointId ?? assignment?.patrolPoint?.id ?? "";
+};
+
+const getAssignmentCheckpointName = (tag: NfcTagItem): string => {
+  const assignment = getActiveAssignment(tag);
+
+  if (!assignment) return "";
+
+  return assignment.patrolPoint?.name ?? "Patrol point";
+};
+
+const getAssignmentCheckpointCode = (tag: NfcTagItem): string => {
+  const assignment = getActiveAssignment(tag);
+
+  return assignment?.patrolPoint?.code ?? "";
+};
+
+export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
+  const { data: pointsData } = usePatrolPoints(
+    selectedSite !== "all" ? { siteId: selectedSite } : undefined,
+  );
+
+  const {
+    data: nfcData,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useNfcTags();
+
+  const nfcTags = useMemo<NfcTagItem[]>(() => {
+    if (!Array.isArray(nfcData)) return [];
+
+    return nfcData as NfcTagItem[];
+  }, [nfcData]);
+
+  const checkpoints = (
+    Array.isArray(pointsData) ? pointsData : []
+  ) as PatrolPointResponse[];
+
+  const createNfc = useCreateNfcTag();
+  const deleteNfc = useDeleteNfcTag();
+
+  const assignNfcMutation = useAssignNfc();
+  const unassignNfcMutation = useUnassignNfc();
+
+  const activateNfc = useActivateNfc();
+  const updateNfc = useUpdateNfcTag();
+
+  const markDamagedNfc = useMarkNfcTagDamaged();
+  const markLostNfc = useMarkNfcTagLost();
+  const markReplacedNfc = useReplaceNfcTag();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTagType, setSelectedTagType] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
-  // Dialog states
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+
   const [diagnosingTag, setDiagnosingTag] = useState<NfcTagItem | null>(null);
+
   const [editingTag, setEditingTag] = useState<NfcTagItem | null>(null);
+
   const [deletingTag, setDeletingTag] = useState<NfcTagItem | null>(null);
+
   const [unassigningTag, setUnassigningTag] = useState<NfcTagItem | null>(null);
+
   const [assigningTag, setAssigningTag] = useState<NfcTagItem | null>(null);
+
+  const [damagingTag, setDamagingTag] = useState<NfcTagItem | null>(null);
+
+  const [losingTag, setLosingTag] = useState<NfcTagItem | null>(null);
+
+  const [replacingTag, setReplacingTag] = useState<NfcTagItem | null>(null);
 
   const [selectedCheckpointToAssign, setSelectedCheckpointToAssign] =
     useState("");
 
+  const [replacementNfcId, setReplacementNfcId] = useState("");
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // New Tag form
-  const [newTagUid, setNewTagUid] = useState(
-    "04:" +
-      Array.from({ length: 6 }, () =>
-        Math.floor(Math.random() * 256)
-          .toString(16)
-          .toUpperCase()
-          .padStart(2, "0"),
-      ).join(":"),
-  );
+  const [formError, setFormError] = useState("");
 
-  const [newTagType, setNewTagType] =
-    useState<NfcTagItem["type"]>("NFC NTAG213");
+  const [newTagUid, setNewTagUid] = useState("");
+  const [newTagLabel, setNewTagLabel] = useState("");
+  const [newTagCheckpointId, setNewTagCheckpointId] = useState("");
 
-  const [newTagSiteId, setNewTagSiteId] = useState("site-a");
-  const [newTagCheckpointId, setNewTagCheckpointId] = useState("CP-SDR-001");
-
-  // Edit Tag form
-  const [editType, setEditType] = useState<NfcTagItem["type"]>("NFC NTAG213");
-
-  const [editCheckpointId, setEditCheckpointId] = useState("");
-
-  const [editStatus, setEditStatus] =
-    useState<NfcTagItem["status"]>("Terkoneksi Normal");
-
-  const [editEncryption, setEditEncryption] = useState<
-    NfcTagItem["encryption"]
-  >("AES-128 Enkripsi Aktif");
-
-  const [editSignalDbm, setEditSignalDbm] = useState(-60);
-
-  // --------------------------------------------------
-  // FILTER
-  // --------------------------------------------------
-
-  const filteredTags = tags.filter((tag) => {
-    if (selectedSite !== "all" && tag.siteId !== selectedSite) {
-      return false;
-    }
-
-    if (selectedTagType !== "all" && tag.type !== selectedTagType) {
-      return false;
-    }
-
-    if (selectedStatus !== "all") {
-      if (selectedStatus === "unassigned") {
-        if (
-          tag.linkedCheckpointId &&
-          tag.linkedCheckpointId !== "-" &&
-          tag.status !== "Belum Ditautkan"
-        ) {
-          return false;
-        }
-      } else if (tag.status !== selectedStatus) {
-        return false;
-      }
-    }
-
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-
-      const match =
-        tag.uid.toLowerCase().includes(query) ||
-        tag.linkedCheckpointName.toLowerCase().includes(query) ||
-        tag.linkedCheckpointId.toLowerCase().includes(query) ||
-        tag.siteName.toLowerCase().includes(query);
-
-      if (!match) return false;
-    }
-
-    return true;
-  });
-
-  const isTagAssigned = (tag: NfcTagItem) =>
-    Boolean(
-      tag.linkedCheckpointId &&
-      tag.linkedCheckpointId !== "-" &&
-      !tag.linkedCheckpointName.includes("Belum") &&
-      tag.status !== "Belum Ditautkan",
-    );
+  const [editLabel, setEditLabel] = useState("");
 
   const showToast = (message: string) => {
     setToastMessage(message);
-    setTimeout(() => setToastMessage(null), 3500);
+
+    window.setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
   };
 
-  // --------------------------------------------------
-  // REGISTER TAG
-  // --------------------------------------------------
+  const filteredTags = useMemo(() => {
+    return nfcTags.filter((tag) => {
+      const assignment = getActiveAssignment(tag);
+      const assigned = Boolean(assignment);
 
-  const handleRegisterTag = (e: React.FormEvent) => {
-    e.preventDefault();
+      if (
+        selectedSite !== "all" &&
+        selectedSite &&
+        assignment?.patrolPoint?.siteId &&
+        assignment.patrolPoint.siteId !== selectedSite
+      ) {
+        return false;
+      }
 
-    if (!isValidNfcUid(newTagUid)) {
-      alert(
-        "Format UID tidak valid! Gunakan format hex seperti 04:A2:3B:5F:8C:1D:9E",
-      );
-      return;
-    }
+      if (selectedStatus === "unassigned" && assigned) {
+        return false;
+      }
 
-    const siteObj = SITES.find((site) => site.id === newTagSiteId) || SITES[1];
-    const cpObj = checkpoints.find(
-      (checkpoint) => checkpoint.id === newTagCheckpointId,
-    );
+      if (
+        selectedStatus !== "all" &&
+        selectedStatus !== "unassigned" &&
+        tag.status !== selectedStatus
+      ) {
+        return false;
+      }
 
-    if (!cpObj) {
-      alert("Pilih titik checkpoint yang valid.");
-      return;
-    }
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
 
-    const created: NfcTagItem = {
-      uid: newTagUid.toUpperCase(),
-      type: newTagType,
-      siteId: cpObj.siteId || newTagSiteId,
-      siteName: siteObj.name.replace(/^Site [A-D] - /, ""),
-      linkedCheckpointId: cpObj.id,
-      linkedCheckpointName: cpObj.name,
-      signalDbm: -60,
-      batteryPercent: newTagType.includes("RFID") ? 95 : "Pasif",
-      encryption: "AES-128 Enkripsi Aktif",
-      installedDate: "24 Mei 2025",
-      status: "Terkoneksi Normal",
-    };
+        const checkpointName = assignment?.patrolPoint?.name ?? "";
 
-    setTagsList((prev) => [created, ...prev]);
+        const checkpointCode = assignment?.patrolPoint?.code ?? "";
 
-    setIsRegisterModalOpen(false);
+        const match =
+          tag.uid.toLowerCase().includes(query) ||
+          (tag.label ?? "").toLowerCase().includes(query) ||
+          checkpointName.toLowerCase().includes(query) ||
+          checkpointCode.toLowerCase().includes(query);
 
-    showToast(
-      `Tag ${created.uid} (${created.type}) berhasil didaftarkan dan dihubungkan ke ${cpObj.id}!`,
-    );
-  };
+        if (!match) return false;
+      }
+
+      return true;
+    });
+  }, [nfcTags, selectedSite, selectedStatus, searchQuery]);
+
+  const availableCheckpoints = useMemo(() => {
+    return checkpoints.filter((checkpoint) => {
+      if (
+        selectedSite &&
+        selectedSite !== "all" &&
+        checkpoint.siteId !== selectedSite
+      ) {
+        return false;
+      }
+
+      return checkpoint.status !== "ACTIVE";
+    });
+  }, [checkpoints, selectedSite]);
+
+  const checkpointOptions: SelectOption[] = availableCheckpoints.map(
+    (checkpoint) => ({
+      value: checkpoint.id,
+      label: `${checkpoint.code} - ${checkpoint.name}`,
+    }),
+  );
+
+  const replacementOptions: SelectOption[] = useMemo(() => {
+    return nfcTags
+      .filter((tag) => {
+        if (tag.id === replacingTag?.id) return false;
+
+        if (tag.status !== "UNASSIGNED") return false;
+
+        if (isTagAssigned(tag)) return false;
+
+        return true;
+      })
+      .map((tag) => ({
+        value: tag.id,
+        label: `${tag.uid}${tag.label ? ` - ${tag.label}` : ""}`,
+      }));
+  }, [nfcTags, replacingTag]);
 
   const generateRandomUid = () => {
-    setNewTagUid(
-      "04:" +
-        Array.from({ length: 6 }, () =>
-          Math.floor(Math.random() * 256)
-            .toString(16)
-            .toUpperCase()
-            .padStart(2, "0"),
-        ).join(":"),
-    );
+    const generatedUid = Array.from({ length: 4 }, () =>
+      Math.floor(Math.random() * 256)
+        .toString(16)
+        .toUpperCase()
+        .padStart(2, "0"),
+    ).join("");
+
+    setNewTagUid(generatedUid);
   };
 
-  // --------------------------------------------------
-  // EDIT TAG
-  // --------------------------------------------------
+  const handleRegisterTag = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setFormError("");
+
+    const normalizedUid = newTagUid.trim().toUpperCase();
+
+    if (!/^[0-9A-F]+$/.test(normalizedUid)) {
+      setFormError("UID harus berupa karakter hexadecimal.");
+      return;
+    }
+
+    if (!normalizedUid) {
+      setFormError("UID NFC wajib diisi.");
+      return;
+    }
+
+    try {
+      const created = await createNfc.mutateAsync({
+        uid: normalizedUid,
+        label: newTagLabel.trim() || undefined,
+      });
+
+      if (newTagCheckpointId && created?.id) {
+        await assignNfcMutation.mutateAsync({
+          patrolPointId: newTagCheckpointId,
+          nfcTagId: created.id,
+        });
+      }
+
+      setIsRegisterModalOpen(false);
+      setNewTagUid("");
+      setNewTagLabel("");
+      setNewTagCheckpointId("");
+      setFormError("");
+
+      await refetch();
+
+      showToast(`Tag NFC ${normalizedUid} berhasil didaftarkan.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ??
+          err?.message ??
+          "Gagal mendaftarkan tag NFC.",
+      );
+    }
+  };
 
   const handleOpenEdit = (tag: NfcTagItem) => {
     setEditingTag(tag);
-    setEditType(tag.type);
-    setEditCheckpointId(tag.linkedCheckpointId);
-    setEditStatus(tag.status);
-    setEditEncryption(tag.encryption);
-    setEditSignalDbm(tag.signalDbm);
+    setEditLabel(tag.label ?? "");
+    setFormError("");
   };
 
-  const handleSaveEditTag = (e: React.FormEvent) => {
+  const handleSaveEditTag = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!editingTag) return;
 
-    const cpObj = checkpoints.find(
-      (checkpoint) => checkpoint.id === editCheckpointId,
-    );
+    setFormError("");
 
-    const siteObj = cpObj
-      ? SITES.find((site) => site.id === cpObj.siteId)
-      : SITES[1];
+    try {
+      await updateNfc.mutateAsync({
+        id: editingTag.id,
+        payload: {
+          label: editLabel.trim() || null,
+        },
+      });
 
-    setTagsList((prev) =>
-      prev.map((tag) => {
-        if (tag.uid !== editingTag.uid) return tag;
+      const uid = editingTag.uid;
 
-        return {
-          ...tag,
-          type: editType,
-          linkedCheckpointId: cpObj ? cpObj.id : "",
-          linkedCheckpointName: cpObj
-            ? cpObj.name
-            : "Belum Ditautkan (Unassigned)",
-          siteId: cpObj ? cpObj.siteId : tag.siteId,
-          siteName: siteObj
-            ? siteObj.name.replace(/^Site [A-D] - /, "")
-            : tag.siteName,
-          status: editStatus,
-          encryption: editEncryption,
-          signalDbm: editSignalDbm,
-          batteryPercent: editType.includes("RFID")
-            ? typeof tag.batteryPercent === "number"
-              ? tag.batteryPercent
-              : 90
-            : "Pasif",
-        };
-      }),
-    );
+      setEditingTag(null);
 
-    const uid = editingTag.uid;
+      await refetch();
 
-    setEditingTag(null);
-
-    showToast(`Konfigurasi Tag NFC/RFID ${uid} berhasil diperbarui!`);
+      showToast(`Label Tag NFC ${uid} berhasil diperbarui.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ??
+          err?.message ??
+          "Gagal memperbarui tag NFC.",
+      );
+    }
   };
 
-  // --------------------------------------------------
-  // DELETE TAG
-  // --------------------------------------------------
-
-  const handleDeleteTag = () => {
+  const handleDeleteTag = async () => {
     if (!deletingTag) return;
 
-    const uid = deletingTag.uid;
+    const tag = deletingTag;
 
-    setTagsList((prev) => prev.filter((tag) => tag.uid !== uid));
+    try {
+      await deleteNfc.mutateAsync(tag.id);
 
-    setDeletingTag(null);
+      setDeletingTag(null);
 
-    showToast(`Tag ${uid} berhasil dihapus dari inventaris sistem.`);
+      await refetch();
+
+      showToast(`Tag ${tag.uid} berhasil dinonaktifkan.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ??
+          err?.message ??
+          "Gagal menonaktifkan tag NFC.",
+      );
+    }
   };
 
-  // --------------------------------------------------
-  // UNASSIGN TAG
-  // --------------------------------------------------
+  const handleActivateTag = async (tag: NfcTagItem) => {
+    try {
+      await activateNfc.mutateAsync(tag.id);
 
-  const handleConfirmUnassignTag = () => {
+      await refetch();
+
+      showToast(`Tag NFC ${tag.uid} berhasil diaktifkan.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ??
+          err?.message ??
+          "Gagal mengaktifkan NFC.",
+      );
+    }
+  };
+
+  const handleConfirmUnassignTag = async () => {
     if (!unassigningTag) return;
 
     const tag = unassigningTag;
-    const previousCpName = tag.linkedCheckpointName;
 
-    if (onUnassignTag) {
-      onUnassignTag(tag.uid);
-    } else {
-      setTagsList((prev) =>
-        prev.map((item) => {
-          if (item.uid !== tag.uid) return item;
+    const patrolPointId = getAssignmentPatrolPointId(tag);
 
-          return {
-            ...item,
-            linkedCheckpointId: "",
-            linkedCheckpointName: "Belum Ditautkan (Unassigned)",
-            status: "Belum Ditautkan",
-          };
-        }),
-      );
+    if (!patrolPointId) {
+      setFormError("Patrol point dari assignment tidak ditemukan.");
+      return;
     }
 
-    setUnassigningTag(null);
+    try {
+      await unassignNfcMutation.mutateAsync({
+        patrolPointId,
+      });
 
-    showToast(
-      `Tag NFC ${tag.uid} berhasil dilepas (unassign) dari ${previousCpName}!`,
-    );
+      setUnassigningTag(null);
+
+      await refetch();
+
+      showToast(`Tag NFC ${tag.uid} berhasil dilepas dari checkpoint.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ??
+          err?.message ??
+          "Gagal melepas tautan NFC.",
+      );
+    }
   };
 
-  // --------------------------------------------------
-  // ASSIGN TAG
-  // --------------------------------------------------
-
-  const handleConfirmAssignTag = (e: React.FormEvent) => {
+  const handleConfirmAssignTag = async (
+    e: React.FormEvent<HTMLFormElement>,
+  ) => {
     e.preventDefault();
 
     if (!assigningTag) return;
 
-    const targetCpId = selectedCheckpointToAssign || checkpoints[0]?.id || "";
-
-    const targetCp = checkpoints.find(
-      (checkpoint) => checkpoint.id === targetCpId,
-    );
-
-    if (!targetCp) {
-      alert("Pilih titik checkpoint target yang valid.");
+    if (!selectedCheckpointToAssign) {
+      setFormError("Pilih checkpoint terlebih dahulu.");
       return;
     }
 
-    if (onAssignTag) {
-      onAssignTag(assigningTag.uid, targetCp.id);
-    } else {
-      setTagsList((prev) =>
-        prev.map((tag) => {
-          if (tag.uid !== assigningTag.uid) return tag;
+    try {
+      await assignNfcMutation.mutateAsync({
+        patrolPointId: selectedCheckpointToAssign,
+        nfcTagId: assigningTag.id,
+      });
 
-          return {
-            ...tag,
-            linkedCheckpointId: targetCp.id,
-            linkedCheckpointName: targetCp.name,
-            siteId: targetCp.siteId,
-            siteName: targetCp.siteName,
-            status: "Terkoneksi Normal",
-          };
-        }),
+      const uid = assigningTag.uid;
+
+      setAssigningTag(null);
+      setSelectedCheckpointToAssign("");
+      setFormError("");
+
+      await refetch();
+
+      showToast(`Tag NFC ${uid} berhasil ditautkan.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ?? err?.message ?? "Gagal menautkan NFC.",
       );
     }
-
-    setAssigningTag(null);
-
-    showToast(
-      `Tag NFC ${assigningTag.uid} berhasil ditautkan ke ${targetCp.name}!`,
-    );
   };
 
-  // --------------------------------------------------
-  // METRICS
-  // --------------------------------------------------
+  const handleConfirmDamagedTag = async () => {
+    if (!damagingTag) return;
 
-  const linkedCount = tags.filter(isTagAssigned).length;
+    const tag = damagingTag;
 
-  const unassignedCount = tags.filter(
-    (tag) =>
-      !tag.linkedCheckpointId ||
-      tag.linkedCheckpointId === "-" ||
-      tag.status === "Belum Ditautkan",
-  ).length;
+    try {
+      await markDamagedNfc.mutateAsync(tag.id);
 
-  const siteOptions = SITES.filter((site) => site.id !== "all").map((site) => ({
-    value: site.id,
-    label: site.name,
-  }));
+      setDamagingTag(null);
 
-  const checkpointOptions = checkpoints.map((checkpoint) => ({
-    value: checkpoint.id,
-    label: `${checkpoint.id} - ${checkpoint.name} (${checkpoint.siteName})`,
-  }));
+      await refetch();
+
+      showToast(`Tag NFC ${tag.uid} berhasil ditandai sebagai rusak.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ??
+          err?.message ??
+          "Gagal menandai NFC sebagai rusak.",
+      );
+    }
+  };
+
+  const handleConfirmLostTag = async () => {
+    if (!losingTag) return;
+
+    const tag = losingTag;
+
+    try {
+      await markLostNfc.mutateAsync(tag.id);
+
+      setLosingTag(null);
+
+      await refetch();
+
+      showToast(`Tag NFC ${tag.uid} berhasil ditandai sebagai hilang.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ??
+          err?.message ??
+          "Gagal menandai NFC sebagai hilang.",
+      );
+    }
+  };
+
+  const handleConfirmReplaceTag = async () => {
+    if (!replacingTag) return;
+
+    if (!replacementNfcId) {
+      setFormError("Pilih NFC pengganti terlebih dahulu.");
+      return;
+    }
+
+    try {
+      await markReplacedNfc.mutateAsync({
+        id: replacingTag.id,
+        payload: {
+          newNfcTagId: replacementNfcId,
+        },
+      });
+
+      const oldUid = replacingTag.uid;
+
+      setReplacingTag(null);
+      setReplacementNfcId("");
+      setFormError("");
+
+      await refetch();
+
+      showToast(`Tag NFC ${oldUid} berhasil diganti.`);
+    } catch (err: any) {
+      setFormError(
+        err?.response?.data?.message ??
+          err?.message ??
+          "Gagal mengganti tag NFC.",
+      );
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-64 items-center justify-center text-xs text-slate-500">
+        Memuat data tag NFC dari server...
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="border border-rose-200 bg-rose-50 p-4 rounded">
+        <p className="text-xs font-semibold text-rose-700">
+          Gagal mengambil data NFC.
+        </p>
+
+        <p className="mt-1 text-xs text-rose-600">
+          {(error as any)?.message ?? "Terjadi kesalahan pada server."}
+        </p>
+
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-3 rounded text-xs"
+          onClick={() => refetch()}
+        >
+          <RefreshCw className="mr-1.5 size-3.5" />
+          Coba Lagi
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
       {/* TOAST */}
+
       {toastMessage && (
         <div className="flex items-center justify-between gap-3 border border-emerald-200 bg-emerald-50 p-3 rounded animate-in fade-in">
           <div className="flex items-center gap-2 text-xs font-medium text-emerald-800">
@@ -602,7 +748,6 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
         </div>
       )}
 
-      {/* HEADER */}
       <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-end">
         <div>
           <h1 className="text-xl font-medium tracking-tight text-slate-900">
@@ -616,46 +761,44 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
         </div>
 
         <Button
-          onClick={() => setIsRegisterModalOpen(true)}
-          className="rounded bg-blue-600 text-xs font-semibold hover:bg-blue-700"
+          variant="outline"
+          size="sm"
+          className="h-9 rounded"
+          disabled={isFetching}
+          onClick={() => refetch()}
         >
-          <Plus className="mr-1.5 size-4" />
-          Daftarkan Tag Baru
+          <RefreshCw
+            className={`mr-1.5 size-4 ${isFetching ? "animate-spin" : ""}`}
+          />
+          Refresh
         </Button>
       </div>
 
-      {/* FILTER */}
-      <div className="flex flex-col gap-3 border border-slate-200 bg-white p-3 rounded lg:flex-row lg:items-center">
-        <div className="relative min-w-0 flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+      <div className="flex gap-3 border border-slate-200 bg-white p-3 rounded lg:flex-row lg:items-center">
+        <InputGroup className="rounded">
+          <InputGroupAddon>
+            <Search className="size-4 text-slate-400" />
+          </InputGroupAddon>
 
-          <Input
+          <InputGroupInput
+            placeholder="Cari kode, nama, site, atau UID NFC..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari UID tag, checkpoint, site..."
-            className="h-9 rounded pl-9 text-xs"
+            onChange={(event) => setSearchQuery(event.target.value)}
           />
-        </div>
+        </InputGroup>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex">
-          <SelectField
-            value={selectedTagType}
-            onValueChange={setSelectedTagType}
-            options={[
-              { value: "all", label: "Semua Tipe Chip" },
-              ...tagTypeOptions,
-            ]}
-          />
-
+        <div className="grid gap-2 sm:grid-cols-2 lg:flex">
           <SelectField
             value={selectedStatus}
             onValueChange={setSelectedStatus}
             options={[
               { value: "all", label: "Semua Status Koneksi" },
               { value: "unassigned", label: "Belum Ditautkan" },
-              ...tagStatusOptions.filter(
-                (option) => option.value !== "Belum Ditautkan",
-              ),
+              { value: "ACTIVE", label: "Aktif" },
+              { value: "INACTIVE", label: "Nonaktif" },
+              { value: "DAMAGED", label: "Tag Rusak" },
+              { value: "LOST", label: "Tag Hilang" },
+              { value: "REPLACED", label: "Diganti" },
             ]}
           />
         </div>
@@ -665,11 +808,10 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
           <span className="font-semibold text-slate-900">
             {filteredTags.length}
           </span>{" "}
-          dari {tags.length} tag
+          dari {nfcTags.length} tag
         </div>
       </div>
 
-      {/* TABLE */}
       <div className="overflow-hidden border border-slate-200 bg-white rounded">
         <div className="overflow-x-auto">
           <Table>
@@ -687,7 +829,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
                   Status
                 </TableHead>
 
-                <TableHead className="whitespace-nowrap text-right text-[11px] font-semibold uppercase">
+                <TableHead className="whitespace-nowrap text-center text-[11px] font-semibold uppercase">
                   Aksi
                 </TableHead>
               </TableRow>
@@ -697,7 +839,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
               {filteredTags.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={4}
                     className="h-32 text-center text-xs text-slate-500"
                   >
                     Tidak ada tag yang sesuai dengan filter pencarian.
@@ -707,15 +849,27 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
                 filteredTags.map((tag) => {
                   const assigned = isTagAssigned(tag);
 
+                  const checkpointName = getAssignmentCheckpointName(tag);
+
+                  const checkpointCode = getAssignmentCheckpointCode(tag);
+
                   return (
-                    <TableRow key={tag.uid} className="text-xs">
+                    <TableRow key={tag.id} className="text-xs">
                       <TableCell>
                         <div className="flex items-center gap-2 whitespace-nowrap">
                           <Contact2 className="size-4 text-slate-400" />
 
-                          <span className="font-mono font-semibold text-blue-600">
-                            {tag.uid}
-                          </span>
+                          <div>
+                            <span className="font-mono font-semibold text-blue-600">
+                              {tag.uid}
+                            </span>
+
+                            {tag.label && (
+                              <p className="mt-0.5 text-[11px] text-slate-500">
+                                {tag.label}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
 
@@ -724,11 +878,12 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
                           <div className="min-w-40">
                             <div className="flex items-center gap-1 font-semibold text-slate-900">
                               <Radio className="size-3.5 text-blue-600" />
-                              {tag.linkedCheckpointName}
+                              {checkpointName}
                             </div>
 
                             <div className="mt-1 font-mono text-[11px] text-blue-600">
-                              {tag.linkedCheckpointId} · {tag.siteName}
+                              {checkpointCode ||
+                                getAssignmentPatrolPointId(tag)}
                             </div>
                           </div>
                         ) : (
@@ -748,26 +903,19 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
 
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 rounded px-2 text-[11px]"
-                            title="Uji Diagnostik Tag"
-                            onClick={() => setDiagnosingTag(tag)}
-                          >
-                            <Activity className="size-3.5 text-blue-600 sm:mr-1" />
-                            <span className="hidden sm:inline">Tes</span>
-                          </Button>
-
                           {assigned ? (
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-7 rounded border-amber-200 bg-amber-50 px-2 text-[11px] text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+                              className="h-7 rounded border-rose-200 bg-rose-50 px-2 text-[11px] text-rose-600 hover:bg-rose-100 hover:text-rose-800"
                               title="Lepas Hubungan Checkpoint"
-                              onClick={() => setUnassigningTag(tag)}
+                              onClick={() => {
+                                setFormError("");
+                                setUnassigningTag(tag);
+                              }}
+                              disabled={unassignNfcMutation.isPending}
                             >
-                              <Link2Off className="size-3.5 sm:mr-1" />
+                              <Unlink className="size-3.5 sm:mr-1" />
                               <span className="hidden md:inline">Lepas</span>
                             </Button>
                           ) : (
@@ -777,11 +925,13 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
                               className="h-7 rounded border-blue-200 bg-blue-50 px-2 text-[11px] text-blue-700 hover:bg-blue-100 hover:text-blue-800"
                               title="Tautkan ke Checkpoint"
                               onClick={() => {
+                                setFormError("");
                                 setAssigningTag(tag);
                                 setSelectedCheckpointToAssign(
-                                  checkpoints[0]?.id || "",
+                                  availableCheckpoints[0]?.id || "",
                                 );
                               }}
+                              disabled={availableCheckpoints.length === 0}
                             >
                               <Link2 className="size-3.5 sm:mr-1" />
                               <span className="hidden md:inline">Tautkan</span>
@@ -790,20 +940,95 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
 
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="size-7 rounded text-slate-500 hover:text-blue-600"
-                            title="Edit Konfigurasi Tag"
+                            size="sm"
+                            className="rounded border-blue-200 bg-blue-50 px-2 text-[11px] text-blue-700 hover:bg-blue-100 hover:text-blue-600"
+                            title="Edit Label Tag"
                             onClick={() => handleOpenEdit(tag)}
                           >
                             <Pencil className="size-3.5" />
+                            <span>Edit</span>
                           </Button>
+
+                          {tag.status === "INACTIVE" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="rounded 
+                              border-emerald-200 bg-emerald-50 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
+                              title="Aktifkan NFC"
+                              onClick={() => handleActivateTag(tag)}
+                              disabled={activateNfc.isPending}
+                            >
+                              <CheckCircle2 className="size-3.5" />
+                              <span>Aktifkan</span>
+                            </Button>
+                          )}
+
+                          {tag.status === "ACTIVE" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className=" rounded border-amber-200 bg-amber-50 px-2 text-[11px] text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+                              title="Tandai NFC Rusak"
+                              onClick={() => {
+                                setFormError("");
+                                setDamagingTag(tag);
+                              }}
+                              disabled={markDamagedNfc.isPending}
+                            >
+                              <AlertTriangle className="size-3.5" />
+                              <span>Rusak</span>
+                            </Button>
+                          )}
+
+                          {tag.status === "ACTIVE" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="rounded border-rose-200 bg-rose-50 px-2 text-[11px] text-rose-700 hover:bg-rose-100 hover:text-rose-800"
+                              title="Tandai NFC Hilang"
+                              onClick={() => {
+                                setFormError("");
+                                setLosingTag(tag);
+                              }}
+                              disabled={markLostNfc.isPending}
+                            >
+                              <Radio className="size-3.5" />
+                              <span>Hilang</span>
+                            </Button>
+                          )}
+
+                          {tag.status === "ACTIVE" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className=" rounded border-blue-200 bg-blue-50 px-2 text-[11px] text-blue-700 hover:bg-blue-100 hover:text-blue-800"
+                              title="Ganti NFC"
+                              onClick={() => {
+                                setFormError("");
+                                setReplacementNfcId("");
+                                setReplacingTag(tag);
+                              }}
+                              disabled={
+                                markReplacedNfc.isPending ||
+                                replacementOptions.length === 0
+                              }
+                            >
+                              <RefreshCw className="size-3.5" />
+                              <span>Ganti</span>
+                            </Button>
+                          )}
 
                           <Button
                             variant="ghost"
                             size="icon"
                             className="size-7 rounded text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                            title="Hapus Tag"
-                            onClick={() => setDeletingTag(tag)}
+                            title="Nonaktifkan Tag"
+                            onClick={() => {
+                              setFormError("");
+                              setDeletingTag(tag);
+                            }}
+                            disabled={assigned || deleteNfc.isPending}
                           >
                             <Trash2 className="size-3.5" />
                           </Button>
@@ -818,575 +1043,61 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({
         </div>
       </div>
 
-      {/* -------------------------------------------------- */}
-      {/* DIALOG: UNASSIGN TAG */}
-      {/* -------------------------------------------------- */}
-
-      <Dialog
-        open={Boolean(unassigningTag)}
-        onOpenChange={(open) => {
-          if (!open) setUnassigningTag(null);
-        }}
-      >
-        <DialogContent className="max-w-md rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Link2Off className="size-4 text-amber-600" />
-              Lepas Hubungan Checkpoint
-            </DialogTitle>
-
-            <DialogDescription className="text-xs">
-              Konfirmasi pelepasan hubungan tag NFC dari checkpoint.
-            </DialogDescription>
-          </DialogHeader>
-
-          {unassigningTag && (
-            <div className="space-y-4">
-              <p className="text-xs text-slate-600">
-                Apakah Anda yakin ingin melepas hubungan checkpoint dari Tag NFC
-                berikut?
-              </p>
-
-              <InfoPanel>
-                <InfoRow
-                  label="UID Tag Hardware"
-                  value={
-                    <span className="font-mono text-blue-600">
-                      {unassigningTag.uid}
-                    </span>
-                  }
-                />
-
-                <InfoRow label="Tipe Chip" value={unassigningTag.type} />
-
-                <div className="border-t border-slate-200 pt-2">
-                  <InfoRow
-                    label="Checkpoint Terhubung"
-                    value={unassigningTag.linkedCheckpointName}
-                  />
-
-                  <div className="mt-1 text-right font-mono text-[11px] text-blue-600">
-                    {unassigningTag.linkedCheckpointId}
-                  </div>
-                </div>
-              </InfoPanel>
-
-              <div className="border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800 rounded">
-                <div className="mb-1 flex items-center gap-1.5 font-semibold">
-                  <AlertTriangle className="size-3.5" />
-                  Catatan Sistem
-                </div>
-                Setelah dilepas, status tag menjadi Belum Ditautkan dan
-                checkpoint tidak memiliki tag aktif hingga ditautkan kembali.
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="rounded text-xs"
-              onClick={() => setUnassigningTag(null)}
-            >
-              Batal
-            </Button>
-
-            <Button
-              className="rounded bg-amber-600 text-xs hover:bg-amber-700"
-              onClick={handleConfirmUnassignTag}
-            >
-              <Link2Off className="mr-1.5 size-3.5" />
-              Lepas Checkpoint
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* -------------------------------------------------- */}
-      {/* DIALOG: ASSIGN TAG */}
-      {/* -------------------------------------------------- */}
-
-      <Dialog
-        open={Boolean(assigningTag)}
-        onOpenChange={(open) => {
-          if (!open) setAssigningTag(null);
-        }}
-      >
-        <DialogContent className="max-w-md rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Link2 className="size-4 text-blue-600" />
-              Tautkan Tag ke Checkpoint
-            </DialogTitle>
-
-            <DialogDescription className="text-xs">
-              Pilih checkpoint tujuan untuk tag NFC/RFID ini.
-            </DialogDescription>
-          </DialogHeader>
-
-          {assigningTag && (
-            <form onSubmit={handleConfirmAssignTag} className="space-y-4">
-              <InfoPanel>
-                <p className="text-[11px] text-slate-500">Tag NFC Terpilih</p>
-
-                <p className="font-mono text-sm font-bold text-blue-600">
-                  {assigningTag.uid}
-                </p>
-
-                <p className="text-[11px] text-slate-600">
-                  {assigningTag.type} · {assigningTag.encryption}
-                </p>
-              </InfoPanel>
-
-              <SelectField
-                label="Titik Checkpoint Patroli"
-                value={selectedCheckpointToAssign}
-                onValueChange={setSelectedCheckpointToAssign}
-                options={checkpointOptions}
-                placeholder="Pilih checkpoint"
-              />
-
-              {checkpoints.length === 0 && (
-                <p className="text-xs text-rose-600">
-                  Belum ada checkpoint yang tersedia.
-                </p>
-              )}
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded text-xs"
-                  onClick={() => setAssigningTag(null)}
-                >
-                  Batal
-                </Button>
-
-                <Button
-                  type="submit"
-                  disabled={
-                    !selectedCheckpointToAssign || checkpoints.length === 0
-                  }
-                  className="rounded bg-blue-600 text-xs hover:bg-blue-700"
-                >
-                  <Link2 className="mr-1.5 size-3.5" />
-                  Tautkan Checkpoint
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* -------------------------------------------------- */}
-      {/* DIALOG: DIAGNOSTIC */}
-      {/* -------------------------------------------------- */}
-
-      <Dialog
-        open={Boolean(diagnosingTag)}
-        onOpenChange={(open) => {
-          if (!open) setDiagnosingTag(null);
-        }}
-      >
-        <DialogContent className="max-w-md rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Settings2 className="size-4 text-blue-600" />
-              Diagnostik Tag NFC / RFID
-            </DialogTitle>
-
-            <DialogDescription className="text-xs">
-              Informasi hasil pemeriksaan kondisi tag.
-            </DialogDescription>
-          </DialogHeader>
-
-          {diagnosingTag && (
-            <div className="space-y-4">
-              <InfoPanel>
-                <InfoRow
-                  label="UID Hardware"
-                  value={<span className="font-mono">{diagnosingTag.uid}</span>}
-                />
-
-                <InfoRow label="Tipe Chip" value={diagnosingTag.type} />
-
-                <InfoRow
-                  label="Checkpoint Terkait"
-                  value={diagnosingTag.linkedCheckpointName}
-                />
-
-                <InfoRow
-                  label="Sinyal Terukur"
-                  value={
-                    <span className="font-mono font-semibold text-emerald-600">
-                      {diagnosingTag.signalDbm} dBm (Stabil)
-                    </span>
-                  }
-                />
-
-                <InfoRow
-                  label="Integritas Kriptografi"
-                  value={
-                    <span className="font-semibold text-emerald-700">
-                      PASS (Checksum Cocok)
-                    </span>
-                  }
-                />
-              </InfoPanel>
-
-              <div className="flex items-start gap-2 border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-800 rounded">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0" />
-                Chip beroperasi normal tanpa tanda kerusakan fisik atau kloning
-                ilegal.
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              className="rounded bg-blue-600 text-xs hover:bg-blue-700"
-              onClick={() => setDiagnosingTag(null)}
-            >
-              Tutup Diagnostik
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* -------------------------------------------------- */}
-      {/* DIALOG: EDIT TAG */}
-      {/* -------------------------------------------------- */}
-
-      <Dialog
-        open={Boolean(editingTag)}
-        onOpenChange={(open) => {
-          if (!open) setEditingTag(null);
-        }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Pencil className="size-4 text-blue-600" />
-              Edit Konfigurasi Tag NFC/RFID
-            </DialogTitle>
-
-            <DialogDescription className="text-xs">
-              Perbarui konfigurasi perangkat dan hubungan checkpoint.
-            </DialogDescription>
-          </DialogHeader>
-
-          {editingTag && (
-            <form onSubmit={handleSaveEditTag} className="space-y-4">
-              <Field label="UID Tag Fisik (Read-Only)">
-                <Input
-                  disabled
-                  value={editingTag.uid}
-                  className="rounded bg-slate-100 font-mono text-xs"
-                />
-              </Field>
-
-              <SelectField
-                label="Tipe Chip Hardware"
-                value={editType}
-                onValueChange={(value) =>
-                  setEditType(value as NfcTagItem["type"])
-                }
-                options={tagTypeOptions}
-              />
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs font-semibold text-slate-700">
-                    Titik Checkpoint Terhubung
-                  </Label>
-
-                  {editCheckpointId && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 rounded px-2 text-[11px] text-amber-700 hover:text-amber-800"
-                      onClick={() => setEditCheckpointId("")}
-                    >
-                      <Link2Off className="mr-1 size-3" />
-                      Unassign
-                    </Button>
-                  )}
-                </div>
-
-                <Select
-                  value={editCheckpointId || "__none__"}
-                  onValueChange={(value) => setEditCheckpointId(value ?? "")}
-                >
-                  <SelectTrigger className="w-full rounded text-xs">
-                    <SelectValue placeholder="Pilih checkpoint" />
-                  </SelectTrigger>
-
-                  <SelectContent className="rounded">
-                    <SelectItem value="__none__" className="text-xs">
-                      Belum Ditautkan (Unassigned)
-                    </SelectItem>
-
-                    {checkpointOptions.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        value={option.value}
-                        className="text-xs"
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <SelectField
-                  label="Status Koneksi"
-                  value={editStatus}
-                  onValueChange={(value) =>
-                    setEditStatus(value as NfcTagItem["status"])
-                  }
-                  options={tagStatusOptions}
-                />
-
-                <Field label="Sinyal (dBm)">
-                  <Input
-                    type="number"
-                    value={editSignalDbm}
-                    onChange={(e) =>
-                      setEditSignalDbm(parseInt(e.target.value, 10) || -60)
-                    }
-                    className="rounded font-mono text-xs"
-                  />
-                </Field>
-              </div>
-
-              <SelectField
-                label="Protokol Keamanan Enkripsi"
-                value={editEncryption}
-                onValueChange={(value) =>
-                  setEditEncryption(value as NfcTagItem["encryption"])
-                }
-                options={encryptionOptions}
-              />
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded text-xs"
-                  onClick={() => setEditingTag(null)}
-                >
-                  Batal
-                </Button>
-
-                <Button
-                  type="submit"
-                  className="rounded bg-blue-600 text-xs hover:bg-blue-700"
-                >
-                  Simpan Perubahan
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* -------------------------------------------------- */}
-      {/* ALERT DIALOG: DELETE */}
-      {/* -------------------------------------------------- */}
-
-      <AlertDialog
-        open={Boolean(deletingTag)}
-        onOpenChange={(open) => {
-          if (!open) setDeletingTag(null);
-        }}
-      >
-        <AlertDialogContent className="max-w-md rounded">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-sm">
-              <AlertTriangle className="size-4 text-rose-600" />
-              Hapus Tag NFC/RFID
-            </AlertDialogTitle>
-
-            <AlertDialogDescription className="text-xs">
-              Apakah Anda yakin ingin menghapus tag fisik berikut dari
-              inventaris sistem?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {deletingTag && (
-            <div className="space-y-3">
-              <InfoPanel>
-                <p className="font-mono text-sm font-bold text-blue-600">
-                  {deletingTag.uid}
-                </p>
-
-                <p className="text-xs font-semibold text-slate-900">
-                  {deletingTag.type}
-                </p>
-
-                <p className="text-[11px] text-slate-500">
-                  Terpasang di:{" "}
-                  <span className="font-semibold text-slate-800">
-                    {deletingTag.linkedCheckpointName}
-                  </span>{" "}
-                  ({deletingTag.siteName})
-                </p>
-              </InfoPanel>
-
-              <div className="border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800 rounded">
-                <strong>Peringatan:</strong> Menghapus tag akan memutus
-                verifikasi patroli otomatis di checkpoint terkait sampai tag
-                pengganti didaftarkan.
-              </div>
-            </div>
-          )}
-
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded text-xs">
-              Batal
-            </AlertDialogCancel>
-
-            <AlertDialogAction
-              onClick={handleDeleteTag}
-              className="rounded bg-rose-600 text-xs hover:bg-rose-700"
-            >
-              <Trash2 className="mr-1.5 size-3.5" />
-              Hapus Tag Permanen
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* -------------------------------------------------- */}
-      {/* DIALOG: REGISTER TAG */}
-      {/* -------------------------------------------------- */}
-
-      <Dialog open={isRegisterModalOpen} onOpenChange={setIsRegisterModalOpen}>
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Plus className="size-4 text-blue-600" />
-              Daftarkan Tag NFC / RFID Baru
-            </DialogTitle>
-
-            <DialogDescription className="text-xs">
-              Masukkan UID perangkat dan tentukan checkpoint tujuan.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleRegisterTag} className="space-y-4">
-            <Field label="UID Tag Hardware">
-              <div className="flex gap-2">
-                <Input
-                  required
-                  value={newTagUid}
-                  onChange={(e) => setNewTagUid(e.target.value)}
-                  placeholder="04:A2:3B:5F:8C:1D:9E"
-                  className="rounded font-mono text-xs"
-                />
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="shrink-0 rounded text-xs"
-                  onClick={generateRandomUid}
-                >
-                  <RefreshCw className="mr-1.5 size-3.5" />
-                  Generate
-                </Button>
-              </div>
-
-              <p className="text-[11px] text-slate-500">
-                Gunakan UID hexadecimal dengan format 7-byte.
-              </p>
-            </Field>
-
-            <SelectField
-              label="Tipe Chip / Frekuensi"
-              value={newTagType}
-              onValueChange={(value) =>
-                setNewTagType(value as NfcTagItem["type"])
-              }
-              options={[
-                {
-                  value: "NFC NTAG213",
-                  label: "NFC NTAG213 (13.56 MHz - Standard)",
-                },
-                {
-                  value: "NTAG215",
-                  label: "NTAG215 (High Memory 504 Bytes)",
-                },
-                {
-                  value: "RFID UHF 860MHz",
-                  label: "RFID UHF 860MHz (Long Range 5-10m)",
-                },
-                {
-                  value: "Mifare Classic 1K",
-                  label: "Mifare Classic 1K (S50 Compatible)",
-                },
-              ]}
-            />
-
-            <SelectField
-              label="Site / Wilayah"
-              value={newTagSiteId}
-              onValueChange={setNewTagSiteId}
-              options={siteOptions}
-            />
-
-            <SelectField
-              label="Hubungkan ke Checkpoint"
-              value={newTagCheckpointId}
-              onValueChange={setNewTagCheckpointId}
-              options={checkpointOptions}
-              placeholder="Pilih checkpoint"
-            />
-
-            {checkpoints.length === 0 && (
-              <p className="text-xs text-rose-600">
-                Belum ada checkpoint. Tambahkan checkpoint terlebih dahulu.
-              </p>
-            )}
-
-            <InfoPanel>
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                <ShieldCheck className="size-4 text-blue-600" />
-                Keamanan Perangkat
-              </div>
-
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500">Protokol enkripsi</span>
-                <span className="font-semibold text-emerald-700">
-                  AES-128 Aktif
-                </span>
-              </div>
-            </InfoPanel>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded text-xs"
-                onClick={() => setIsRegisterModalOpen(false)}
-              >
-                Batal
-              </Button>
-
-              <Button
-                type="submit"
-                disabled={checkpoints.length === 0}
-                className="rounded bg-blue-600 text-xs hover:bg-blue-700"
-              >
-                <Plus className="mr-1.5 size-3.5" />
-                Daftarkan & Kunci AES
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <TagNfcDialogs
+        diagnosingTag={diagnosingTag}
+        editingTag={editingTag}
+        deletingTag={deletingTag}
+        unassigningTag={unassigningTag}
+        assigningTag={assigningTag}
+        damagingTag={damagingTag}
+        losingTag={losingTag}
+        replacingTag={replacingTag}
+        isRegisterModalOpen={isRegisterModalOpen}
+        newTagUid={newTagUid}
+        newTagLabel={newTagLabel}
+        newTagCheckpointId={newTagCheckpointId}
+        editLabel={editLabel}
+        formError={formError}
+        selectedCheckpointToAssign={selectedCheckpointToAssign}
+        replacementNfcId={replacementNfcId}
+        checkpointOptions={checkpointOptions}
+        replacementOptions={replacementOptions}
+        availableCheckpointsCount={availableCheckpoints.length}
+        createPending={createNfc.isPending}
+        assignPending={assignNfcMutation.isPending}
+        unassignPending={unassignNfcMutation.isPending}
+        updatePending={updateNfc.isPending}
+        deletePending={deleteNfc.isPending}
+        activatePending={activateNfc.isPending}
+        damagedPending={markDamagedNfc.isPending}
+        lostPending={markLostNfc.isPending}
+        replacePending={markReplacedNfc.isPending}
+        setDiagnosingTag={setDiagnosingTag}
+        setEditingTag={setEditingTag}
+        setDeletingTag={setDeletingTag}
+        setUnassigningTag={setUnassigningTag}
+        setAssigningTag={setAssigningTag}
+        setDamagingTag={setDamagingTag}
+        setLosingTag={setLosingTag}
+        setReplacingTag={setReplacingTag}
+        setIsRegisterModalOpen={setIsRegisterModalOpen}
+        setNewTagUid={setNewTagUid}
+        setNewTagLabel={setNewTagLabel}
+        setNewTagCheckpointId={setNewTagCheckpointId}
+        setEditLabel={setEditLabel}
+        setFormError={setFormError}
+        setSelectedCheckpointToAssign={setSelectedCheckpointToAssign}
+        setReplacementNfcId={setReplacementNfcId}
+        onRegister={handleRegisterTag}
+        onEdit={handleSaveEditTag}
+        onDelete={handleDeleteTag}
+        onAssign={handleConfirmAssignTag}
+        onUnassign={handleConfirmUnassignTag}
+        onDamaged={handleConfirmDamagedTag}
+        onLost={handleConfirmLostTag}
+        onReplace={handleConfirmReplaceTag}
+        onGenerateUid={generateRandomUid}
+      />
     </div>
   );
 };

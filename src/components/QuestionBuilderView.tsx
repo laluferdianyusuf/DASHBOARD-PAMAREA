@@ -1,10 +1,22 @@
-import React, { useState } from "react";
-import { CHECKPOINTS, INITIAL_PATROL_QUESTIONS } from "../data/mockData";
+import React, { useMemo, useState } from "react";
+
 import {
-  PatrolQuestionItem,
-  reorderPatrolQuestions,
-  validatePatrolQuestion,
-} from "../utils/security-logic";
+  useActivateQuestion,
+  useCreateQuestion,
+  useCreateQuestionOption,
+  useDeactivateQuestion,
+  useQuestions,
+  useUpdateQuestion,
+  useUpdateQuestionOption,
+} from "../hooks/question/useQuestions";
+
+import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
+
+import type {
+  Question as BackendQuestion,
+  CreateQuestionPayload,
+  PointQuestion as PointQuestionItem,
+} from "../types";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,143 +61,182 @@ import {
 
 import {
   AlertTriangle,
-  ArrowDown,
-  ArrowUp,
   Camera,
   CheckCircle2,
   Copy,
   Info,
+  Link2,
+  Link2Off,
+  Loader2,
+  MapPin,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
+  Settings2,
   Trash2,
   X,
 } from "lucide-react";
+import {
+  useAssignQuestion,
+  usePointQuestions,
+  useUnassignQuestion,
+} from "../hooks/point-questions/usePointQuestions";
 
-const CATEGORIES = [
-  "K3 & Proteksi Kebakaran",
-  "Akses & Pintu Darurat",
-  "Utilitas, Panel & Genset",
-  "Perimeter & Pagar Pengaman",
-  "Logistik & Area Dermaga",
-  "Peralatan & Aset Vital",
-];
+type BackendQuestionType = "YES_NO" | "SINGLE_CHOICE" | "TEXT";
+
+interface PatrolPointItem {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+}
+
+interface OptionForm {
+  id?: string;
+  label: string;
+  isSafe: boolean;
+}
+
+interface QuestionFormProps {
+  formText: string;
+  setFormText: (value: string) => void;
+
+  formInputType: BackendQuestionType;
+  setFormInputType: (value: BackendQuestionType) => void;
+
+  formOptions: OptionForm[];
+  setFormOptions: (value: OptionForm[]) => void;
+
+  newOptionInput: string;
+  setNewOptionInput: (value: string) => void;
+
+  formRequired: boolean;
+  setFormRequired: (value: boolean) => void;
+
+  formRequirePhoto: boolean;
+  setFormRequirePhoto: (value: boolean) => void;
+
+  formError: string | null;
+}
 
 const INPUT_TYPES = [
-  { value: "boolean", label: "Ya / Tidak" },
-  { value: "multiple_choice", label: "Pilihan Ganda" },
-  { value: "numeric", label: "Angka / Nilai Meteran" },
-  { value: "rating", label: "Rating 1–5" },
-  { value: "text", label: "Catatan Teks" },
-];
+  {
+    value: "YES_NO",
+    label: "Ya / Tidak",
+  },
+  {
+    value: "SINGLE_CHOICE",
+    label: "Pilihan Ganda",
+  },
+  {
+    value: "TEXT",
+    label: "Catatan Teks",
+  },
+] as const;
 
-const SEVERITIES = [
-  { value: "Kritis", label: "Kritis" },
-  { value: "Tinggi", label: "Tinggi" },
-  { value: "Sedang", label: "Sedang" },
-  { value: "Rendah", label: "Rendah" },
+const DEFAULT_OPTIONS: OptionForm[] = [
+  {
+    label: "Kondisi Normal / Baik",
+    isSafe: true,
+  },
+  {
+    label: "Ada Kerusakan / Kendala",
+    isSafe: false,
+  },
 ];
-
-const DEFAULT_OPTIONS = ["Kondisi Normal / Baik", "Ada Kerusakan / Kendala"];
 
 const getInputTypeLabel = (type: string) => {
-  return INPUT_TYPES.find((item) => item.value === type)?.label || type;
+  return INPUT_TYPES.find((item) => item.value === type)?.label ?? type;
 };
 
 const getInputTypeVariant = (type: string) => {
   switch (type) {
-    case "boolean":
+    case "YES_NO":
       return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    case "numeric":
-      return "bg-purple-50 text-purple-700 border-purple-200";
-    case "multiple_choice":
+
+    case "SINGLE_CHOICE":
       return "bg-amber-50 text-amber-700 border-amber-200";
-    case "rating":
-      return "bg-cyan-50 text-cyan-700 border-cyan-200";
+
+    case "TEXT":
+      return "bg-slate-100 text-slate-700 border-slate-200";
+
     default:
       return "bg-slate-100 text-slate-700 border-slate-200";
   }
 };
 
-interface QuestionFormProps {
-  categories: string[];
-  formCategory: string;
-  setFormCategory: (value: string) => void;
-  formText: string;
-  setFormText: (value: string) => void;
-  formDesc: string;
-  setFormDesc: (value: string) => void;
-  formInputType: PatrolQuestionItem["inputType"];
-  setFormInputType: (value: PatrolQuestionItem["inputType"]) => void;
-  formOptions: string[];
-  setFormOptions: (value: string[]) => void;
-  newOptionInput: string;
-  setNewOptionInput: (value: string) => void;
-  formUnit: string;
-  setFormUnit: (value: string) => void;
-  formMinVal: number;
-  setFormMinVal: (value: number) => void;
-  formMaxVal: number;
-  setFormMaxVal: (value: number) => void;
-  formRequired: boolean;
-  setFormRequired: (value: boolean) => void;
-  formRequirePhoto: boolean;
-  setFormRequirePhoto: (value: boolean) => void;
-  formAutoFinding: boolean;
-  setFormAutoFinding: (value: boolean) => void;
-  formSeverity: PatrolQuestionItem["findingSeverity"];
-  setFormSeverity: (value: PatrolQuestionItem["findingSeverity"]) => void;
-  formAssignedCp: string[];
-  setFormAssignedCp: (value: string[]) => void;
-  formError: string | null;
-  setFormError: (value: string | null) => void;
-}
+const getStatusLabel = (status: string) => {
+  return status === "ACTIVE" ? "Aktif" : "Nonaktif";
+};
+
+const getPhotoLabel = (photoRequirement: string) => {
+  return photoRequirement === "REQUIRED" ? "Wajib Foto" : "Foto Opsional";
+};
+
+const getErrorMessage = (error: unknown): string => {
+  const err = error as {
+    response?: {
+      data?: {
+        message?: string | string[];
+      };
+    };
+    message?: string;
+  };
+
+  const message = err?.response?.data?.message;
+
+  if (Array.isArray(message)) {
+    return message.join(", ");
+  }
+
+  return message || err?.message || "Terjadi kesalahan.";
+};
 
 const QuestionFormFields: React.FC<QuestionFormProps> = ({
-  categories,
-  formCategory,
-  setFormCategory,
   formText,
   setFormText,
-  formDesc,
-  setFormDesc,
   formInputType,
   setFormInputType,
   formOptions,
   setFormOptions,
   newOptionInput,
   setNewOptionInput,
-  formUnit,
-  setFormUnit,
-  formMinVal,
-  setFormMinVal,
-  formMaxVal,
-  setFormMaxVal,
   formRequired,
   setFormRequired,
   formRequirePhoto,
   setFormRequirePhoto,
-  formAutoFinding,
-  setFormAutoFinding,
-  formSeverity,
-  setFormSeverity,
-  formAssignedCp,
-  setFormAssignedCp,
   formError,
-  setFormError,
 }) => {
   const handleAddOption = () => {
-    if (!newOptionInput.trim()) return;
+    const label = newOptionInput.trim();
 
-    setFormOptions([...formOptions, newOptionInput.trim()]);
+    if (!label) return;
+
+    const duplicate = formOptions.some(
+      (option) => option.label.trim().toLowerCase() === label.toLowerCase(),
+    );
+
+    if (duplicate) return;
+
+    setFormOptions([
+      ...formOptions,
+      {
+        label,
+        isSafe: false,
+      },
+    ]);
+
     setNewOptionInput("");
   };
 
   const handleRemoveOption = (index: number) => {
-    if (formOptions.length <= 2) {
-      setFormError("Minimal harus ada 2 opsi pilihan.");
-      return;
-    }
+    if (formOptions.length <= 2) return;
+
+    const option = formOptions[index];
+
+    // Opsi yang sudah tersimpan tidak dihapus karena belum ada hook remove.
+    if (option.id) return;
 
     setFormOptions(formOptions.filter((_, i) => i !== index));
   };
@@ -193,132 +244,148 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
   return (
     <div className="space-y-5">
       {formError && (
-        <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 rounded">
+        <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>{formError}</span>
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2 md:col-span-2">
-          <Label>Kategori Pemeriksaan *</Label>
-          <Select
-            value={formCategory}
-            onValueChange={(value) => setFormCategory(value as string)}
-          >
-            <SelectTrigger className="rounded">
-              <SelectValue placeholder="Pilih kategori" />
-            </SelectTrigger>
-            <SelectContent>
-              {categories.map((category) => (
-                <SelectItem key={category} value={category}>
-                  {category}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="space-y-2">
+        <Label>Teks Pertanyaan *</Label>
 
-        <div className="space-y-2 md:col-span-2">
-          <Label>Teks Pertanyaan *</Label>
-          <Input
-            className="rounded"
-            required
-            placeholder="Contoh: Apakah jalur evakuasi bebas dari halangan?"
-            value={formText}
-            onChange={(e) => setFormText(e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2 md:col-span-2">
-          <Label>Petunjuk Pemeriksaan / SOP</Label>
-          <Textarea
-            className="rounded"
-            rows={3}
-            placeholder="Instruksi detail untuk petugas saat melakukan pemeriksaan..."
-            value={formDesc}
-            onChange={(e) => setFormDesc(e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label>Tipe Input Jawaban *</Label>
-          <Select
-            value={formInputType}
-            onValueChange={(value) =>
-              setFormInputType(value as PatrolQuestionItem["inputType"])
-            }
-          >
-            <SelectTrigger className="rounded">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="boolean">Ya / Tidak</SelectItem>
-              <SelectItem value="multiple_choice">Pilihan Ganda</SelectItem>
-              <SelectItem value="numeric">Angka / Nilai Meteran</SelectItem>
-              <SelectItem value="rating">Rating 1–5</SelectItem>
-              <SelectItem value="text">Catatan Teks</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label>Tingkat Keparahan Temuan</Label>
-          <Select
-            value={formSeverity}
-            onValueChange={(value) =>
-              setFormSeverity(value as PatrolQuestionItem["findingSeverity"])
-            }
-          >
-            <SelectTrigger className="rounded">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SEVERITIES.map((severity) => (
-                <SelectItem key={severity.value} value={severity.value}>
-                  {severity.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Textarea
+          className="rounded"
+          rows={3}
+          placeholder="Contoh: Apakah seluruh pekerja menggunakan APD sesuai ketentuan?"
+          value={formText}
+          onChange={(e) => setFormText(e.target.value)}
+        />
       </div>
 
-      {formInputType === "multiple_choice" && (
-        <div className="space-y-3 border border-slate-200 p-4 rounded">
+      <div className="space-y-2">
+        <Label>Tipe Input Jawaban *</Label>
+
+        <Select
+          value={formInputType}
+          onValueChange={(value) =>
+            setFormInputType(value as BackendQuestionType)
+          }
+        >
+          <SelectTrigger className="rounded">
+            <SelectValue placeholder="Pilih tipe pertanyaan" />
+          </SelectTrigger>
+
+          <SelectContent>
+            {INPUT_TYPES.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* YES NO OPTIONS */}
+
+      {formInputType === "YES_NO" && (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-semibold text-emerald-800">
+            Pilihan otomatis
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge className="rounded bg-white text-emerald-700 hover:bg-white">
+              Ya
+            </Badge>
+
+            <Badge className="rounded bg-white text-rose-700 hover:bg-white">
+              Tidak
+            </Badge>
+          </div>
+
+          <p className="mt-2 text-xs text-emerald-700">
+            Opsi Ya dan Tidak dibuat otomatis oleh backend.
+          </p>
+        </div>
+      )}
+
+      {/* SINGLE CHOICE OPTIONS */}
+
+      {formInputType === "SINGLE_CHOICE" && (
+        <div className="space-y-3 rounded border border-slate-200 p-4">
           <div>
             <p className="text-sm font-semibold text-slate-900">
               Pilihan Jawaban
             </p>
+
             <p className="text-xs text-slate-500">
               Minimal harus tersedia dua pilihan.
             </p>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             {formOptions.map((option, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <span className="w-6 text-center text-xs text-slate-400">
-                  {index + 1}.
-                </span>
-                <Input
-                  className="rounded"
-                  value={option}
-                  onChange={(e) => {
-                    const updated = [...formOptions];
-                    updated[index] = e.target.value;
-                    setFormOptions(updated);
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="rounded text-rose-600"
-                  onClick={() => handleRemoveOption(index)}
-                >
-                  <X className="size-4" />
-                </Button>
+              <div
+                key={option.id ?? `new-${index}`}
+                className="space-y-2 rounded border border-slate-100 p-3"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-6 text-center text-xs text-slate-400">
+                    {index + 1}.
+                  </span>
+
+                  <Input
+                    className="rounded"
+                    value={option.label}
+                    onChange={(e) => {
+                      const updated = [...formOptions];
+
+                      updated[index] = {
+                        ...updated[index],
+                        label: e.target.value,
+                      };
+
+                      setFormOptions(updated);
+                    }}
+                  />
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="rounded text-rose-600"
+                    disabled={Boolean(option.id) || formOptions.length <= 2}
+                    title={
+                      option.id
+                        ? "Opsi tersimpan belum dapat dihapus"
+                        : "Hapus opsi"
+                    }
+                    onClick={() => handleRemoveOption(index)}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </div>
+
+                <label className="flex cursor-pointer items-center gap-2 pl-8">
+                  <Checkbox
+                    className="rounded"
+                    checked={option.isSafe}
+                    onCheckedChange={(checked) => {
+                      const updated = [...formOptions];
+
+                      updated[index] = {
+                        ...updated[index],
+                        isSafe: checked === true,
+                      };
+
+                      setFormOptions(updated);
+                    }}
+                  />
+
+                  <span className="text-xs text-slate-600">
+                    Jawaban ini menunjukkan kondisi aman
+                  </span>
+                </label>
               </div>
             ))}
           </div>
@@ -336,6 +403,7 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
                 }
               }}
             />
+
             <Button
               type="button"
               variant="outline"
@@ -349,164 +417,59 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
         </div>
       )}
 
-      {formInputType === "numeric" && (
-        <div className="space-y-3 border border-slate-200 p-4 rounded">
-          <p className="text-sm font-semibold text-slate-900">
-            Pengaturan Nilai
-          </p>
+      {/* SETTINGS */}
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-2">
-              <Label>Satuan</Label>
-              <Input
-                className="rounded"
-                placeholder="°C"
-                value={formUnit}
-                onChange={(e) => setFormUnit(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Minimum</Label>
-              <Input
-                className="rounded"
-                type="number"
-                value={formMinVal}
-                onChange={(e) => setFormMinVal(Number(e.target.value))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Maksimum</Label>
-              <Input
-                className="rounded"
-                type="number"
-                value={formMaxVal}
-                onChange={(e) => setFormMaxVal(Number(e.target.value))}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-3 border border-slate-200 p-4 rounded">
+      <div className="space-y-3 rounded border border-slate-200 p-4">
         <p className="text-sm font-semibold text-slate-900">
           Pengaturan Pertanyaan
         </p>
 
-        <div className="space-y-3">
-          <label className="flex cursor-pointer items-start gap-3">
-            <Checkbox
-              className="rounded"
-              checked={formRequired}
-              onCheckedChange={(checked) => setFormRequired(checked === true)}
-            />
-            <span>
-              <span className="block text-sm font-medium text-slate-800">
-                Wajib Diisi
-              </span>
-              <span className="block text-xs text-slate-500">
-                Petugas harus mengisi pertanyaan ini.
-              </span>
-            </span>
-          </label>
+        <label className="flex cursor-pointer items-start gap-3">
+          <Checkbox
+            className="rounded"
+            checked={formRequired}
+            onCheckedChange={(checked) => setFormRequired(checked === true)}
+          />
 
-          <label className="flex cursor-pointer items-start gap-3">
-            <Checkbox
-              className="rounded"
-              checked={formRequirePhoto}
-              onCheckedChange={(checked) =>
-                setFormRequirePhoto(checked === true)
-              }
-            />
-            <span>
-              <span className="block text-sm font-medium text-slate-800">
-                Wajib Lampirkan Foto
-              </span>
-              <span className="block text-xs text-slate-500">
-                Petugas wajib melampirkan bukti foto lapangan.
-              </span>
+          <span>
+            <span className="block text-sm font-medium text-slate-800">
+              Wajib Diisi
             </span>
-          </label>
 
-          <label className="flex cursor-pointer items-start gap-3">
-            <Checkbox
-              className="rounded"
-              checked={formAutoFinding}
-              onCheckedChange={(checked) =>
-                setFormAutoFinding(checked === true)
-              }
-            />
-            <span>
-              <span className="block text-sm font-medium text-slate-800">
-                Otomatis Membuat Temuan
-              </span>
-              <span className="block text-xs text-slate-500">
-                Buat tiket temuan saat jawaban menunjukkan anomali.
-              </span>
+            <span className="block text-xs text-slate-500">
+              Petugas harus mengisi pertanyaan ini.
             </span>
-          </label>
-        </div>
+          </span>
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-3">
+          <Checkbox
+            className="rounded"
+            checked={formRequirePhoto}
+            onCheckedChange={(checked) => setFormRequirePhoto(checked === true)}
+          />
+
+          <span>
+            <span className="block text-sm font-medium text-slate-800">
+              Wajib Lampirkan Foto
+            </span>
+
+            <span className="block text-xs text-slate-500">
+              Petugas wajib melampirkan bukti foto lapangan.
+            </span>
+          </span>
+        </label>
       </div>
 
-      <div className="space-y-3">
-        <div>
-          <Label>Alokasi Checkpoint</Label>
-          <p className="mt-1 text-xs text-slate-500">
-            Tentukan titik patroli yang menggunakan pertanyaan ini.
+      <div className="rounded border border-blue-100 bg-blue-50 p-3">
+        <div className="flex items-start gap-2">
+          <Info className="mt-0.5 size-4 shrink-0 text-blue-600" />
+
+          <p className="text-xs leading-relaxed text-blue-700">
+            Pertanyaan baru mengikuti konfigurasi alokasi Patrol Point pada
+            backend. Pengaturan kategori, severity, dan auto finding belum
+            tersedia pada model Question.
           </p>
-        </div>
-
-        <div className="max-h-48 space-y-3 overflow-y-auto border border-slate-200 p-3 rounded">
-          <label className="flex cursor-pointer items-center gap-3 border-b border-slate-100 pb-3">
-            <Checkbox
-              className="rounded"
-              checked={formAssignedCp.includes("all")}
-              onCheckedChange={(checked) => {
-                setFormAssignedCp(checked === true ? ["all"] : []);
-              }}
-            />
-            <span className="text-sm font-semibold text-slate-900">
-              Berlaku untuk semua checkpoint
-            </span>
-          </label>
-
-          {CHECKPOINTS.map((checkpoint) => {
-            const checked = formAssignedCp.includes(checkpoint.id);
-            const allSelected = formAssignedCp.includes("all");
-
-            return (
-              <label
-                key={checkpoint.id}
-                className="flex cursor-pointer items-start gap-3"
-              >
-                <Checkbox
-                  className="rounded"
-                  checked={checked}
-                  disabled={allSelected}
-                  onCheckedChange={(value) => {
-                    if (value === true) {
-                      setFormAssignedCp([
-                        ...formAssignedCp.filter((id) => id !== "all"),
-                        checkpoint.id,
-                      ]);
-                    } else {
-                      setFormAssignedCp(
-                        formAssignedCp.filter((id) => id !== checkpoint.id),
-                      );
-                    }
-                  }}
-                />
-                <span className="text-sm text-slate-700">
-                  <span className="font-mono text-xs text-slate-500">
-                    {checkpoint.id}
-                  </span>
-                  {" - "}
-                  {checkpoint.name}
-                </span>
-              </label>
-            );
-          })}
         </div>
       </div>
     </div>
@@ -514,318 +477,495 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
 };
 
 export const QuestionBuilderView: React.FC = () => {
-  const [questions, setQuestions] = useState<PatrolQuestionItem[]>(
-    INITIAL_PATROL_QUESTIONS,
+  const {
+    data: questionsData,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useQuestions();
+  const patrolPointsQuery = usePatrolPoints();
+
+  const patrolPoints = useMemo<PatrolPointItem[]>(() => {
+    const response = patrolPointsQuery.data as
+      | PatrolPointItem[]
+      | { data?: PatrolPointItem[] }
+      | undefined;
+
+    if (Array.isArray(response)) return response;
+
+    return response?.data ?? [];
+  }, [patrolPointsQuery.data]);
+
+  const activePatrolPoints = useMemo(
+    () => patrolPoints.filter((point) => point.status === "ACTIVE"),
+    [patrolPoints],
   );
 
+  const createQuestionMutation = useCreateQuestion();
+  const updateQuestionMutation = useUpdateQuestion();
+  const deactivateQuestionMutation = useDeactivateQuestion();
+  const activateQuestionMutation = useActivateQuestion();
+
+  const createOptionMutation = useCreateQuestionOption();
+  const updateOptionMutation = useUpdateQuestionOption();
+
+  const assignQuestionMutation = useAssignQuestion();
+  const unassignQuestionMutation = useUnassignQuestion();
+
+  const [assignmentQuestion, setAssignmentQuestion] =
+    useState<BackendQuestion | null>(null);
+
+  const [selectedPatrolPointId, setSelectedPatrolPointId] = useState("");
+
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+
+  const {
+    data: pointAssignmentsData,
+    isLoading: isAssignmentsLoading,
+    isError: isAssignmentsError,
+    error: pointAssignmentsError,
+    refetch: refetchPointAssignments,
+  } = usePointQuestions(selectedPatrolPointId);
+
+  const pointAssignments = useMemo<PointQuestionItem[]>(() => {
+    if (!Array.isArray(pointAssignmentsData)) return [];
+
+    return pointAssignmentsData as PointQuestionItem[];
+  }, [pointAssignmentsData]);
+
+  const currentAssignment = useMemo(() => {
+    if (!assignmentQuestion) return undefined;
+
+    return pointAssignments.find(
+      (item) => item.questionId === assignmentQuestion.id,
+    );
+  }, [pointAssignments, assignmentQuestion]);
+
+  const isAssignmentSaving =
+    assignQuestionMutation.isPending || unassignQuestionMutation.isPending;
+
+  const isSaving =
+    createQuestionMutation.isPending ||
+    updateQuestionMutation.isPending ||
+    createOptionMutation.isPending ||
+    updateOptionMutation.isPending;
+
+  const questions = useMemo<BackendQuestion[]>(() => {
+    if (!Array.isArray(questionsData)) return [];
+
+    return questionsData as BackendQuestion[];
+  }, [questionsData]);
+
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedInputType, setSelectedInputType] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
   const [editingQuestion, setEditingQuestion] =
-    useState<PatrolQuestionItem | null>(null);
+    useState<BackendQuestion | null>(null);
+
   const [deletingQuestion, setDeletingQuestion] =
-    useState<PatrolQuestionItem | null>(null);
+    useState<BackendQuestion | null>(null);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const [formCategory, setFormCategory] = useState(CATEGORIES[0]);
-  const [formText, setFormText] = useState("");
-  const [formDesc, setFormDesc] = useState("");
-  const [formInputType, setFormInputType] =
-    useState<PatrolQuestionItem["inputType"]>("boolean");
-  const [formOptions, setFormOptions] = useState<string[]>(DEFAULT_OPTIONS);
-  const [newOptionInput, setNewOptionInput] = useState("");
-  const [formUnit, setFormUnit] = useState("°C");
-  const [formMinVal, setFormMinVal] = useState(20);
-  const [formMaxVal, setFormMaxVal] = useState(60);
-  const [formRequired, setFormRequired] = useState(true);
-  const [formRequirePhoto, setFormRequirePhoto] = useState(false);
-  const [formAutoFinding, setFormAutoFinding] = useState(true);
-  const [formSeverity, setFormSeverity] =
-    useState<PatrolQuestionItem["findingSeverity"]>("Tinggi");
-  const [formAssignedCp, setFormAssignedCp] = useState<string[]>(["all"]);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<"success" | "error">("success");
 
-  const filteredQuestions = questions.filter((question) => {
-    if (selectedCategory !== "all" && question.category !== selectedCategory) {
-      return false;
-    }
-
-    if (
-      selectedInputType !== "all" &&
-      question.inputType !== selectedInputType
-    ) {
-      return false;
-    }
-
-    if (selectedStatus !== "all" && question.status !== selectedStatus) {
-      return false;
-    }
-
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-
-      const match = [
-        question.id,
-        question.questionText,
-        question.description,
-        question.category,
-      ].some((value) => value.toLowerCase().includes(query));
-
-      if (!match) return false;
-    }
-
-    return true;
-  });
-
-  const showToast = (message: string) => {
+  const showToast = (
+    message: string,
+    type: "success" | "error" = "success",
+  ) => {
     setToastMessage(message);
-    setTimeout(() => setToastMessage(null), 3500);
+    setToastType(type);
+
+    window.setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
   };
 
+  const [formText, setFormText] = useState("");
+
+  const [formInputType, setFormInputType] =
+    useState<BackendQuestionType>("YES_NO");
+
+  const [formOptions, setFormOptions] = useState<OptionForm[]>(DEFAULT_OPTIONS);
+
+  const [newOptionInput, setNewOptionInput] = useState("");
+
+  const [formRequired, setFormRequired] = useState(true);
+
+  const [formRequirePhoto, setFormRequirePhoto] = useState(false);
+
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const filteredQuestions = useMemo(() => {
+    return questions.filter((question) => {
+      if (
+        selectedInputType !== "all" &&
+        question.questionType !== selectedInputType
+      ) {
+        return false;
+      }
+
+      if (selectedStatus !== "all" && question.status !== selectedStatus) {
+        return false;
+      }
+
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+
+        const match = [
+          question.id,
+          question.code,
+          question.questionText,
+          question.questionType,
+        ].some((value) => value.toLowerCase().includes(query));
+
+        if (!match) return false;
+      }
+
+      return true;
+    });
+  }, [questions, searchQuery, selectedInputType, selectedStatus]);
+
   const resetForm = () => {
-    setFormCategory(CATEGORIES[0]);
     setFormText("");
-    setFormDesc("");
-    setFormInputType("boolean");
-    setFormOptions(DEFAULT_OPTIONS);
+    setFormInputType("YES_NO");
+    setFormOptions(DEFAULT_OPTIONS.map((option) => ({ ...option })));
     setNewOptionInput("");
-    setFormUnit("°C");
-    setFormMinVal(20);
-    setFormMaxVal(60);
     setFormRequired(true);
     setFormRequirePhoto(false);
-    setFormAutoFinding(true);
-    setFormSeverity("Tinggi");
-    setFormAssignedCp(["all"]);
     setFormError(null);
   };
 
   const handleOpenAdd = () => {
     resetForm();
+    setEditingQuestion(null);
     setIsAddModalOpen(true);
   };
 
-  const handleOpenEdit = (question: PatrolQuestionItem) => {
+  const handleOpenEdit = (question: BackendQuestion) => {
     setEditingQuestion(question);
-    setFormCategory(question.category);
+
     setFormText(question.questionText);
-    setFormDesc(question.description);
-    setFormInputType(question.inputType);
+    setFormInputType(question.questionType);
+
     setFormOptions(
-      question.options?.length ? [...question.options] : DEFAULT_OPTIONS,
+      question.options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        isSafe: option.isSafe,
+      })),
     );
+
     setNewOptionInput("");
-    setFormUnit(question.unit || "°C");
-    setFormMinVal(question.minVal ?? 20);
-    setFormMaxVal(question.maxVal ?? 60);
-    setFormRequired(question.required);
-    setFormRequirePhoto(question.requirePhoto);
-    setFormAutoFinding(question.autoTriggerFinding);
-    setFormSeverity(question.findingSeverity);
-    setFormAssignedCp([...question.assignedCheckpoints]);
+    setFormRequired(question.isRequired);
+    setFormRequirePhoto(question.photoRequirement === "REQUIRED");
+
     setFormError(null);
   };
 
   const closeFormDialog = () => {
     setIsAddModalOpen(false);
     setEditingQuestion(null);
-    setFormError(null);
+    resetForm();
   };
 
-  const buildPayload = (): Partial<PatrolQuestionItem> => ({
-    questionText: formText,
-    category: formCategory,
-    inputType: formInputType,
-    options:
-      formInputType === "multiple_choice" || formInputType === "checklist"
-        ? formOptions
-        : undefined,
-    minVal: formInputType === "numeric" ? formMinVal : undefined,
-    maxVal: formInputType === "numeric" ? formMaxVal : undefined,
-  });
-
-  const handleCreateQuestion = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const validation = validatePatrolQuestion(buildPayload());
-
-    if (!validation.valid) {
-      setFormError(validation.error || "Data tidak valid.");
-      return;
+  const validateForm = () => {
+    if (!formText.trim()) {
+      setFormError("Teks pertanyaan wajib diisi.");
+      return false;
     }
 
-    const newQuestion: PatrolQuestionItem = {
-      id: `Q-${String(questions.length + 1).padStart(3, "0")}`,
-      category: formCategory,
-      questionText: formText.trim(),
-      description: formDesc.trim(),
-      inputType: formInputType,
-      options:
-        formInputType === "multiple_choice" || formInputType === "checklist"
-          ? formOptions
-          : undefined,
-      unit: formInputType === "numeric" ? formUnit : undefined,
-      minVal: formInputType === "numeric" ? formMinVal : undefined,
-      maxVal: formInputType === "numeric" ? formMaxVal : undefined,
-      required: formRequired,
-      requirePhoto: formRequirePhoto,
-      autoTriggerFinding: formAutoFinding,
-      findingSeverity: formSeverity,
-      assignedCheckpoints: formAssignedCp.length > 0 ? formAssignedCp : ["all"],
-      status: "Aktif",
-      order: questions.length + 1,
-    };
+    if (formInputType === "SINGLE_CHOICE") {
+      const validOptions = formOptions.filter((option) => option.label.trim());
 
-    setQuestions([...questions, newQuestion]);
-    closeFormDialog();
-    resetForm();
-    showToast(`Pertanyaan ${newQuestion.id} berhasil ditambahkan.`);
+      if (validOptions.length < 2) {
+        setFormError("Minimal harus ada dua pilihan jawaban.");
+        return false;
+      }
+
+      const labels = validOptions.map((option) =>
+        option.label.trim().toLowerCase(),
+      );
+
+      if (new Set(labels).size !== labels.length) {
+        setFormError("Pilihan jawaban tidak boleh duplikat.");
+        return false;
+      }
+    }
+
+    setFormError(null);
+    return true;
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleCreateQuestion = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!validateForm()) return;
+
+    try {
+      const payload = {
+        questionText: formText.trim(),
+        questionType: formInputType,
+        isRequired: formRequired,
+        photoRequirement: formRequirePhoto ? "REQUIRED" : "OPTIONAL",
+        questionOptions:
+          formInputType === "SINGLE_CHOICE"
+            ? formOptions.map((option) => ({
+                label: option.label.trim(),
+                isSafe: option.isSafe,
+              }))
+            : undefined,
+      } as CreateQuestionPayload;
+
+      const result = await createQuestionMutation.mutateAsync(payload);
+
+      showToast(`Pertanyaan ${result?.code ?? ""} berhasil ditambahkan.`);
+
+      closeFormDialog();
+    } catch (error) {
+      console.error("Create question error:", error);
+
+      showToast(getErrorMessage(error), "error");
+    }
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!editingQuestion) return;
 
-    const validation = validatePatrolQuestion(buildPayload());
+    if (!validateForm()) return;
 
-    if (!validation.valid) {
-      setFormError(validation.error || "Data tidak valid.");
+    try {
+      await updateQuestionMutation.mutateAsync({
+        id: editingQuestion.id,
+        payload: {
+          questionText: formText.trim(),
+          isRequired: formRequired,
+          photoRequirement: formRequirePhoto ? "REQUIRED" : "NONE",
+        },
+      });
+
+      if (formInputType === "SINGLE_CHOICE") {
+        for (let index = 0; index < formOptions.length; index++) {
+          const option = formOptions[index];
+
+          if (!option.label.trim()) continue;
+
+          const payload = {
+            value: option.label.trim().toUpperCase(),
+            label: option.label.trim(),
+            sortOrder: index + 1,
+            isSafe: option.isSafe,
+          };
+
+          if (option.id) {
+            await updateOptionMutation.mutateAsync({
+              optionId: option.id,
+              payload,
+            });
+          } else {
+            await createOptionMutation.mutateAsync({
+              questionId: editingQuestion.id,
+              payload,
+            });
+          }
+        }
+      }
+
+      showToast(`Pertanyaan ${editingQuestion.code} berhasil diperbarui.`);
+
+      closeFormDialog();
+    } catch (error) {
+      console.error("Update question error:", error);
+      showToast(getErrorMessage(error), "error");
+    }
+  };
+
+  const handleDeleteQuestion = async () => {
+    if (!deletingQuestion) return;
+
+    try {
+      await deactivateQuestionMutation.mutateAsync(deletingQuestion.id);
+
+      showToast(`Pertanyaan ${deletingQuestion.code} berhasil dinonaktifkan.`);
+
+      setDeletingQuestion(null);
+    } catch (error) {
+      console.error("Deactivate question error:", error);
+
+      showToast(getErrorMessage(error), "error");
+    }
+  };
+
+  const handleToggleStatus = async (question: BackendQuestion) => {
+    try {
+      if (question.status === "ACTIVE") {
+        await deactivateQuestionMutation.mutateAsync(question.id);
+
+        showToast(`Pertanyaan ${question.code} berhasil dinonaktifkan.`);
+      } else {
+        await activateQuestionMutation.mutateAsync(question.id);
+
+        showToast(`Pertanyaan ${question.code} berhasil diaktifkan.`);
+      }
+    } catch (error) {
+      console.error("Toggle question status error:", error);
+
+      showToast(getErrorMessage(error), "error");
+    }
+  };
+
+  const handleDuplicateQuestion = async (question: BackendQuestion) => {
+    try {
+      const payload = {
+        questionText: `${question.questionText} (Salinan)`,
+        questionType: question.questionType,
+        isRequired: question.isRequired,
+        photoRequirement: question.photoRequirement,
+        questionOptions:
+          question.questionType === "SINGLE_CHOICE"
+            ? question.options.map((option) => ({
+                label: option.label,
+                isSafe: option.isSafe,
+              }))
+            : undefined,
+      } as CreateQuestionPayload;
+
+      const result = await createQuestionMutation.mutateAsync(payload);
+
+      showToast(`Pertanyaan berhasil diduplikasi ${result?.code ?? ""}.`);
+    } catch (error) {
+      console.error("Duplicate question error:", error);
+
+      showToast(getErrorMessage(error), "error");
+    }
+  };
+
+  const handleOpenAssignment = (question: BackendQuestion) => {
+    setAssignmentQuestion(question);
+    setSelectedPatrolPointId("");
+    setAssignmentError(null);
+  };
+
+  const handleCloseAssignment = () => {
+    if (isAssignmentSaving) return;
+
+    setAssignmentQuestion(null);
+    setSelectedPatrolPointId("");
+    setAssignmentError(null);
+  };
+
+  const handleSelectPatrolPoint = (patrolPointId: string) => {
+    setSelectedPatrolPointId(patrolPointId);
+    setAssignmentError(null);
+  };
+
+  const handleAssignQuestion = async () => {
+    if (!assignmentQuestion || !selectedPatrolPointId) {
+      setAssignmentError("Pilih Patrol Point terlebih dahulu.");
       return;
     }
 
-    const updated: PatrolQuestionItem = {
-      ...editingQuestion,
-      category: formCategory,
-      questionText: formText.trim(),
-      description: formDesc.trim(),
-      inputType: formInputType,
-      options:
-        formInputType === "multiple_choice" || formInputType === "checklist"
-          ? formOptions
-          : undefined,
-      unit: formInputType === "numeric" ? formUnit : undefined,
-      minVal: formInputType === "numeric" ? formMinVal : undefined,
-      maxVal: formInputType === "numeric" ? formMaxVal : undefined,
-      required: formRequired,
-      requirePhoto: formRequirePhoto,
-      autoTriggerFinding: formAutoFinding,
-      findingSeverity: formSeverity,
-      assignedCheckpoints: formAssignedCp.length > 0 ? formAssignedCp : ["all"],
-    };
+    if (currentAssignment) {
+      setAssignmentError("Pertanyaan sudah terhubung ke Patrol Point ini.");
+      return;
+    }
 
-    setQuestions((previous) =>
-      previous.map((question) =>
-        question.id === updated.id ? updated : question,
-      ),
+    setAssignmentError(null);
+
+    try {
+      await assignQuestionMutation.mutateAsync({
+        patrolPointId: selectedPatrolPointId,
+        questionId: assignmentQuestion.id,
+      });
+
+      await refetchPointAssignments();
+
+      showToast(`Pertanyaan berhasil dihubungkan ke Patrol Point.`);
+    } catch (error) {
+      console.error("Assign question error:", error);
+
+      setAssignmentError(getErrorMessage(error));
+    }
+  };
+
+  const handleUnassignQuestion = async () => {
+    if (!currentAssignment) return;
+
+    const confirmed = window.confirm(
+      "Apakah kamu yakin ingin melepas pertanyaan dari Patrol Point ini?",
     );
 
-    setEditingQuestion(null);
-    showToast(`Pertanyaan ${updated.id} berhasil diperbarui.`);
+    if (!confirmed) return;
+
+    setAssignmentError(null);
+
+    try {
+      await unassignQuestionMutation.mutateAsync(currentAssignment.id);
+
+      await refetchPointAssignments();
+
+      showToast("Pertanyaan berhasil dilepas dari Patrol Point.");
+    } catch (error) {
+      console.error("Unassign question error:", error);
+
+      setAssignmentError(getErrorMessage(error));
+    }
   };
-
-  const handleDeleteQuestion = () => {
-    if (!deletingQuestion) return;
-
-    setQuestions((previous) =>
-      previous.filter((question) => question.id !== deletingQuestion.id),
-    );
-
-    showToast(`Pertanyaan ${deletingQuestion.id} berhasil dihapus.`);
-    setDeletingQuestion(null);
-  };
-
-  const handleDuplicateQuestion = (question: PatrolQuestionItem) => {
-    const duplicated: PatrolQuestionItem = {
-      ...question,
-      id: `Q-${String(questions.length + 1).padStart(3, "0")}`,
-      questionText: `${question.questionText} (Salinan)`,
-      order: questions.length + 1,
-    };
-
-    setQuestions([...questions, duplicated]);
-    showToast(`Pertanyaan diduplikasi sebagai ${duplicated.id}.`);
-  };
-
-  const handleToggleStatus = (id: string) => {
-    setQuestions((previous) =>
-      previous.map((question) =>
-        question.id === id
-          ? {
-              ...question,
-              status: question.status === "Aktif" ? "Nonaktif" : "Aktif",
-            }
-          : question,
-      ),
-    );
-  };
-
-  const handleMoveOrder = (id: string, direction: "up" | "down") => {
-    setQuestions(reorderPatrolQuestions(questions, id, direction));
-  };
-
-  const totalQuestions = questions.length;
-  const activeQuestions = questions.filter(
-    (question) => question.status === "Aktif",
-  ).length;
-  const photoRequiredCount = questions.filter(
-    (question) => question.requirePhoto,
-  ).length;
-  const autoFindingCount = questions.filter(
-    (question) => question.autoTriggerFinding,
-  ).length;
 
   const formProps: QuestionFormProps = {
-    categories: CATEGORIES,
-    formCategory,
-    setFormCategory,
     formText,
     setFormText,
-    formDesc,
-    setFormDesc,
+
     formInputType,
     setFormInputType,
+
     formOptions,
     setFormOptions,
+
     newOptionInput,
     setNewOptionInput,
-    formUnit,
-    setFormUnit,
-    formMinVal,
-    setFormMinVal,
-    formMaxVal,
-    setFormMaxVal,
+
     formRequired,
     setFormRequired,
+
     formRequirePhoto,
     setFormRequirePhoto,
-    formAutoFinding,
-    setFormAutoFinding,
-    formSeverity,
-    setFormSeverity,
-    formAssignedCp,
-    setFormAssignedCp,
+
     formError,
-    setFormError,
   };
 
   return (
     <div className="space-y-5">
-      {/* Toast */}
       {toastMessage && (
-        <div className="flex items-center justify-between gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 rounded">
+        <div
+          className={`flex items-center justify-between gap-3 rounded border px-4 py-3 text-sm ${
+            toastType === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-rose-200 bg-rose-50 text-rose-800"
+          }`}
+        >
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-4 shrink-0" />
+            {toastType === "success" ? (
+              <CheckCircle2 className="size-4 shrink-0" />
+            ) : (
+              <AlertTriangle className="size-4 shrink-0" />
+            )}
+
             <span>{toastMessage}</span>
           </div>
+
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7 rounded text-emerald-700"
+            className="size-7 rounded"
             onClick={() => setToastMessage(null)}
           >
             <X className="size-4" />
@@ -833,14 +973,12 @@ export const QuestionBuilderView: React.FC = () => {
         </div>
       )}
 
-      {/* Header */}
       <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-center">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Question Builder
-            </h1>
-          </div>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+            Question Builder
+          </h1>
+
           <p className="mt-1 text-sm text-slate-500">
             Kelola pertanyaan checklist pemeriksaan patroli.
           </p>
@@ -855,13 +993,13 @@ export const QuestionBuilderView: React.FC = () => {
         </Button>
       </div>
 
-      {/* Search and Filters */}
-      <div className="space-y-3 border border-slate-200 bg-white p-4 rounded">
-        <div className="grid gap-3 lg:grid-cols-4">
+      <div className="space-y-3 rounded border border-slate-200 bg-white p-4">
+        <div className="grid gap-3 lg:grid-cols-3">
           <InputGroup className="rounded">
             <InputGroupAddon>
               <Search className="size-4 text-slate-400" />
             </InputGroupAddon>
+
             <InputGroupInput
               placeholder="Cari pertanyaan, kategori, atau ID..."
               value={searchQuery}
@@ -870,31 +1008,16 @@ export const QuestionBuilderView: React.FC = () => {
           </InputGroup>
 
           <Select
-            value={selectedCategory}
-            onValueChange={(value) => setSelectedCategory(value as string)}
-          >
-            <SelectTrigger className="rounded w-full">
-              <SelectValue placeholder="Semua Kategori" />
-            </SelectTrigger>
-            <SelectContent className={`w-full`}>
-              <SelectItem value="all">Semua Kategori</SelectItem>
-              {CATEGORIES.map((category) => (
-                <SelectItem key={category} value={category}>
-                  {category}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
             value={selectedInputType}
-            onValueChange={(value) => setSelectedInputType(value as string)}
+            onValueChange={(value) => setSelectedInputType(value ?? "all")}
           >
-            <SelectTrigger className="rounded w-full">
+            <SelectTrigger className="w-full rounded">
               <SelectValue placeholder="Semua Tipe Input" />
             </SelectTrigger>
-            <SelectContent className={`w-full`}>
+
+            <SelectContent>
               <SelectItem value="all">Semua Tipe Input</SelectItem>
+
               {INPUT_TYPES.map((type) => (
                 <SelectItem key={type.value} value={type.value}>
                   {type.label}
@@ -905,15 +1028,16 @@ export const QuestionBuilderView: React.FC = () => {
 
           <Select
             value={selectedStatus}
-            onValueChange={(value) => setSelectedStatus(value as string)}
+            onValueChange={(value) => setSelectedStatus(value ?? "all")}
           >
-            <SelectTrigger className="rounded w-full">
+            <SelectTrigger className="w-full rounded">
               <SelectValue placeholder="Semua Status" />
             </SelectTrigger>
-            <SelectContent className={`w-full`}>
+
+            <SelectContent>
               <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="Aktif">Aktif</SelectItem>
-              <SelectItem value="Nonaktif">Nonaktif</SelectItem>
+              <SelectItem value="ACTIVE">Aktif</SelectItem>
+              <SelectItem value="INACTIVE">Nonaktif</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -927,230 +1051,252 @@ export const QuestionBuilderView: React.FC = () => {
             dari {questions.length} pertanyaan
           </p>
 
-          {(searchQuery ||
-            selectedCategory !== "all" ||
-            selectedInputType !== "all" ||
-            selectedStatus !== "all") && (
+          <div className="flex items-center gap-2">
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               className="h-7 rounded text-xs text-slate-500"
-              onClick={() => {
-                setSearchQuery("");
-                setSelectedCategory("all");
-                setSelectedInputType("all");
-                setSelectedStatus("all");
-              }}
+              disabled={isFetching}
+              onClick={() => refetch()}
             >
-              Reset Filter
+              <RefreshCw
+                className={`mr-1 size-3 ${isFetching ? "animate-spin" : ""}`}
+              />
+              Refresh
             </Button>
-          )}
+
+            {(searchQuery ||
+              selectedInputType !== "all" ||
+              selectedStatus !== "all") && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 rounded text-xs text-slate-500"
+                onClick={() => {
+                  setSearchQuery("");
+                  setSelectedInputType("all");
+                  setSelectedStatus("all");
+                }}
+              >
+                Reset Filter
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Question List */}
-      <div className="space-y-3">
-        {filteredQuestions.length === 0 ? (
-          <div className="border border-slate-200 bg-white p-12 text-center rounded">
-            <Search className="mx-auto size-8 text-slate-300" />
-            <p className="mt-3 text-sm font-semibold text-slate-900">
-              Tidak ada pertanyaan ditemukan
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Ubah kata kunci atau filter pencarian.
-            </p>
-          </div>
-        ) : (
-          filteredQuestions.map((question, index) => (
-            <div
-              key={question.id}
-              className={`border bg-white p-4 rounded ${
-                question.status === "Aktif"
-                  ? "border-slate-200"
-                  : "border-slate-200 bg-slate-50 opacity-70"
-              }`}
-            >
-              <div className="flex flex-col justify-between gap-4 lg:flex-row">
-                <div className="flex min-w-0 flex-1 gap-3">
-                  <div className="flex shrink-0 flex-col items-center gap-1">
-                    <div className="flex size-8 items-center justify-center border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 rounded">
-                      {question.order}
-                    </div>
-                    <span className="font-mono text-[10px] text-slate-400">
-                      {question.id}
-                    </span>
+      {/* LOADING */}
 
-                    <div className="mt-1 flex flex-col">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-6 rounded text-slate-500"
-                        title="Pindah ke atas"
-                        disabled={index === 0}
-                        onClick={() => handleMoveOrder(question.id, "up")}
-                      >
-                        <ArrowUp className="size-3.5" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-6 rounded text-slate-500"
-                        title="Pindah ke bawah"
-                        disabled={index === filteredQuestions.length - 1}
-                        onClick={() => handleMoveOrder(question.id, "down")}
-                      >
-                        <ArrowDown className="size-3.5" />
-                      </Button>
-                    </div>
+      {isLoading && (
+        <div className="flex items-center justify-center rounded border border-slate-200 bg-white p-12">
+          <Loader2 className="mr-2 size-5 animate-spin text-blue-600" />
+          <span className="text-sm text-slate-500">
+            Memuat data pertanyaan...
+          </span>
+        </div>
+      )}
+
+      {/* ERROR */}
+
+      {isError && !isLoading && (
+        <div className="rounded border border-rose-200 bg-rose-50 p-8 text-center">
+          <AlertTriangle className="mx-auto size-8 text-rose-500" />
+
+          <p className="mt-3 text-sm font-semibold text-rose-800">
+            Gagal memuat pertanyaan
+          </p>
+
+          <p className="mt-1 text-xs text-rose-600">
+            {error instanceof Error
+              ? error.message
+              : "Terjadi kesalahan saat mengambil data."}
+          </p>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-4 rounded"
+            onClick={() => refetch()}
+          >
+            <RefreshCw className="mr-2 size-4" />
+            Coba Lagi
+          </Button>
+        </div>
+      )}
+
+      {/* QUESTION LIST */}
+
+      {!isLoading && !isError && (
+        <div className="space-y-3">
+          {filteredQuestions.length === 0 ? (
+            <div className="rounded-lg border border-slate-200 bg-white px-6 py-12 text-center">
+              <Search className="mx-auto size-8 text-slate-300" />
+
+              <p className="mt-3 text-sm font-semibold text-slate-800">
+                Tidak ada pertanyaan ditemukan
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Coba ubah kata kunci atau filter pencarian.
+              </p>
+            </div>
+          ) : (
+            filteredQuestions.map((question, index) => (
+              <div
+                key={question.id}
+                className={`group rounded-lg border bg-white p-4 transition-colors hover:border-blue-200 ${
+                  question.status !== "ACTIVE"
+                    ? "border-slate-200 bg-slate-50/70"
+                    : "border-slate-200"
+                }`}
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  {/* NOMOR */}
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-sm font-semibold text-slate-600">
+                    {String(index + 1).padStart(2, "0")}
                   </div>
 
+                  {/* INFORMASI UTAMA */}
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[11px] font-medium text-slate-400">
+                        {question.code}
+                      </span>
+
                       <Badge
                         variant="outline"
-                        className="rounded border-blue-200 bg-blue-50 text-blue-700"
+                        className={`rounded-md text-[10px] font-medium ${getInputTypeVariant(
+                          question.questionType,
+                        )}`}
                       >
-                        {question.category}
+                        {getInputTypeLabel(question.questionType)}
                       </Badge>
 
                       <Badge
                         variant="outline"
-                        className={`rounded ${getInputTypeVariant(question.inputType)}`}
+                        className={`rounded-md text-[10px] ${
+                          question.status === "ACTIVE"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 bg-slate-100 text-slate-500"
+                        }`}
                       >
-                        {getInputTypeLabel(question.inputType)}
+                        {getStatusLabel(question.status)}
                       </Badge>
-
-                      {question.required && (
-                        <Badge
-                          variant="outline"
-                          className="rounded border-rose-200 bg-rose-50 text-rose-700"
-                        >
-                          Wajib Diisi
-                        </Badge>
-                      )}
-
-                      {question.requirePhoto && (
-                        <Badge
-                          variant="outline"
-                          className="rounded border-indigo-200 bg-indigo-50 text-indigo-700"
-                        >
-                          <Camera className="mr-1 size-3" />
-                          Wajib Foto
-                        </Badge>
-                      )}
-
-                      {question.autoTriggerFinding && (
-                        <Badge
-                          variant="outline"
-                          className="rounded border-amber-200 bg-amber-50 text-amber-700"
-                        >
-                          <AlertTriangle className="mr-1 size-3" />
-                          Auto Temuan · {question.findingSeverity}
-                        </Badge>
-                      )}
                     </div>
 
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-900">
-                        {question.questionText}
-                      </h3>
+                    <h3 className="text-sm font-semibold leading-relaxed text-slate-800">
+                      {question.questionText}
+                    </h3>
 
-                      {question.description && (
-                        <p className="mt-1 flex items-start gap-1.5 text-xs leading-relaxed text-slate-500">
-                          <Info className="mt-0.5 size-3.5 shrink-0" />
-                          {question.description}
-                        </p>
-                      )}
-                    </div>
-
-                    {question.options && question.options.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs text-slate-400">Opsi:</span>
-                        {question.options.map((option, optionIndex) => (
-                          <span
-                            key={optionIndex}
-                            className="border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600 rounded"
-                          >
-                            {option}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-                      <span className="font-medium">Berlaku untuk:</span>
-                      {question.assignedCheckpoints.includes("all") ? (
-                        <span className="font-medium text-emerald-700">
-                          Semua Checkpoint
+                    {/* INFORMASI RINGKAS */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
+                      {question.isRequired && (
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="size-3.5 text-emerald-600" />
+                          Wajib diisi
                         </span>
-                      ) : (
-                        <span className="text-blue-700">
-                          {question.assignedCheckpoints.length} Checkpoint
-                          {" · "}
-                          {question.assignedCheckpoints.join(", ")}
+                      )}
+
+                      {question.photoRequirement === "REQUIRED" && (
+                        <span className="flex items-center gap-1">
+                          <Camera className="size-3.5 text-indigo-600" />
+                          Wajib foto
+                        </span>
+                      )}
+
+                      {question.photoRequirement === "CONDITIONAL" && (
+                        <span className="flex items-center gap-1">
+                          <Camera className="size-3.5 text-amber-600" />
+                          Foto kondisional
+                        </span>
+                      )}
+
+                      <span className="flex items-center gap-1">
+                        <MapPin className="size-3.5 text-blue-500" />
+                        {question._count?.pointQuestions ?? 0} Patrol Point
+                      </span>
+
+                      {question.questionType === "SINGLE_CHOICE" && (
+                        <span className="text-slate-400">
+                          {question.options?.length ?? 0} pilihan
                         </span>
                       )}
                     </div>
                   </div>
-                </div>
 
-                <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={`rounded ${
-                      question.status === "Aktif"
-                        ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                        : "border-slate-300 text-slate-600"
-                    }`}
-                    onClick={() => handleToggleStatus(question.id)}
-                  >
-                    {question.status}
-                  </Button>
+                  {/* ACTIONS */}
+                  <div className="flex shrink-0 items-center gap-1 border-t border-slate-100 pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 rounded-md border-blue-200 px-2.5 text-xs text-blue-700 hover:bg-blue-50"
+                      disabled={question.status !== "ACTIVE"}
+                      onClick={() => handleOpenAssignment(question)}
+                    >
+                      <Settings2 className="mr-1.5 size-3.5" />
+                      Patrol Point
+                    </Button>
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="size-8 rounded text-slate-600"
-                    title="Duplikasi"
-                    onClick={() => handleDuplicateQuestion(question)}
-                  >
-                    <Copy className="size-4" />
-                  </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-blue-600"
+                      title="Edit pertanyaan"
+                      onClick={() => handleOpenEdit(question)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="size-8 rounded text-blue-600"
-                    title="Edit"
-                    onClick={() => handleOpenEdit(question)}
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                      title="Duplikasi pertanyaan"
+                      disabled={createQuestionMutation.isPending}
+                      onClick={() => handleDuplicateQuestion(question)}
+                    >
+                      <Copy className="size-4" />
+                    </Button>
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="size-8 rounded text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                    title="Hapus"
-                    onClick={() => setDeletingQuestion(question)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className={`size-8 rounded-md ${
+                        question.status === "ACTIVE"
+                          ? "text-rose-500 hover:bg-rose-50"
+                          : "text-emerald-600 hover:bg-emerald-50"
+                      }`}
+                      title={
+                        question.status === "ACTIVE"
+                          ? "Nonaktifkan pertanyaan"
+                          : "Aktifkan pertanyaan"
+                      }
+                      disabled={
+                        deactivateQuestionMutation.isPending ||
+                        activateQuestionMutation.isPending
+                      }
+                      onClick={() => handleToggleStatus(question)}
+                    >
+                      {question.status === "ACTIVE" ? (
+                        <Trash2 className="size-4" />
+                      ) : (
+                        <CheckCircle2 className="size-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
-        )}
-      </div>
+            ))
+          )}
+        </div>
+      )}
 
-      {/* Add / Edit Dialog */}
       <Dialog
         open={isAddModalOpen || Boolean(editingQuestion)}
         onOpenChange={(open) => {
@@ -1161,12 +1307,12 @@ export const QuestionBuilderView: React.FC = () => {
           <DialogHeader className="border-b border-slate-200 px-6 py-4 text-left">
             <DialogTitle className="text-base font-semibold text-slate-900">
               {editingQuestion
-                ? `Edit Pertanyaan ${editingQuestion.id}`
+                ? `Edit Pertanyaan ${editingQuestion.code}`
                 : "Tambah Pertanyaan Patroli"}
             </DialogTitle>
+
             <DialogDescription className="text-xs text-slate-500">
-              Atur pertanyaan, tipe jawaban, dan checkpoint yang menggunakan
-              checklist ini.
+              Atur pertanyaan, tipe jawaban, dan konfigurasi checklist.
             </DialogDescription>
           </DialogHeader>
 
@@ -1183,14 +1329,19 @@ export const QuestionBuilderView: React.FC = () => {
                 type="button"
                 variant="outline"
                 className="rounded"
+                disabled={isSaving}
                 onClick={closeFormDialog}
               >
                 Batal
               </Button>
+
               <Button
                 type="submit"
+                disabled={isSaving}
                 className="rounded bg-blue-600 text-white hover:bg-blue-700"
               >
+                {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
+
                 {editingQuestion ? "Simpan Perubahan" : "Buat Pertanyaan"}
               </Button>
             </DialogFooter>
@@ -1198,7 +1349,266 @@ export const QuestionBuilderView: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
+      {/* =====================================================
+          ASSIGN / UNASSIGN PATROL POINT DIALOG
+      ===================================================== */}
+
+      <Dialog
+        open={Boolean(assignmentQuestion)}
+        onOpenChange={(open) => {
+          if (!open) handleCloseAssignment();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="size-5 text-blue-600" />
+              Atur Patrol Point
+            </DialogTitle>
+
+            <DialogDescription>
+              Hubungkan atau lepaskan pertanyaan dari Patrol Point.
+            </DialogDescription>
+          </DialogHeader>
+
+          {assignmentQuestion && (
+            <div className="rounded border border-blue-100 bg-blue-50 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="border-blue-200 bg-white text-blue-700"
+                >
+                  {assignmentQuestion.code}
+                </Badge>
+
+                <Badge
+                  variant="outline"
+                  className="border-emerald-200 bg-white text-emerald-700"
+                >
+                  {getInputTypeLabel(assignmentQuestion.questionType)}
+                </Badge>
+              </div>
+
+              <p className="mt-2 text-sm font-semibold text-slate-900">
+                {assignmentQuestion.questionText}
+              </p>
+            </div>
+          )}
+
+          {/* ASSIGNMENT ERROR */}
+
+          {assignmentError && (
+            <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>{assignmentError}</span>
+            </div>
+          )}
+
+          {/* PATROL POINT SELECT */}
+
+          <div className="space-y-2">
+            <Label>Pilih Patrol Point</Label>
+
+            {patrolPointsQuery.isLoading ? (
+              <div className="flex items-center gap-2 rounded border p-3 text-sm text-slate-500">
+                <Loader2 className="size-4 animate-spin" />
+                Memuat daftar Patrol Point...
+              </div>
+            ) : patrolPointsQuery.isError ? (
+              <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                Gagal mengambil data Patrol Point.
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto p-1 text-rose-700"
+                  onClick={() => patrolPointsQuery.refetch()}
+                >
+                  Coba lagi
+                </Button>
+              </div>
+            ) : activePatrolPoints.length === 0 ? (
+              <div className="rounded border border-dashed p-5 text-center text-sm text-slate-500">
+                Tidak ada Patrol Point aktif.
+              </div>
+            ) : (
+              <Select
+                value={selectedPatrolPointId}
+                onValueChange={(value) => handleSelectPatrolPoint(value ?? "")}
+                disabled={isAssignmentSaving}
+              >
+                <SelectTrigger className="rounded">
+                  <SelectValue placeholder="Pilih Patrol Point..." />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {activePatrolPoints.map((point) => (
+                    <SelectItem key={point.id} value={point.id}>
+                      {point.code} - {point.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            <p className="text-xs text-slate-500">
+              Hanya Patrol Point dengan status aktif yang dapat menerima
+              pertanyaan.
+            </p>
+          </div>
+
+          {/* ASSIGNMENT STATUS */}
+
+          {selectedPatrolPointId && (
+            <div className="space-y-3">
+              <div className="border-t border-slate-200 pt-3">
+                <p className="text-sm font-semibold text-slate-900">
+                  Status Keterhubungan
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Status hubungan pertanyaan pada Patrol Point yang dipilih.
+                </p>
+              </div>
+
+              {isAssignmentsLoading ? (
+                <div className="flex items-center justify-center rounded border p-6 text-sm text-slate-500">
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Memeriksa keterhubungan...
+                </div>
+              ) : isAssignmentsError ? (
+                <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  Gagal memeriksa hubungan pertanyaan:{" "}
+                  {getErrorMessage(pointAssignmentsError)}
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto p-1 text-rose-700"
+                    onClick={() => refetchPointAssignments()}
+                  >
+                    Coba lagi
+                  </Button>
+                </div>
+              ) : currentAssignment ? (
+                <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                      <CheckCircle2 className="size-5" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-emerald-800">
+                        Pertanyaan sudah terhubung
+                      </p>
+
+                      <p className="mt-1 text-xs text-emerald-700">
+                        Pertanyaan ini sudah tersedia pada Patrol Point yang
+                        dipilih.
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge className="rounded bg-white text-emerald-700 hover:bg-white">
+                          {currentAssignment.patrolPoint?.code ??
+                            activePatrolPoints.find(
+                              (point) => point.id === selectedPatrolPointId,
+                            )?.code}
+                        </Badge>
+
+                        <Badge
+                          variant="outline"
+                          className="border-emerald-300 text-emerald-700"
+                        >
+                          {currentAssignment.isRequired
+                            ? "Wajib Diisi"
+                            : "Opsional"}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-4 w-full rounded border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    disabled={isAssignmentSaving}
+                    onClick={handleUnassignQuestion}
+                  >
+                    {unassignQuestionMutation.isPending ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <Link2Off className="mr-2 size-4" />
+                    )}
+                    Lepas dari Patrol Point
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded border border-amber-200 bg-amber-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                      <Link2 className="size-5" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-amber-800">
+                        Belum terhubung
+                      </p>
+
+                      <p className="mt-1 text-xs text-amber-700">
+                        Pertanyaan ini belum tersedia pada Patrol Point yang
+                        dipilih.
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    className="mt-4 w-full rounded bg-blue-600 text-white hover:bg-blue-700"
+                    disabled={isAssignmentSaving}
+                    onClick={handleAssignQuestion}
+                  >
+                    {assignQuestionMutation.isPending ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <Link2 className="mr-2 size-4" />
+                    )}
+                    Hubungkan ke Patrol Point
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!selectedPatrolPointId && (
+            <div className="rounded border border-dashed border-slate-300 p-5 text-center">
+              <MapPin className="mx-auto size-7 text-slate-300" />
+
+              <p className="mt-2 text-sm font-medium text-slate-700">
+                Pilih Patrol Point
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Pilih Patrol Point untuk melihat status hubungan pertanyaan.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded"
+              disabled={isAssignmentSaving}
+              onClick={handleCloseAssignment}
+            >
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* =====================================================
+          DEACTIVATE CONFIRMATION
+      ===================================================== */}
+
       <AlertDialog
         open={Boolean(deletingQuestion)}
         onOpenChange={(open) => {
@@ -1209,18 +1619,21 @@ export const QuestionBuilderView: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-base">
               <Trash2 className="size-5 text-rose-600" />
-              Hapus Pertanyaan?
+              Nonaktifkan Pertanyaan?
             </AlertDialogTitle>
+
             <AlertDialogDescription>
-              Pertanyaan yang dihapus tidak dapat dikembalikan.
+              Pertanyaan ini tidak akan digunakan pada checklist patroli aktif.
+              Data pertanyaan dan riwayat jawabannya tetap tersimpan.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           {deletingQuestion && (
-            <div className="border border-slate-200 bg-slate-50 p-3 rounded">
+            <div className="rounded border border-slate-200 bg-slate-50 p-3">
               <p className="font-mono text-xs font-semibold text-blue-700">
-                {deletingQuestion.id}
+                {deletingQuestion.code}
               </p>
+
               <p className="mt-1 text-sm font-medium text-slate-900">
                 {deletingQuestion.questionText}
               </p>
@@ -1228,12 +1641,25 @@ export const QuestionBuilderView: React.FC = () => {
           )}
 
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded">Batal</AlertDialogCancel>
+            <AlertDialogCancel
+              className="rounded"
+              disabled={deactivateQuestionMutation.isPending}
+            >
+              Batal
+            </AlertDialogCancel>
+
             <AlertDialogAction
               className="rounded bg-rose-600 text-white hover:bg-rose-700"
-              onClick={handleDeleteQuestion}
+              disabled={deactivateQuestionMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteQuestion();
+              }}
             >
-              Hapus Pertanyaan
+              {deactivateQuestionMutation.isPending && (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              )}
+              Nonaktifkan
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
