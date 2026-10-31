@@ -77,6 +77,7 @@ import {
 
 import { useNfcTags } from "../hooks/nfc/useNfc";
 
+import { getErrorMessage } from "../helpers/getErrorMessage";
 import {
   useAssignNfc,
   useUnassignNfc,
@@ -108,14 +109,6 @@ const EMPTY_FORM: PointForm = {
   longitude: "",
   radiusMeters: "10",
   status: "INACTIVE" as PatrolPointStatus,
-};
-
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.response.data.message;
-  }
-
-  return "Terjadi kesalahan. Silakan coba kembali.";
 };
 
 const getActiveAssignment = (
@@ -690,7 +683,7 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
                 <TableHead className="text-center text-xs">Status</TableHead>
 
-                <TableHead className="text-right text-xs">Aksi</TableHead>
+                <TableHead className="text-center text-xs">Aksi</TableHead>
               </TableRow>
             </TableHeader>
 
@@ -803,23 +796,12 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="outline"
-                            className="size-7 rounded"
-                            title="Edit titik"
-                            onClick={() => openEditDialog(point)}
-                          >
-                            <Edit className="size-3.5" />
-                          </Button>
-
                           {assigned ? (
                             <Button
                               type="button"
-                              size="icon"
+                              size="sm"
                               variant="outline"
-                              className="size-7 rounded border-rose-200 text-rose-600 hover:bg-rose-50"
+                              className="flex items-center gap-1 rounded border-rose-200 text-rose-600 hover:bg-rose-50"
                               title="Lepas NFC"
                               onClick={() => {
                                 setActionError("");
@@ -827,13 +809,14 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
                               }}
                             >
                               <Unlink className="size-3.5" />
+                              <span>Lepas</span>
                             </Button>
                           ) : (
                             <Button
                               type="button"
-                              size="icon"
+                              size="sm"
                               variant="outline"
-                              className="size-7 rounded border-blue-200 text-blue-600 hover:bg-blue-50"
+                              className="rounded flex items-center gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
                               title="Tautkan NFC"
                               onClick={() => {
                                 setActionError("");
@@ -842,8 +825,20 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
                               }}
                             >
                               <Link2 className="size-3.5" />
+                              <span>Tautkan</span>
                             </Button>
                           )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded flx items-center gap-1"
+                            title="Edit titik"
+                            onClick={() => openEditDialog(point)}
+                          >
+                            <Edit className="size-3.5" />
+                            <span>edit</span>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
