@@ -1,25 +1,11 @@
-import React, { useState } from "react";
-import { SITES } from "../data/mockData";
+import { ChevronRight } from "lucide-react";
+import React from "react";
+
+import { useMe } from "../hooks/auth";
 import { NavTab } from "./Sidebar";
 
-import {
-  AlertCircle,
-  Bell,
-  Building2,
-  ChevronRight,
-  Info,
-  TriangleAlert,
-} from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useMe } from "../hooks/auth";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface HeaderProps {
   currentTab: NavTab;
@@ -52,15 +38,19 @@ const TAB_TITLES: Record<NavTab, { category: string; title: string }> = {
   },
   "tambah-jadwal": {
     category: "Operasional",
-    title: "Alur 3-Langkah Tambah Shift & Lokasi",
+    title: "Tambah Shift & Lokasi",
   },
   "tukar-shift": {
     category: "Operasional",
-    title: "Tukar Shift Personel",
+    title: "Tukar Shift Security",
   },
   "cuti-izin": {
     category: "Operasional",
-    title: "Manajemen Cuti, Izin & Personel Pengganti",
+    title: "Manajemen Cuti, Izin & Security Pengganti",
+  },
+  "manajemen-ronde": {
+    category: "Operasional",
+    title: "Manajemen ronde & checkpoint",
   },
   pengguna: {
     category: "Master Data",
@@ -88,19 +78,15 @@ const TAB_TITLES: Record<NavTab, { category: string; title: string }> = {
   },
 };
 
-export const Header: React.FC<HeaderProps> = ({
-  currentTab,
-  selectedSite,
-  onSelectSite,
-}) => {
-  const tabInfo = TAB_TITLES[currentTab] || {
-    category: "Operasional",
-    title: "Operasional Keamanan",
-  };
-
+export const Header: React.FC<HeaderProps> = ({ currentTab }) => {
   const { data: meResponse, isLoading } = useMe();
 
   const user = meResponse?.data;
+
+  const tabInfo = TAB_TITLES[currentTab] ?? {
+    category: "Operasional",
+    title: "Operasional Keamanan",
+  };
 
   const initials =
     user?.fullName
@@ -112,69 +98,66 @@ export const Header: React.FC<HeaderProps> = ({
       .join("")
       .toUpperCase() || "U";
 
-  // Mengambil nama role dari backend
   const userRole = user?.role?.name
     ?.replace(/_/g, " ")
     .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
   return (
-    <div className="flex h-full min-w-0 items-center justify-between gap-4">
+    <header className="flex h-full min-w-0 items-center justify-between gap-4">
       {/* Breadcrumb */}
-      <div className="flex min-w-0 items-center gap-2 overflow-hidden text-xs">
-        <span className="hidden shrink-0 font-semibold text-slate-900 sm:block">
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden text-sm">
+        <span className="hidden shrink-0 font-bold tracking-tight text-slate-900 sm:block">
           PAMAREA
         </span>
 
-        <ChevronRight className="hidden size-3 shrink-0 text-slate-400 sm:block" />
+        <ChevronRight className="hidden size-3.5 shrink-0 text-slate-400 sm:block" />
 
         <span className="hidden shrink-0 text-slate-500 md:block">
           {tabInfo.category}
         </span>
 
-        <ChevronRight className="hidden size-3 shrink-0 text-slate-400 md:block" />
+        <ChevronRight className="hidden size-3.5 shrink-0 text-slate-400 md:block" />
 
-        <span className="truncate font-semibold text-blue-600">
+        <h1 className="truncate font-semibold text-slate-800">
           {tabInfo.title}
-        </span>
+        </h1>
       </div>
 
-      {/* Global Controls */}
-      <div className="ml-4 flex shrink-0 items-center gap-2">
+      {/* User Profile */}
+      <div className="flex shrink-0 items-center gap-3">
         {isLoading ? (
           <>
-            <div className="h-9 w-9 animate-pulse rounded-full bg-gray-200" />
-            <div className="hidden space-y-1 sm:block">
-              <div className="h-3 w-20 animate-pulse rounded bg-gray-200" />
-              <div className="h-2.5 w-28 animate-pulse rounded bg-gray-200" />
+            <Skeleton className="size-9 rounded-full" />
+
+            <div className="hidden space-y-1.5 sm:block">
+              <Skeleton className="h-3.5 w-24" />
+              <Skeleton className="h-3 w-16" />
             </div>
           </>
         ) : (
           <>
-            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-black">
-              {user?.photoUrl ? (
-                <img
-                  src={user.photoUrl}
-                  alt={user.fullName}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <span className="text-sm font-bold text-white">{initials}</span>
-              )}
-            </div>
+            <Avatar className="size-9 border border-slate-200">
+              <AvatarImage
+                src={user?.photoUrl || undefined}
+                alt={user?.fullName || "Pengguna"}
+              />
 
-            <div className="hidden sm:block">
-              <h2 className="text-sm font-semibold text-gray-800">
+              <AvatarFallback className="bg-slate-900 text-xs font-semibold text-white">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="hidden min-w-0 sm:block">
+              <p className="max-w-40 truncate text-sm font-semibold text-slate-800">
                 {user?.fullName || "Pengguna"}
-              </h2>
-
-              <p className="text-xs tracking-wide text-gray-500">
-                {userRole || "Pengguna"}
               </p>
+
+              <p className="text-xs text-slate-500">{userRole || "Pengguna"}</p>
             </div>
           </>
         )}
       </div>
-    </div>
+    </header>
   );
 };
