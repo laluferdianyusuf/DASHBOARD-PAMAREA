@@ -5,12 +5,58 @@ import {
   PatrolScheduleItem,
   SITES,
 } from "../data/mockData";
+import { ShiftOfficerAssignment } from "../utils/security-logic";
 import { NavTab } from "./Sidebar";
 
 import {
-  ShiftOfficerAssignment,
-  formatShiftPayloadJson,
-} from "../utils/security-logic";
+  AlertCircle,
+  CalendarDays,
+  Check,
+  Clock,
+  CloudSun,
+  Download,
+  MapPin,
+  Moon,
+  Plus,
+  Save,
+  Search,
+  Sun,
+  X,
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface JadwalPatroliViewProps {
   selectedSite: string;
@@ -33,45 +79,48 @@ interface JadwalPatroliViewProps {
   ) => void;
 }
 
+const STATUS_STYLES: Record<string, string> = {
+  "Berjalan Aktif": "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Perlu Pengganti": "bg-rose-50 text-rose-700 border-rose-200",
+  "Selesai Tuntas": "bg-blue-50 text-blue-700 border-blue-200",
+  Terjadwal: "bg-slate-100 text-slate-700 border-slate-200",
+};
+
 export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
   selectedSite,
   onNavigate,
   schedules: propSchedules,
   onUpdateSchedules,
-  onAddScheduleAndSyncCalendar,
 }) => {
   const [internalSchedules, setInternalSchedules] =
     useState<PatrolScheduleItem[]>(PATROL_SCHEDULES);
-  const schedules = propSchedules || internalSchedules;
+
+  const schedules = propSchedules ?? internalSchedules;
+
   const setSchedules = (
     updater: React.SetStateAction<PatrolScheduleItem[]>,
   ) => {
-    if (typeof updater === "function") {
-      const next = updater(schedules);
-      if (onUpdateSchedules) onUpdateSchedules(next);
-      setInternalSchedules(next);
-    } else {
-      if (onUpdateSchedules) onUpdateSchedules(updater);
-      setInternalSchedules(updater);
-    }
+    const next = typeof updater === "function" ? updater(schedules) : updater;
+
+    onUpdateSchedules?.(next);
+    setInternalSchedules(next);
   };
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedShift, setSelectedShift] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
-  // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [backupModalSchedule, setBackupModalSchedule] =
     useState<PatrolScheduleItem | null>(null);
+
   const [selectedBackupOfficer, setSelectedBackupOfficer] = useState(
     "Hendra Kurniawan (Cadangan 1)",
   );
   const [backupReason, setBackupReason] = useState("Izin Sakit Terverifikasi");
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
-  // New Shift Form State adhering strictly to user schema:
-  // "siteId": "{{siteId}}", "name": "Shift Pagi", "startTime": "07:00", "endTime": "15:00",
-  // "intervalMinutes": 120, "gracePeriodMinutes": 30, "enforceSequence": false
+  // Form shift
   const [shiftSiteId, setShiftSiteId] = useState("site-a");
   const [shiftName, setShiftName] = useState("Shift Pagi");
   const [shiftStartTime, setShiftStartTime] = useState("07:00");
@@ -79,90 +128,124 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
   const [shiftIntervalMinutes, setShiftIntervalMinutes] = useState(120);
   const [shiftGracePeriodMinutes, setShiftGracePeriodMinutes] = useState(30);
   const [shiftEnforceSequence, setShiftEnforceSequence] = useState(false);
+
   const [shiftLocationIds, setShiftLocationIds] = useState<string[]>([
     "CP-SDR-001",
     "CP-SDR-002",
     "CP-SDR-003",
   ]);
+
   const [modalLocationSearch, setModalLocationSearch] = useState("");
   const [modalSquad, setModalSquad] = useState("Regu Alpha");
   const [modalDanru, setModalDanru] = useState("Ahmad Fauzi");
   const [copiedModalJson, setCopiedModalJson] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  const filteredSchedules = schedules.filter((s) => {
-    if (selectedSite !== "all" && s.siteId !== selectedSite) return false;
-    if (selectedShift !== "all" && !s.shift.includes(selectedShift))
+  const filteredSchedules = schedules.filter((schedule) => {
+    if (selectedSite !== "all" && schedule.siteId !== selectedSite) {
       return false;
-    if (selectedStatus !== "all" && s.status !== selectedStatus) return false;
+    }
+
+    if (selectedShift !== "all" && !schedule.shift.includes(selectedShift)) {
+      return false;
+    }
+
+    if (selectedStatus !== "all" && schedule.status !== selectedStatus) {
+      return false;
+    }
+
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const match =
-        s.id.toLowerCase().includes(q) ||
-        s.sector.toLowerCase().includes(q) ||
-        s.squad.toLowerCase().includes(q) ||
-        s.danru.toLowerCase().includes(q) ||
-        s.siteName.toLowerCase().includes(q);
+      const query = searchQuery.toLowerCase();
+
+      const match = [
+        schedule.id,
+        schedule.sector,
+        schedule.squad,
+        schedule.danru,
+        schedule.siteName,
+      ].some((value) => value.toLowerCase().includes(query));
+
       if (!match) return false;
     }
+
     return true;
   });
 
+  const showToast = (message: string) => {
+    setSuccessToast(message);
+    setTimeout(() => setSuccessToast(null), 3500);
+  };
+
   const handlePlotBackup = (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!backupModalSchedule) return;
 
     setSchedules((prev) =>
-      prev.map((s) => {
-        if (s.id === backupModalSchedule.id) {
-          return {
-            ...s,
-            assignedCount: s.requiredCount,
-            guardRatio: `${s.requiredCount}/${s.requiredCount} Petugas Lengkap (Plot: ${selectedBackupOfficer})`,
-            status: "Berjalan Aktif",
-          };
-        }
-        return s;
+      prev.map((schedule) => {
+        if (schedule.id !== backupModalSchedule.id) return schedule;
+
+        return {
+          ...schedule,
+          assignedCount: schedule.requiredCount,
+          guardRatio: `${schedule.requiredCount}/${schedule.requiredCount} Petugas Lengkap (Plot: ${selectedBackupOfficer})`,
+          status: "Berjalan Aktif",
+        };
       }),
     );
 
     setBackupModalSchedule(null);
-    setSuccessToast(
-      `Personel cadangan ${selectedBackupOfficer} berhasil diplot untuk jadwal ${backupModalSchedule.id}!`,
+
+    showToast(
+      `Personel ${selectedBackupOfficer} berhasil diplot. Alasan: ${backupReason}`,
     );
-    setTimeout(() => setSuccessToast(null), 3500);
   };
 
   const handleCreateSchedule = (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
+
     if (!shiftName.trim()) {
       setModalError("Nama shift wajib diisi.");
       return;
     }
+
     if (shiftLocationIds.length === 0) {
-      setModalError(
-        "Pilih minimal 1 lokasi titik patroli yang ada pada daftar.",
-      );
+      setModalError("Pilih minimal satu titik patroli.");
       return;
     }
 
-    const siteObj = SITES.find((s) => s.id === shiftSiteId) || SITES[1];
-    const newId = `SCH-2025-0524-${String(schedules.length + 1).padStart(2, "0")}`;
-    const selectedPoints = CHECKPOINTS.filter((c) =>
-      shiftLocationIds.includes(c.id),
+    const siteObj = SITES.find((site) => site.id === shiftSiteId);
+
+    if (!siteObj) {
+      setModalError("Site yang dipilih tidak ditemukan.");
+      return;
+    }
+
+    const newId = `SCH-2025-0524-${String(schedules.length + 1).padStart(
+      2,
+      "0",
+    )}`;
+
+    const selectedPoints = CHECKPOINTS.filter((checkpoint) =>
+      shiftLocationIds.includes(checkpoint.id),
     );
-    const locationNames = selectedPoints.map((c) => c.name);
+
+    const locationNames = selectedPoints.map((checkpoint) => checkpoint.name);
 
     const created: PatrolScheduleItem = {
       id: newId,
       siteId: shiftSiteId,
       siteName: siteObj.name.replace(/^Site [A-D] - /, ""),
-      sector: `${selectedPoints.length} Titik (${locationNames.slice(0, 2).join(", ")}${locationNames.length > 2 ? "..." : ""})`,
+      sector: `${selectedPoints.length} Titik (${locationNames
+        .slice(0, 2)
+        .join(", ")}${locationNames.length > 2 ? "..." : ""})`,
       squad: modalSquad,
       danru: modalDanru,
       shift: `${shiftName} (${shiftStartTime} - ${shiftEndTime})` as any,
-      routeName: `Rute ${shiftName} (${shiftEnforceSequence ? "Wajib Urut" : "Fleksibel"})`,
+      routeName: `Rute ${shiftName} (${
+        shiftEnforceSequence ? "Wajib Urut" : "Fleksibel"
+      })`,
       checkpointCount: selectedPoints.length,
       frequency: `Setiap ${shiftIntervalMinutes} Menit (Toleransi ${shiftGracePeriodMinutes}m)`,
       guardRatio: "4/4 Petugas",
@@ -174,822 +257,710 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
 
     setSchedules([created, ...schedules]);
     setIsAddModalOpen(false);
-    setSuccessToast(
-      `Shift baru "${shiftName}" (${shiftLocationIds.length} Titik Lokasi) berhasil dibuat dan dijadwalkan!`,
+
+    showToast(
+      `Shift "${shiftName}" berhasil dibuat dengan ${shiftLocationIds.length} titik lokasi.`,
     );
-    setTimeout(() => setSuccessToast(null), 3500);
+  };
+
+  const handleExportCSV = () => {
+    const headers = [
+      "ID",
+      "Site",
+      "Sector",
+      "Squad",
+      "Danru",
+      "Shift",
+      "Status",
+    ];
+
+    const rows = schedules.map((schedule) =>
+      [
+        schedule.id,
+        schedule.siteName,
+        schedule.sector,
+        schedule.squad,
+        schedule.danru,
+        schedule.shift,
+        schedule.status,
+      ]
+        .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        .join(","),
+    );
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "Jadwal_Patroli_PAMAREA.csv";
+    link.click();
+
+    URL.revokeObjectURL(url);
+  };
+
+  const filteredCheckpoints = CHECKPOINTS.filter((checkpoint) => {
+    if (!modalLocationSearch.trim()) return true;
+
+    const query = modalLocationSearch.toLowerCase();
+
+    return [
+      checkpoint.name,
+      checkpoint.id,
+      checkpoint.zoneFloor,
+      checkpoint.siteName,
+    ].some((value) => value.toLowerCase().includes(query));
+  });
+
+  const getShiftIcon = (shift: string) => {
+    if (shift.includes("Pagi")) return Sun;
+    if (shift.includes("Siang")) return CloudSun;
+    return Moon;
   };
 
   return (
-    <div className="space-y-6">
-      {/* Toast Notification */}
+    <div className="space-y-5">
+      {/* Toast */}
       {successToast && (
-        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-800 font-medium flex items-center justify-between animate-in fade-in">
+        <div className="flex items-center justify-between gap-3 rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-emerald-600 text-base">
-              check_circle
-            </span>
+            <Check className="size-4 shrink-0" />
             <span>{successToast}</span>
           </div>
-          <button
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 rounded text-emerald-700 hover:bg-emerald-100"
             onClick={() => setSuccessToast(null)}
-            className="text-emerald-700 hover:text-emerald-900"
           >
-            <span className="material-symbols-outlined text-sm">close</span>
-          </button>
+            <X className="size-4" />
+          </Button>
         </div>
       )}
 
-      {/* Header and View Switcher */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-[#e2e8f0]">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-4 border-b pb-4 md:flex-row md:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight">
+          <h1 className="text-xl font-semibold tracking-tight">
             Jadwal Patroli Lapangan
           </h1>
-          <p className="text-xs text-[#64748b] mt-1">
-            Pengaturan dan pemantauan giliran jaga shift patroli, alokasi
-            personel regu keamanan, dan rute checkpoint aktif.
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pengaturan shift, personel regu, dan rute checkpoint patroli.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Tab View Switcher */}
-          <div className="inline-flex items-center p-1 bg-[#f1f5f9] border border-[#e2e8f0] rounded text-xs">
-            <button className="px-3 py-1.5 rounded font-medium bg-white text-[#0f172a] shadow-xs flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm">
-                table_chart
-              </span>
-              <span>Tabel</span>
-            </button>
-            <button
+          <div className="flex items-center rounded border p-1">
+            <Button variant="secondary" size="sm" className="h-8 rounded">
+              <CalendarDays className="mr-2 size-4" />
+              Tabel
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 rounded"
               onClick={() => onNavigate("kalender")}
-              className="px-3 py-1.5 rounded font-medium text-[#64748b] hover:text-[#0f172a] transition-colors flex items-center gap-1.5"
             >
-              <span className="material-symbols-outlined text-sm">
-                calendar_view_week
-              </span>
-              <span>Kalender Shift</span>
-            </button>
+              Kalender Shift
+            </Button>
           </div>
 
-          <button
-            onClick={() => {
-              const csvContent =
-                "data:text/csv;charset=utf-8,ID,Site,Sector,Squad,Danru,Shift,Status\n" +
-                schedules
-                  .map(
-                    (s) =>
-                      `${s.id},"${s.siteName}","${s.sector}",${s.squad},${s.danru},"${s.shift}",${s.status}`,
-                  )
-                  .join("\n");
-              const encodedUri = encodeURI(csvContent);
-              const link = document.createElement("a");
-              link.setAttribute("href", encodedUri);
-              link.setAttribute("download", "Jadwal_Patroli_PAMAREA.csv");
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#e2e8f0] text-[#0f172a] rounded text-xs font-medium hover:bg-[#f8fafc] transition-colors shadow-xs"
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded"
+            onClick={handleExportCSV}
           >
-            <span className="material-symbols-outlined text-sm text-[#64748b]">
-              download
-            </span>
-            <span>Ekspor Roster (.csv)</span>
-          </button>
+            <Download className="mr-2 size-4" />
+            Ekspor CSV
+          </Button>
 
-          <button
+          <Button
+            size="sm"
+            className="rounded"
             onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#2563eb] text-white rounded text-xs font-semibold hover:bg-[#1d4ed8] transition-colors shadow-xs"
           >
-            <span className="material-symbols-outlined text-sm">
-              add_circle
-            </span>
-            <span>+ Tambah Shift</span>
-          </button>
-
-          <button
-            onClick={() => onNavigate("tambah-jadwal")}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 text-white rounded text-xs font-semibold hover:bg-slate-900 transition-colors shadow-xs"
-          >
-            <span className="material-symbols-outlined text-sm">
-              calendar_add_on
-            </span>
-            <span>Wizard 3-Step</span>
-          </button>
+            <Plus className="mr-2 size-4" />
+            Tambah Shift
+          </Button>
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="bg-white border border-[#e2e8f0] rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
-        <div className="flex flex-wrap items-center gap-2 flex-1">
-          {/* Search */}
-          <div className="relative min-w-[240px] flex-1 max-w-sm">
-            <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-[#94a3b8]">
-              search
-            </span>
-            <input
-              type="text"
+      {/* Filter */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="flex flex-1 flex-col gap-2 sm:flex-row">
+          <InputGroup className="rounded sm:max-w-sm">
+            <InputGroupAddon>
+              <Search className="size-4" />
+            </InputGroupAddon>
+            <InputGroupInput
               placeholder="Cari ID, regu, sektor, Danru..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-[#f8fafc] border border-[#cbd5e1] rounded text-xs text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
             />
-          </div>
+          </InputGroup>
 
-          {/* Shift Filter */}
-          <select
+          <Select
             value={selectedShift}
-            onChange={(e) => setSelectedShift(e.target.value)}
-            className="px-2.5 py-1.5 bg-[#f8fafc] border border-[#cbd5e1] rounded text-xs text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
+            onValueChange={(value) => setSelectedShift(value as string)}
           >
-            <option value="all">Semua Shift</option>
-            <option value="Pagi">Shift Pagi (07:00 - 15:00)</option>
-            <option value="Siang">Shift Siang (15:00 - 23:00)</option>
-            <option value="Malam">Shift Malam (23:00 - 07:00)</option>
-          </select>
+            <SelectTrigger className="w-full rounded sm:w-[190px]">
+              <SelectValue placeholder="Semua Shift" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Shift</SelectItem>
+              <SelectItem value="Pagi">Shift Pagi</SelectItem>
+              <SelectItem value="Siang">Shift Siang</SelectItem>
+              <SelectItem value="Malam">Shift Malam</SelectItem>
+            </SelectContent>
+          </Select>
 
-          {/* Status Filter */}
-          <select
+          <Select
             value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="px-2.5 py-1.5 bg-[#f8fafc] border border-[#cbd5e1] rounded text-xs text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
+            onValueChange={(value) => setSelectedStatus(value as string)}
           >
-            <option value="all">Semua Status</option>
-            <option value="Berjalan Aktif">Berjalan Aktif</option>
-            <option value="Perlu Pengganti">Perlu Pengganti</option>
-            <option value="Selesai Tuntas">Selesai Tuntas</option>
-            <option value="Terjadwal">Terjadwal</option>
-          </select>
+            <SelectTrigger className="w-full rounded sm:w-[190px]">
+              <SelectValue placeholder="Semua Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Status</SelectItem>
+              <SelectItem value="Berjalan Aktif">Berjalan Aktif</SelectItem>
+              <SelectItem value="Perlu Pengganti">Perlu Pengganti</SelectItem>
+              <SelectItem value="Selesai Tuntas">Selesai Tuntas</SelectItem>
+              <SelectItem value="Terjadwal">Terjadwal</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="text-xs text-[#64748b]">
+        <p className="shrink-0 text-sm text-muted-foreground">
           Menampilkan{" "}
-          <strong className="text-[#0f172a]">{filteredSchedules.length}</strong>{" "}
-          jadwal terdaftar
-        </div>
+          <span className="font-semibold text-foreground">
+            {filteredSchedules.length}
+          </span>{" "}
+          dari {schedules.length} jadwal
+        </p>
       </div>
 
-      {/* Table Data Container */}
-      <div className="bg-white border border-[#e2e8f0] rounded-lg overflow-hidden shadow-xs">
+      {/* Table */}
+      <div className="overflow-hidden rounded border bg-background">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-[#f8fafc] border-b border-[#e2e8f0] text-[11px] font-semibold text-[#64748b] uppercase tracking-wider h-10">
-                <th className="px-4 py-2">Kode Jadwal</th>
-                <th className="px-4 py-2">Site / Wilayah</th>
-                <th className="px-4 py-2">Regu &amp; Danru</th>
-                <th className="px-4 py-2">Giliran Shift</th>
-                <th className="px-4 py-2">Rute &amp; Frekuensi</th>
-                <th className="px-4 py-2 text-center">Rasio Petugas</th>
-                <th className="px-4 py-2 text-center">Status</th>
-                <th className="px-4 py-2 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f1f5f9] text-xs">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead className="whitespace-nowrap">Kode Jadwal</TableHead>
+                <TableHead>Petugas</TableHead>
+                <TableHead>Shift</TableHead>
+                <TableHead>Titik Patrol</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+
+            <TableBody>
               {filteredSchedules.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-[#94a3b8]">
-                    Tidak ada jadwal yang cocok dengan filter atau kata kunci.
-                  </td>
-                </tr>
-              ) : (
-                filteredSchedules.map((s) => (
-                  <tr
-                    key={s.id}
-                    className="hover:bg-[#f8fafc] transition-colors"
+                <TableRow>
+                  <TableCell
+                    colSpan={8}
+                    className="h-32 text-center text-muted-foreground"
                   >
-                    <td className="px-4 py-3 font-mono font-semibold text-[#2563eb]">
-                      <div className="flex items-center gap-2">
+                    Tidak ada jadwal yang sesuai dengan pencarian.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredSchedules.map((schedule) => {
+                  const ShiftIcon = getShiftIcon(schedule.shift);
+
+                  return (
+                    <TableRow key={schedule.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          <span
+                            className={`size-2 shrink-0 rounded ${
+                              schedule.status === "Berjalan Aktif"
+                                ? "bg-emerald-500"
+                                : schedule.status === "Perlu Pengganti"
+                                  ? "bg-rose-500"
+                                  : "bg-slate-400"
+                            }`}
+                          />
+                          <span className="font-mono text-xs font-semibold text-primary">
+                            {schedule.id}
+                          </span>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <p className="font-medium">{schedule.danru}</p>
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          <ShiftIcon className="size-4 text-muted-foreground" />
+                          <span className="text-xs">{schedule.shift}</span>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
                         <span
-                          className={`w-2 h-2 rounded-full ${
-                            s.status === "Berjalan Aktif"
-                              ? "bg-emerald-500 animate-pulse"
-                              : s.status === "Perlu Pengganti"
-                                ? "bg-rose-500 animate-ping"
-                                : "bg-slate-400"
+                          className={`whitespace-nowrap text-xs font-medium ${
+                            schedule.status === "Perlu Pengganti"
+                              ? "text-rose-600"
+                              : "text-foreground"
                           }`}
-                        ></span>
-                        <span>{s.id}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-[#0f172a]">
-                        {s.siteName}
-                      </div>
-                      <div className="text-[11px] text-[#64748b] truncate max-w-xs">
-                        {s.sector}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-[#0f172a]">
-                        {s.squad}
-                      </div>
-                      <div className="text-[11px] text-[#64748b]">
-                        Danru: {s.danru}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#f1f5f9] text-[#334155] font-medium text-[11px]">
-                        <span className="material-symbols-outlined text-xs text-[#2563eb]">
-                          {s.shift.includes("Pagi")
-                            ? "light_mode"
-                            : s.shift.includes("Siang")
-                              ? "wb_sunny"
-                              : "dark_mode"}
+                        >
+                          {schedule.guardRatio}
                         </span>
-                        <span>{s.shift}</span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-[#0f172a]">
-                        {s.routeName}
-                      </div>
-                      <div className="text-[11px] text-[#64748b]">
-                        Frekuensi: {s.frequency}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
-                          s.status === "Perlu Pengganti"
-                            ? "bg-rose-50 text-rose-700 border border-rose-200"
-                            : "bg-[#f1f5f9] text-[#334155]"
-                        }`}
-                      >
-                        {s.guardRatio}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                          s.status === "Berjalan Aktif"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : s.status === "Perlu Pengganti"
-                              ? "bg-rose-50 text-rose-700 border border-rose-200"
-                              : s.status === "Selesai Tuntas"
-                                ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                : "bg-slate-100 text-slate-700 border border-slate-200"
-                        }`}
-                      >
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {s.status === "Perlu Pengganti" ? (
-                          <button
-                            onClick={() => setBackupModalSchedule(s)}
-                            className="px-2.5 py-1 rounded bg-[#2563eb] text-white hover:bg-[#1d4ed8] text-xs font-semibold shadow-xs"
-                          >
-                            Plot Cadangan
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => onNavigate("monitoring")}
-                            className="px-2.5 py-1 rounded border border-[#e2e8f0] text-[#334155] hover:bg-[#f8fafc] text-xs font-medium"
-                          >
-                            Pantau Live
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={`rounded whitespace-nowrap font-medium ${
+                            STATUS_STYLES[schedule.status] ??
+                            STATUS_STYLES.Terjadwal
+                          }`}
+                        >
+                          {schedule.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
-        {/* Footer info strip */}
-        <div className="px-4 py-2.5 bg-[#f8fafc] border-t border-[#e2e8f0] flex items-center justify-between text-xs text-[#64748b]">
+        <div className="flex flex-col justify-between gap-2 border-t bg-muted/30 px-4 py-3 text-xs text-muted-foreground sm:flex-row">
+          <span>Data shift tersinkronisasi dengan server komando pusat.</span>
           <span>
-            Data shift tersinkronisasi otomatis dengan server komando pusat
-          </span>
-          <span>
-            Shift aktif saat ini:{" "}
-            <strong>Shift Siang (15:00 - 23:00 WIB)</strong>
+            <span className="font-medium text-foreground">Shift aktif:</span>{" "}
+            Shift Siang (15:00 - 23:00 WIB)
           </span>
         </div>
       </div>
 
-      {/* Modal: Plot Cadangan */}
-      {backupModalSchedule && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full border border-[#cbd5e1] overflow-hidden animate-in fade-in">
-            <div className="px-5 py-3.5 border-b border-[#e2e8f0] flex items-center justify-between bg-[#f8fafc]">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-rose-600 text-lg">
-                  person_alert
-                </span>
-                <h3 className="text-sm font-bold text-[#0f172a]">
-                  Plot Personel Cadangan
-                </h3>
-              </div>
-              <button
-                onClick={() => setBackupModalSchedule(null)}
-                className="text-[#94a3b8] hover:text-[#0f172a]"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
+      {/* Dialog Plot Cadangan */}
+      <Dialog
+        open={Boolean(backupModalSchedule)}
+        onOpenChange={(open) => {
+          if (!open) setBackupModalSchedule(null);
+        }}
+      >
+        <DialogContent className="rounded sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Plot Personel Cadangan</DialogTitle>
+            <DialogDescription>
+              Tetapkan personel pengganti untuk melengkapi kebutuhan petugas
+              shift.
+            </DialogDescription>
+          </DialogHeader>
 
-            <form onSubmit={handlePlotBackup} className="p-5 space-y-4 text-xs">
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-800">
+          {backupModalSchedule && (
+            <form onSubmit={handlePlotBackup} className="space-y-4">
+              <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                 <p className="font-semibold">
                   {backupModalSchedule.id} - {backupModalSchedule.siteName}
                 </p>
-                <p className="mt-0.5 text-[11px]">
-                  {backupModalSchedule.shift} · Alokasi Kurang 1 Personel
+                <p className="mt-1 text-xs">
+                  {backupModalSchedule.shift} · Kekurangan personel
                 </p>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-[#334155] uppercase mb-1">
-                  Pilih Personel Cadangan Siaga
-                </label>
-                <select
+              <div className="space-y-2">
+                <Label>Personel Cadangan</Label>
+                <Select
                   value={selectedBackupOfficer}
-                  onChange={(e) => setSelectedBackupOfficer(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#cbd5e1] rounded text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
+                  onValueChange={(value) =>
+                    setSelectedBackupOfficer(value as string)
+                  }
                 >
-                  <option>Hendra Kurniawan (Cadangan 1 - Gada Pratama)</option>
-                  <option>Fajar Ramadhan (Cadangan 2 - Gada Pratama)</option>
-                  <option>Teguh Santoso (Cadangan 3 - Gada Madya)</option>
-                </select>
+                  <SelectTrigger className="rounded">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Hendra Kurniawan (Cadangan 1)">
+                      Hendra Kurniawan (Cadangan 1)
+                    </SelectItem>
+                    <SelectItem value="Fajar Ramadhan (Cadangan 2)">
+                      Fajar Ramadhan (Cadangan 2)
+                    </SelectItem>
+                    <SelectItem value="Teguh Santoso (Cadangan 3)">
+                      Teguh Santoso (Cadangan 3)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-[#334155] uppercase mb-1">
-                  Alasan Penugasan Cadangan
-                </label>
-                <input
-                  type="text"
+              <div className="space-y-2">
+                <Label>Alasan Penugasan</Label>
+                <Input
+                  className="rounded"
                   value={backupReason}
                   onChange={(e) => setBackupReason(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#cbd5e1] rounded text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
+                  placeholder="Alasan penugasan cadangan"
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-2 border-t border-[#e2e8f0]">
-                <button
+              <DialogFooter>
+                <Button
                   type="button"
+                  variant="outline"
+                  className="rounded"
                   onClick={() => setBackupModalSchedule(null)}
-                  className="px-3 py-1.5 rounded border border-[#e2e8f0] text-[#334155] font-medium hover:bg-[#f8fafc]"
                 >
                   Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 rounded bg-[#2563eb] text-white font-semibold hover:bg-[#1d4ed8] shadow-xs"
-                >
+                </Button>
+                <Button type="submit" className="rounded">
                   Konfirmasi Penugasan
-                </button>
-              </div>
+                </Button>
+              </DialogFooter>
             </form>
-          </div>
-        </div>
-      )}
+          )}
+        </DialogContent>
+      </Dialog>
 
-      {/* Modal: Tambah Shift Baru Sesuai Schema */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-[#cbd5e1] overflow-hidden my-6 animate-in fade-in max-h-[90vh] flex flex-col">
-            <div className="px-5 py-4 border-b border-[#e2e8f0] flex items-center justify-between bg-[#f8fafc] shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                  <span className="material-symbols-outlined text-xl">
-                    schedule
-                  </span>
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#0f172a]">
-                    Tambah Shift Patroli
-                  </h3>
-                  <p className="text-[11px] text-[#64748b]">
-                    Konfigurasi parameter shift dan pilih titik-titik lokasi
-                    dari daftar lokasi aktif di sistem.
-                  </p>
-                </div>
+      {/* Dialog Tambah Shift */}
+      <Dialog
+        open={isAddModalOpen}
+        onOpenChange={(open) => {
+          setIsAddModalOpen(open);
+
+          if (!open) {
+            setModalError(null);
+            setModalLocationSearch("");
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Tambah Shift Patroli</DialogTitle>
+            <DialogDescription>
+              Atur parameter shift, regu, dan checkpoint yang akan dimasukkan ke
+              dalam jadwal patroli.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateSchedule} className="space-y-5">
+            {modalError && (
+              <div className="flex items-center gap-2 rounded border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">
+                <AlertCircle className="size-4 shrink-0" />
+                {modalError}
               </div>
-              <button
-                onClick={() => setIsAddModalOpen(false)}
-                className="text-[#94a3b8] hover:text-[#0f172a] p-1"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
+            )}
 
-            <form
-              onSubmit={handleCreateSchedule}
-              className="p-5 space-y-4 text-xs overflow-y-auto flex-1"
-            >
-              {modalError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 font-semibold flex items-center gap-2">
-                  <span className="material-symbols-outlined text-rose-600 text-base">
-                    error
-                  </span>
-                  <span>{modalError}</span>
-                </div>
-              )}
+            {/* Informasi Shift */}
+            <section className="space-y-3">
+              <div className="flex items-center gap-2 border-b pb-2">
+                <Clock className="size-4 text-primary" />
+                <h3 className="text-sm font-semibold">Informasi Shift</h3>
+              </div>
 
-              {/* SECTION 1: SHIFT SCHEMA FIELDS */}
-              <div className="space-y-3 p-3.5 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                <div className="text-[11px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-sm">
-                    tune
-                  </span>
-                  <span>Parameter Shift (Sesuai Spesifikasi JSON)</span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  {/* siteId */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#334155] mb-1">
-                      <span className="font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded text-[10px]">
-                        siteId
-                      </span>{" "}
-                      Lokasi Fasilitas
-                    </label>
-                    <select
-                      value={shiftSiteId}
-                      onChange={(e) => setShiftSiteId(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-[#cbd5e1] rounded text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
-                    >
-                      {SITES.filter((s) => s.id !== "all").map((site) => (
-                        <option key={site.id} value={site.id}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Lokasi Fasilitas</Label>
+                  <Select
+                    value={shiftSiteId}
+                    onValueChange={(value) => setShiftSiteId(value as string)}
+                  >
+                    <SelectTrigger className="rounded">
+                      <SelectValue placeholder="Pilih site" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SITES.filter((site) => site.id !== "all").map((site) => (
+                        <SelectItem key={site.id} value={site.id}>
                           {site.id} — {site.name}
-                        </option>
+                        </SelectItem>
                       ))}
-                    </select>
-                  </div>
-
-                  {/* name */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#334155] mb-1">
-                      <span className="font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded text-[10px]">
-                        name
-                      </span>{" "}
-                      Nama Shift
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={shiftName}
-                      onChange={(e) => setShiftName(e.target.value)}
-                      placeholder="Shift Pagi"
-                      className="w-full px-3 py-2 bg-white border border-[#cbd5e1] rounded text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
-                    />
-                  </div>
-
-                  {/* startTime */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#334155] mb-1">
-                      <span className="font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded text-[10px]">
-                        startTime
-                      </span>{" "}
-                      Jam Mulai
-                    </label>
-                    <input
-                      type="time"
-                      required
-                      value={shiftStartTime}
-                      onChange={(e) => setShiftStartTime(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-[#cbd5e1] rounded text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
-                    />
-                  </div>
-
-                  {/* endTime */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#334155] mb-1">
-                      <span className="font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded text-[10px]">
-                        endTime
-                      </span>{" "}
-                      Jam Selesai
-                    </label>
-                    <input
-                      type="time"
-                      required
-                      value={shiftEndTime}
-                      onChange={(e) => setShiftEndTime(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-[#cbd5e1] rounded text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
-                    />
-                  </div>
-
-                  {/* intervalMinutes */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#334155] mb-1">
-                      <span className="font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded text-[10px]">
-                        intervalMinutes
-                      </span>{" "}
-                      Interval Putaran (Menit)
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={15}
-                        max={480}
-                        step={15}
-                        required
-                        value={shiftIntervalMinutes}
-                        onChange={(e) =>
-                          setShiftIntervalMinutes(Number(e.target.value))
-                        }
-                        className="w-24 px-3 py-2 bg-white border border-[#cbd5e1] rounded font-mono text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
-                      />
-                      <div className="flex items-center gap-1">
-                        {[60, 90, 120, 180].map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            onClick={() => setShiftIntervalMinutes(m)}
-                            className={`px-2 py-1 rounded text-[10px] font-medium border ${
-                              shiftIntervalMinutes === m
-                                ? "bg-blue-600 text-white border-blue-600 font-bold"
-                                : "bg-white text-slate-700 border-slate-300"
-                            }`}
-                          >
-                            {m}m
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* gracePeriodMinutes */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#334155] mb-1">
-                      <span className="font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded text-[10px]">
-                        gracePeriodMinutes
-                      </span>{" "}
-                      Batas Toleransi (Menit)
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        max={120}
-                        step={5}
-                        required
-                        value={shiftGracePeriodMinutes}
-                        onChange={(e) =>
-                          setShiftGracePeriodMinutes(Number(e.target.value))
-                        }
-                        className="w-24 px-3 py-2 bg-white border border-[#cbd5e1] rounded font-mono text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
-                      />
-                      <div className="flex items-center gap-1">
-                        {[15, 30, 45].map((g) => (
-                          <button
-                            key={g}
-                            type="button"
-                            onClick={() => setShiftGracePeriodMinutes(g)}
-                            className={`px-2 py-1 rounded text-[10px] font-medium border ${
-                              shiftGracePeriodMinutes === g
-                                ? "bg-amber-600 text-white border-amber-600 font-bold"
-                                : "bg-white text-slate-700 border-slate-300"
-                            }`}
-                          >
-                            {g}m
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                {/* enforceSequence */}
-                <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded text-[10px]">
-                        enforceSequence
-                      </span>
-                      <span className="text-xs font-bold text-[#0f172a]">
-                        Wajib Urut Sesuai Urutan Checkpoint
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-[#64748b]">
-                      Petugas harus men-tap titik patroli berurutan sesuai alur
-                      ({shiftEnforceSequence ? "Ketat (true)" : "Bebas (false)"}
-                      ).
-                    </p>
-                  </div>
-
-                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={shiftEnforceSequence}
-                      onChange={(e) =>
-                        setShiftEnforceSequence(e.target.checked)
-                      }
-                      className="sr-only peer"
-                    />
-                    <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                  </label>
-                </div>
-              </div>
-
-              {/* SECTION 2: LIST LOKASI-LOKASI YANG ADA (BUKAN PER SITE) */}
-              <div className="space-y-2.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <label className="text-xs font-bold text-[#0f172a] flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm text-blue-600">
-                        pin_drop
-                      </span>
-                      <span>
-                        Daftar Titik Lokasi Yang Berjalan (Bukan Per Site)
-                      </span>
-                    </label>
-                    <p className="text-[11px] text-[#64748b]">
-                      Pilih titik-titik patroli yang ada di sistem untuk
-                      dimasukkan dalam shift ini ({shiftLocationIds.length}{" "}
-                      titik dipilih).
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShiftLocationIds(CHECKPOINTS.map((c) => c.id))
-                      }
-                      className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-[10px] font-semibold text-slate-700"
-                    >
-                      Pilih Semua
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShiftLocationIds([])}
-                      className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-[10px] font-semibold text-rose-700"
-                    >
-                      Kosongkan
-                    </button>
-                  </div>
-                </div>
-
-                {/* Location Search Bar */}
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-2.5 top-2 text-[#94a3b8] text-sm">
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Cari nama lokasi, kode checkpoint (CP-...), lantai..."
-                    value={modalLocationSearch}
-                    onChange={(e) => setModalLocationSearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a]"
+                <div className="space-y-2">
+                  <Label>Nama Shift</Label>
+                  <Input
+                    className="rounded"
+                    value={shiftName}
+                    onChange={(e) => setShiftName(e.target.value)}
+                    placeholder="Contoh: Shift Pagi"
+                    required
                   />
                 </div>
 
-                {/* Scrollable Checkpoint List */}
-                <div className="max-h-48 overflow-y-auto space-y-1.5 border border-[#e2e8f0] rounded-lg p-2 bg-white [scrollbar-width:thin]">
-                  {CHECKPOINTS.filter((cp) => {
-                    if (!modalLocationSearch.trim()) return true;
-                    const q = modalLocationSearch.toLowerCase();
-                    return (
-                      cp.name.toLowerCase().includes(q) ||
-                      cp.id.toLowerCase().includes(q) ||
-                      cp.zoneFloor.toLowerCase().includes(q) ||
-                      cp.siteName.toLowerCase().includes(q)
-                    );
-                  }).map((cp) => {
-                    const isSelected = shiftLocationIds.includes(cp.id);
-                    const orderIdx = shiftLocationIds.indexOf(cp.id);
+                <div className="space-y-2">
+                  <Label>Jam Mulai</Label>
+                  <Input
+                    type="time"
+                    className="rounded"
+                    value={shiftStartTime}
+                    onChange={(e) => setShiftStartTime(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Jam Selesai</Label>
+                  <Input
+                    type="time"
+                    className="rounded"
+                    value={shiftEndTime}
+                    onChange={(e) => setShiftEndTime(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Interval Putaran (Menit)</Label>
+                  <Input
+                    type="number"
+                    min={15}
+                    max={480}
+                    step={15}
+                    className="rounded"
+                    value={shiftIntervalMinutes}
+                    onChange={(e) =>
+                      setShiftIntervalMinutes(Number(e.target.value))
+                    }
+                    required
+                  />
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {[60, 90, 120, 180].map((minutes) => (
+                      <Button
+                        key={minutes}
+                        type="button"
+                        size="sm"
+                        variant={
+                          shiftIntervalMinutes === minutes
+                            ? "default"
+                            : "outline"
+                        }
+                        className="h-7 rounded px-2 text-xs"
+                        onClick={() => setShiftIntervalMinutes(minutes)}
+                      >
+                        {minutes}m
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Batas Toleransi (Menit)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={120}
+                    step={5}
+                    className="rounded"
+                    value={shiftGracePeriodMinutes}
+                    onChange={(e) =>
+                      setShiftGracePeriodMinutes(Number(e.target.value))
+                    }
+                    required
+                  />
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {[15, 30, 45].map((minutes) => (
+                      <Button
+                        key={minutes}
+                        type="button"
+                        size="sm"
+                        variant={
+                          shiftGracePeriodMinutes === minutes
+                            ? "default"
+                            : "outline"
+                        }
+                        className="h-7 rounded px-2 text-xs"
+                        onClick={() => setShiftGracePeriodMinutes(minutes)}
+                      >
+                        {minutes}m
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Regu</Label>
+                  <Input
+                    className="rounded"
+                    value={modalSquad}
+                    onChange={(e) => setModalSquad(e.target.value)}
+                    placeholder="Nama regu"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Danru</Label>
+                  <Input
+                    className="rounded"
+                    value={modalDanru}
+                    onChange={(e) => setModalDanru(e.target.value)}
+                    placeholder="Nama komandan regu"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded border p-3">
+                <div className="space-y-1">
+                  <Label>Wajib Urut Checkpoint</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Petugas harus melakukan tap checkpoint sesuai urutan yang
+                    ditentukan.
+                  </p>
+                  <Badge variant="outline" className="rounded text-xs">
+                    {shiftEnforceSequence ? "Urutan wajib" : "Urutan fleksibel"}
+                  </Badge>
+                </div>
+
+                <Checkbox
+                  checked={shiftEnforceSequence}
+                  onCheckedChange={(checked) =>
+                    setShiftEnforceSequence(checked === true)
+                  }
+                  className="mt-1 rounded"
+                />
+              </div>
+            </section>
+
+            {/* Checkpoint */}
+            <section className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="size-4 text-primary" />
+                    <h3 className="text-sm font-semibold">
+                      Titik Lokasi Patroli
+                    </h3>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {shiftLocationIds.length} titik dipilih. Urutan mengikuti
+                    urutan pemilihan.
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="rounded"
+                    onClick={() =>
+                      setShiftLocationIds(
+                        CHECKPOINTS.map((checkpoint) => checkpoint.id),
+                      )
+                    }
+                  >
+                    Pilih Semua
+                  </Button>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="rounded"
+                    onClick={() => setShiftLocationIds([])}
+                  >
+                    Kosongkan
+                  </Button>
+                </div>
+              </div>
+
+              <InputGroup className="rounded">
+                <InputGroupAddon>
+                  <Search className="size-4" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  placeholder="Cari nama, kode checkpoint, lantai..."
+                  value={modalLocationSearch}
+                  onChange={(e) => setModalLocationSearch(e.target.value)}
+                />
+              </InputGroup>
+
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded border p-2">
+                {filteredCheckpoints.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    Tidak ada checkpoint yang ditemukan.
+                  </p>
+                ) : (
+                  filteredCheckpoints.map((checkpoint) => {
+                    const isSelected = shiftLocationIds.includes(checkpoint.id);
+                    const orderIndex = shiftLocationIds.indexOf(checkpoint.id);
 
                     return (
-                      <div
-                        key={cp.id}
-                        onClick={() => {
-                          setShiftLocationIds((prev) =>
-                            prev.includes(cp.id)
-                              ? prev.filter((id) => id !== cp.id)
-                              : [...prev, cp.id],
-                          );
-                        }}
-                        className={`p-2 rounded border text-xs cursor-pointer flex items-center justify-between transition-colors ${
+                      <label
+                        key={checkpoint.id}
+                        className={`flex cursor-pointer items-center justify-between gap-3 rounded border p-2.5 transition-colors ${
                           isSelected
-                            ? "bg-blue-50/70 border-blue-400 font-medium"
-                            : "bg-white border-[#f1f5f9] hover:bg-[#f8fafc]"
+                            ? "border-primary/40 bg-primary/5"
+                            : "border-transparent hover:bg-muted/50"
                         }`}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                          <input
-                            type="checkbox"
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Checkbox
                             checked={isSelected}
-                            onChange={() => {}}
-                            className="w-3.5 h-3.5 text-blue-600 rounded border-[#cbd5e1]"
+                            onCheckedChange={(checked) => {
+                              setShiftLocationIds((prev) =>
+                                checked
+                                  ? [...prev, checkpoint.id]
+                                  : prev.filter((id) => id !== checkpoint.id),
+                              );
+                            }}
+                            className="rounded"
                           />
-                          <div className="truncate">
-                            <span className="text-[#0f172a]">{cp.name}</span>
-                            <span className="text-[10px] text-[#64748b] ml-1.5">
-                              ({cp.zoneFloor} • {cp.siteName})
-                            </span>
+
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {checkpoint.name}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {checkpoint.zoneFloor} · {checkpoint.siteName}
+                            </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex shrink-0 items-center gap-2">
                           {isSelected && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-600 text-white font-mono">
-                              #{orderIdx + 1}
-                            </span>
+                            <Badge className="rounded text-xs">
+                              #{orderIndex + 1}
+                            </Badge>
                           )}
-                          <span className="font-mono text-[10px] text-slate-500">
-                            {cp.id}
+
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {checkpoint.id}
                           </span>
                         </div>
-                      </div>
+                      </label>
                     );
-                  })}
-                </div>
+                  })
+                )}
               </div>
+            </section>
 
-              {/* JSON Payload Pratinjau Card */}
-              <div className="rounded-lg bg-slate-900 border border-slate-800 p-3 text-white">
-                <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-emerald-400 text-sm">
-                      data_object
-                    </span>
-                    <span className="text-[11px] font-bold text-slate-200">
-                      Pratinjau JSON Payload Sesuai Permintaan
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const payloadStr = formatShiftPayloadJson({
-                        siteId: shiftSiteId,
-                        name: shiftName,
-                        startTime: shiftStartTime,
-                        endTime: shiftEndTime,
-                        intervalMinutes: shiftIntervalMinutes,
-                        gracePeriodMinutes: shiftGracePeriodMinutes,
-                        enforceSequence: shiftEnforceSequence,
-                        locationIds: shiftLocationIds,
-                      });
-                      navigator.clipboard.writeText(payloadStr);
-                      setCopiedModalJson(true);
-                      setTimeout(() => setCopiedModalJson(false), 2000);
-                    }}
-                    className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono flex items-center gap-1 border border-slate-700"
-                  >
-                    <span className="material-symbols-outlined text-xs">
-                      {copiedModalJson ? "check" : "content_copy"}
-                    </span>
-                    <span>{copiedModalJson ? "Tersalin" : "Salin"}</span>
-                  </button>
-                </div>
-                <pre className="text-[10px] font-mono text-emerald-300 overflow-x-auto leading-relaxed">
-                  {formatShiftPayloadJson({
-                    siteId: shiftSiteId,
-                    name: shiftName,
-                    startTime: shiftStartTime,
-                    endTime: shiftEndTime,
-                    intervalMinutes: shiftIntervalMinutes,
-                    gracePeriodMinutes: shiftGracePeriodMinutes,
-                    enforceSequence: shiftEnforceSequence,
-                    locationIds: shiftLocationIds,
-                  })}
-                </pre>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="pt-3 flex items-center justify-between border-t border-[#e2e8f0]">
-                <button
+            <DialogFooter className="flex justify-end gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-2">
+                <Button
                   type="button"
-                  onClick={() => onNavigate("tambah-jadwal")}
-                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                  variant="outline"
+                  className="rounded"
+                  onClick={() => setIsAddModalOpen(false)}
                 >
-                  <span className="material-symbols-outlined text-sm">
-                    open_in_new
-                  </span>
-                  <span>Buka Alur Penuh 3-Step Wizard</span>
-                </button>
+                  Batal
+                </Button>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddModalOpen(false)}
-                    className="px-3 py-1.5 rounded border border-[#e2e8f0] text-[#334155] font-medium hover:bg-[#f8fafc]"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded bg-[#2563eb] text-white font-semibold hover:bg-[#1d4ed8] shadow-xs flex items-center gap-1.5"
-                  >
-                    <span className="material-symbols-outlined text-sm">
-                      save
-                    </span>
-                    <span>Simpan Shift</span>
-                  </button>
-                </div>
+                <Button type="submit" className="rounded">
+                  <Save className="mr-2 size-4" />
+                  Simpan Shift
+                </Button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -10,6 +10,7 @@ import {
   LucideLogOut,
   MapPin,
   Nfc,
+  Route,
   ShieldCheck,
   TriangleAlert,
   UserRoundX,
@@ -49,7 +50,8 @@ export type NavTab =
   | "nfc"
   | "pengguna"
   | "question-builder"
-  | "analytic-audit";
+  | "analytic-audit"
+  | "manajemen-ronde";
 
 interface SidebarProps {
   currentTab: NavTab;
@@ -120,6 +122,11 @@ export function Sidebar({
       label: "Operasional Patroli",
       items: [
         {
+          id: "tambah-jadwal",
+          label: "Buat Jadwal",
+          icon: CalendarPlus,
+        },
+        {
           id: "jadwal",
           label: "Jadwal Patroli",
           icon: CalendarDays,
@@ -128,12 +135,6 @@ export function Sidebar({
           id: "kalender",
           label: "Kalender",
           icon: CalendarRange,
-        },
-        {
-          id: "tambah-jadwal",
-          label: "Buat Jadwal",
-          icon: CalendarPlus,
-          badge: "3-Step",
         },
         {
           id: "tukar-shift",
@@ -148,6 +149,11 @@ export function Sidebar({
           badge: "Izin",
         },
         {
+          id: "manajemen-ronde",
+          label: "Manajemen Ronde",
+          icon: Route,
+        },
+        {
           id: "temuan",
           label: "Temuan",
           icon: TriangleAlert,
@@ -159,6 +165,11 @@ export function Sidebar({
       label: "Manajemen Sistem",
       items: [
         {
+          id: "riwayat",
+          label: "Riwayat Patroli",
+          icon: History,
+        },
+        {
           id: "monitoring",
           label: "Monitoring",
           icon: ChartNoAxesCombined,
@@ -168,11 +179,6 @@ export function Sidebar({
           id: "analytic-audit",
           label: "Analitik & Audit",
           icon: ShieldCheck,
-        },
-        {
-          id: "riwayat",
-          label: "Riwayat Aktivitas",
-          icon: History,
         },
       ],
     },

@@ -1,29 +1,121 @@
-import React, { useState } from 'react';
-import { NavTab } from './Sidebar';
-import { DayShift, CalendarShiftItem, ShiftOfficerAssignment } from '../utils/security-logic';
-import { INITIAL_OFFICERS_POOL } from '../data/calendarMockData';
+import React, { useMemo, useState } from "react";
+import { INITIAL_OFFICERS_POOL } from "../data/calendarMockData";
+import {
+  CalendarShiftItem,
+  DayShift,
+  ShiftOfficerAssignment,
+} from "../utils/security-logic";
+import { NavTab } from "./Sidebar";
+
+import {
+  AlertCircle,
+  ArrowLeftRight,
+  CalendarDays,
+  CalendarPlus,
+  CalendarRange,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  PersonStanding,
+  ShieldCheck,
+  UserMinus,
+  UserPlus,
+  X,
+} from "lucide-react";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 
 interface KalenderShiftViewProps {
   onNavigate: (tab: NavTab) => void;
   calendarDays: (DayShift | null)[];
   selectedDay: number;
   onSelectDay: (day: number) => void;
-  onAssignOfficerToShift: (day: number, shiftType: 'Pagi' | 'Siang' | 'Malam', officer: ShiftOfficerAssignment) => void;
-  onUnassignOfficerFromShift: (day: number, shiftType: 'Pagi' | 'Siang' | 'Malam', officerId: string) => void;
+  onAssignOfficerToShift: (
+    day: number,
+    shiftType: "Pagi" | "Siang" | "Malam",
+    officer: ShiftOfficerAssignment,
+  ) => void;
+  onUnassignOfficerFromShift: (
+    day: number,
+    shiftType: "Pagi" | "Siang" | "Malam",
+    officerId: string,
+  ) => void;
 }
 
 const POST_OPTIONS = [
-  'Pos Utama Gerbang Depan',
-  'Pintu Masuk Lobi & Metal Detector',
-  'Patroli Koridor & Lift VIP',
-  'Pintu Evakuasi Barat & Loading Bay',
-  'Pos Timbangan & Dermaga Kontainer',
-  'Ruang Server & Genset B2',
-  'Patroli Perimeter Selatan & Pagar',
-  'Gerbang Timur & Pos X-Ray',
-  'Pos Pantau CCTV & Pusat Kendali',
-  'Cadangan Siaga / Mobile Patrol',
+  "Pos Utama Gerbang Depan",
+  "Pintu Masuk Lobi & Metal Detector",
+  "Patroli Koridor & Lift VIP",
+  "Pintu Evakuasi Barat & Loading Bay",
+  "Pos Timbangan & Dermaga Kontainer",
+  "Ruang Server & Genset B2",
+  "Patroli Perimeter Selatan & Pagar",
+  "Gerbang Timur & Pos X-Ray",
+  "Pos Pantau CCTV & Pusat Kendali",
+  "Cadangan Siaga / Mobile Patrol",
 ];
+
+const SHIFT_CONFIG = {
+  Pagi: {
+    time: "07:00 - 15:00",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    dot: "bg-emerald-500",
+    selected: "border-emerald-200 bg-emerald-50/50",
+  },
+  Siang: {
+    time: "15:00 - 23:00",
+    color: "bg-blue-50 text-blue-700 border-blue-200",
+    dot: "bg-blue-500",
+    selected: "border-blue-200 bg-blue-50/50",
+  },
+  Malam: {
+    time: "23:00 - 07:00",
+    color: "bg-purple-50 text-purple-700 border-purple-200",
+    dot: "bg-purple-500",
+    selected: "border-purple-200 bg-purple-50/50",
+  },
+} as const;
+
+const getCurrentMonthLabel = () => {
+  return new Intl.DateTimeFormat("id-ID", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+};
+
+const getCurrentDayLabel = (day: number) => {
+  const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth(), day);
+
+  return new Intl.DateTimeFormat("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+};
 
 export const KalenderShiftView: React.FC<KalenderShiftViewProps> = ({
   onNavigate,
@@ -33,35 +125,67 @@ export const KalenderShiftView: React.FC<KalenderShiftViewProps> = ({
   onAssignOfficerToShift,
   onUnassignOfficerFromShift,
 }) => {
-  const [currentMonth] = useState('Mei 2025');
-
-  // Modal for adding security officer to a specific shift
   const [assignModalShift, setAssignModalShift] = useState<{
     day: number;
     shift: CalendarShiftItem;
   } | null>(null);
 
-  const [selectedOfficerId, setSelectedOfficerId] = useState(INITIAL_OFFICERS_POOL[1].officerId);
+  const [selectedOfficerId, setSelectedOfficerId] = useState("");
   const [selectedPost, setSelectedPost] = useState(POST_OPTIONS[0]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const activeDayObj = calendarDays.find((d) => d && d.day === selectedDay);
+  const currentMonth = getCurrentMonthLabel();
+
+  const activeDayObj = calendarDays.find(
+    (day) => day && day.day === selectedDay,
+  );
+
+  const assignedOfficerIds = useMemo(() => {
+    if (!assignModalShift) return [];
+
+    return (assignModalShift.shift.officers || []).map(
+      (officer) => officer.officerId,
+    );
+  }, [assignModalShift]);
+
+  const availableOfficers = useMemo(() => {
+    return INITIAL_OFFICERS_POOL.filter(
+      (officer) => !assignedOfficerIds.includes(officer.officerId),
+    );
+  }, [assignedOfficerIds]);
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+
+    window.setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  };
 
   const handleOpenAssignModal = (day: number, shift: CalendarShiftItem) => {
     setAssignModalShift({ day, shift });
-    // Pick an officer not yet assigned
-    const assignedIds = (shift.officers || []).map((o) => o.officerId);
-    const available = INITIAL_OFFICERS_POOL.find((o) => !assignedIds.includes(o.officerId));
-    if (available) {
-      setSelectedOfficerId(available.officerId);
-    }
+
+    const assignedIds = (shift.officers || []).map(
+      (officer) => officer.officerId,
+    );
+
+    const available = INITIAL_OFFICERS_POOL.find(
+      (officer) => !assignedIds.includes(officer.officerId),
+    );
+
+    setSelectedOfficerId(available?.officerId ?? "");
+    setSelectedPost(POST_OPTIONS[0]);
   };
 
-  const handleSaveAssignModal = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignModalShift) return;
+  const handleSaveAssignModal = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
 
-    const officerObj = INITIAL_OFFICERS_POOL.find((o) => o.officerId === selectedOfficerId);
+    if (!assignModalShift || !selectedOfficerId) return;
+
+    const officerObj = INITIAL_OFFICERS_POOL.find(
+      (officer) => officer.officerId === selectedOfficerId,
+    );
+
     if (!officerObj) return;
 
     onAssignOfficerToShift(assignModalShift.day, assignModalShift.shift.type, {
@@ -69,478 +193,658 @@ export const KalenderShiftView: React.FC<KalenderShiftViewProps> = ({
       post: selectedPost,
     });
 
-    setToastMessage(
-      `Petugas ${officerObj.officerName} berhasil di-plot ke Shift ${assignModalShift.shift.type} pada tanggal ${assignModalShift.day} Mei 2025!`
+    showToast(
+      `Petugas ${officerObj.officerName} berhasil di-plot ke Shift ${assignModalShift.shift.type} pada tanggal ${assignModalShift.day} ${currentMonth}.`,
     );
-    setTimeout(() => setToastMessage(null), 3500);
+
     setAssignModalShift(null);
   };
 
+  const handleUnassignOfficer = (
+    day: number,
+    shift: CalendarShiftItem,
+    officer: ShiftOfficerAssignment,
+  ) => {
+    onUnassignOfficerFromShift(day, shift.type, officer.officerId);
+
+    showToast(
+      `Petugas ${officer.officerName} berhasil dilepas dari Shift ${shift.type}.`,
+    );
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Toast Alert */}
+    <div className="space-y-5">
+      {/* Toast Notification */}
       {toastMessage && (
-        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-800 font-medium flex items-center justify-between animate-in fade-in">
+        <div className="flex items-center justify-between gap-3 rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-emerald-600 text-base">check_circle</span>
+            <CheckCircle2 className="size-4 shrink-0" />
             <span>{toastMessage}</span>
           </div>
-          <button onClick={() => setToastMessage(null)} className="text-emerald-700 hover:text-emerald-900">
-            <span className="material-symbols-outlined text-sm">close</span>
-          </button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 rounded text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900"
+            onClick={() => setToastMessage(null)}
+          >
+            <X className="size-4" />
+          </Button>
         </div>
       )}
 
-      {/* Header and Switcher */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-[#e2e8f0]">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#eff6ff] text-[#2563eb] border border-[#bfdbfe]">
-              ROSTER BULANAN
-            </span>
-            <span className="text-xs text-[#94a3b8]">/</span>
-            <span className="text-xs font-semibold text-[#64748b]">Kalender Operasional</span>
-          </div>
-          <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-4 border-b pb-4 lg:flex-row lg:items-end">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Kalender Shift &amp; Giliran Jaga
           </h1>
-          <p className="text-xs text-[#64748b] mt-1">
-            Matriks penugasan shift bulanan, rotasi regu pengamanan, dan alokasi personel per hari operasional.
+
+          <p className="max-w-2xl text-xs text-muted-foreground">
+            Matriks penugasan shift, rotasi regu pengamanan, dan alokasi
+            personel per hari operasional.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* New Schedule CTA */}
-          <button
-            onClick={() => onNavigate('tambah-jadwal')}
-            className="px-3.5 py-1.5 rounded bg-[#2563eb] text-white text-xs font-bold hover:bg-[#1d4ed8] shadow-xs flex items-center gap-1.5 transition-colors"
+          <Button
+            size="sm"
+            className="rounded"
+            onClick={() => onNavigate("tambah-jadwal")}
           >
-            <span className="material-symbols-outlined text-sm">calendar_add_on</span>
-            <span>+ Tambah Shift (3-Step)</span>
-          </button>
+            <CalendarPlus className="size-4" />
+            Tambah Shift
+          </Button>
 
-          {/* Swap Shift CTA */}
-          <button
-            onClick={() => onNavigate('tukar-shift')}
-            className="px-3 py-1.5 rounded bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-700 shadow-xs flex items-center gap-1.5 transition-colors"
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded"
+            onClick={() => onNavigate("tukar-shift")}
           >
-            <span className="material-symbols-outlined text-sm">swap_horiz</span>
-            <span>Tukar Shift</span>
-          </button>
+            <ArrowLeftRight className="size-4" />
+            Tukar Shift
+          </Button>
 
-          {/* Cuti & Izin CTA */}
-          <button
-            onClick={() => onNavigate('cuti-izin')}
-            className="px-3 py-1.5 rounded bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 shadow-xs flex items-center gap-1.5 transition-colors"
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded"
+            onClick={() => onNavigate("cuti-izin")}
           >
-            <span className="material-symbols-outlined text-sm">person_off</span>
-            <span>Cuti &amp; Izin</span>
-          </button>
+            <UserMinus className="size-4" />
+            Cuti &amp; Izin
+          </Button>
 
-          {/* Tab View Switcher */}
-          <div className="inline-flex items-center p-1 bg-[#f1f5f9] border border-[#e2e8f0] rounded text-xs">
-            <button
-              onClick={() => onNavigate('jadwal')}
-              className="px-3 py-1.5 rounded font-medium text-[#64748b] hover:text-[#0f172a] transition-colors flex items-center gap-1.5"
+          <Separator
+            orientation="vertical"
+            className="mx-1 hidden h-7 sm:block"
+          />
+
+          <div className="inline-flex items-center rounded border bg-muted/40 p-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 rounded text-xs text-muted-foreground"
+              onClick={() => onNavigate("jadwal")}
             >
-              <span className="material-symbols-outlined text-sm">table_chart</span>
-              <span>Tabel</span>
-            </button>
-            <button className="px-3 py-1.5 rounded font-medium bg-white text-[#0f172a] shadow-xs flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm">calendar_view_week</span>
-              <span>Kalender Shift</span>
-            </button>
-          </div>
+              <CalendarRange className="size-4" />
+              Tabel
+            </Button>
 
-          <div className="flex items-center gap-1 bg-white border border-[#e2e8f0] rounded px-3 py-1.5 text-xs font-semibold text-[#0f172a]">
-            <span className="material-symbols-outlined text-sm text-[#2563eb]">calendar_month</span>
-            <span>{currentMonth}</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 rounded text-xs"
+            >
+              <CalendarDays className="size-4" />
+              Kalender
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* Shift Legend Strip */}
-      <div className="bg-white border border-[#e2e8f0] rounded-lg p-3 flex flex-wrap items-center justify-between gap-4 text-xs">
-        <div className="flex items-center gap-4">
-          <span className="font-semibold text-[#0f172a]">Legenda Shift:</span>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-emerald-500"></span>
-            <span className="text-[#334155]">Shift Pagi (07:00 - 15:00)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-blue-500"></span>
-            <span className="text-[#334155]">Shift Siang/Sore (15:00 - 23:00)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-purple-600"></span>
-            <span className="text-[#334155]">Shift Malam (23:00 - 07:00)</span>
-          </div>
+      {/* Shift Legend */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded border bg-background px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <span className="text-xs font-semibold text-foreground">
+            Legenda Shift:
+          </span>
+
+          {(
+            Object.entries(SHIFT_CONFIG) as [
+              keyof typeof SHIFT_CONFIG,
+              (typeof SHIFT_CONFIG)[keyof typeof SHIFT_CONFIG],
+            ][]
+          ).map(([type, config]) => (
+            <div key={type} className="flex items-center gap-2">
+              <span className={`size-2.5 rounded ${config.dot}`} />
+              <span className="text-xs text-muted-foreground">
+                Shift {type} ({config.time})
+              </span>
+            </div>
+          ))}
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => onNavigate('tambah-jadwal')}
-            className="text-xs text-[#2563eb] font-semibold hover:underline flex items-center gap-1"
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs"
+            onClick={() => onNavigate("tambah-jadwal")}
           >
-            <span>+ Plotting Shift Baru</span>
-            <span className="material-symbols-outlined text-xs">arrow_forward</span>
-          </button>
-          <div className="flex items-center gap-1.5 text-rose-600 font-medium">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-            <span>Titik Merah: Kekurangan Personel</span>
+            <CalendarPlus className="size-3.5" />
+            Plotting Shift Baru
+          </Button>
+
+          <div className="flex items-center gap-1.5 text-xs text-rose-600">
+            <span className="size-2 rounded-full bg-rose-500" />
+            Kekurangan Personel
           </div>
         </div>
       </div>
 
-      {/* Main Grid: Calendar Grid & Selected Day Inspector */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Calendar Grid (3 Cols) */}
-        <div className="lg:col-span-3 bg-white border border-[#e2e8f0] rounded-lg overflow-hidden shadow-xs">
-          <div className="grid grid-cols-7 border-b border-[#e2e8f0] bg-[#f8fafc] text-center text-xs font-bold text-[#64748b] uppercase py-2.5">
-            <div>Sen</div>
-            <div>Sel</div>
-            <div>Rab</div>
-            <div>Kam</div>
-            <div>Jum</div>
-            <div className="text-rose-600">Sab</div>
-            <div className="text-rose-600">Min</div>
+      {/* Calendar and Daily Detail */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-4">
+        {/* Calendar Grid */}
+        <div className="overflow-hidden rounded border bg-background xl:col-span-3">
+          <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="size-4 text-primary" />
+              <span className="text-sm font-semibold">{currentMonth}</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="size-7 rounded"
+                disabled
+                aria-label="Bulan sebelumnya"
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="size-7 rounded"
+                disabled
+                aria-label="Bulan berikutnya"
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-[#f1f5f9] text-xs">
-            {calendarDays.map((item, idx) => {
+          <div className="grid grid-cols-7 border-b bg-muted/30 text-center">
+            {["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map(
+              (day, index) => (
+                <div
+                  key={day}
+                  className={`py-2.5 text-[11px] font-semibold ${
+                    index >= 5 ? "text-rose-600" : "text-muted-foreground"
+                  }`}
+                >
+                  {day}
+                </div>
+              ),
+            )}
+          </div>
+
+          <div className="grid auto-rows-fr grid-cols-7">
+            {calendarDays.map((item, index) => {
               if (!item) {
-                return <div key={`empty-${idx}`} className="h-28 bg-[#faf8ff]/50"></div>;
+                return (
+                  <div
+                    key={`empty-${index}`}
+                    className="min-h-28 border-b border-r bg-muted/10"
+                  />
+                );
               }
 
               const isSelected = selectedDay === item.day;
-              const hasShortage = item.shifts.some((s) => s.count < s.required);
+              const hasShortage = item.shifts.some(
+                (shift) => shift.count < shift.required,
+              );
 
               return (
-                <div
+                <button
                   key={item.day}
+                  type="button"
                   onClick={() => onSelectDay(item.day)}
-                  className={`min-h-28 p-1.5 cursor-pointer transition-all flex flex-col justify-between ${
+                  className={`flex min-h-28 flex-col justify-between border-b border-r p-2 text-left transition-colors ${
                     isSelected
-                      ? 'bg-[#eff6ff] ring-2 ring-inset ring-[#2563eb]'
+                      ? "bg-primary/5 ring-2 ring-inset ring-primary"
                       : item.isToday
-                      ? 'bg-blue-50/40 hover:bg-[#eff6ff]'
-                      : 'hover:bg-[#f8fafc]'
+                        ? "bg-blue-50/40 hover:bg-muted/50"
+                        : "hover:bg-muted/40"
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <span
-                      className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${
+                      className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
                         item.isToday
-                          ? 'bg-[#2563eb] text-white shadow-xs'
+                          ? "bg-primary text-primary-foreground"
                           : isSelected
-                          ? 'bg-[#101b35] text-white'
-                          : 'text-[#0f172a]'
+                            ? "bg-foreground text-background"
+                            : "text-foreground"
                       }`}
                     >
                       {item.day}
                     </span>
+
                     {hasShortage && (
-                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" title="Kurang personel"></span>
+                      <span
+                        className="size-2 rounded-full bg-rose-500"
+                        title="Terdapat shift yang kekurangan personel"
+                      />
                     )}
                   </div>
 
-                  {/* Compact Shift Badges */}
-                  <div className="space-y-1 my-1">
-                    {item.shifts.map((shift, sIdx) => {
+                  <div className="my-2 space-y-1">
+                    {item.shifts.map((shift, shiftIndex) => {
+                      const config = SHIFT_CONFIG[shift.type];
                       const isShort = shift.count < shift.required;
-                      const badgeColor =
-                        shift.type === 'Pagi'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : shift.type === 'Siang'
-                          ? 'bg-blue-50 text-blue-800 border-blue-200'
-                          : 'bg-purple-50 text-purple-800 border-purple-200';
 
                       return (
                         <div
-                          key={sIdx}
-                          className={`text-[9px] font-medium px-1 py-0.5 rounded border truncate flex items-center justify-between ${badgeColor}`}
-                          title={`${shift.type} - ${shift.squad} (${shift.count}/${shift.required} Personel)`}
+                          key={`${shift.type}-${shiftIndex}`}
+                          className={`flex items-center justify-between gap-1 overflow-hidden rounded border px-1.5 py-1 text-[9px] font-medium ${config.color}`}
+                          title={`${shift.type} - ${shift.squad} (${shift.count}/${shift.required} personel)`}
                         >
                           <span className="truncate">
-                            {shift.type}: {shift.squad.replace('Regu ', '')}
+                            {shift.type}: {shift.squad.replace("Regu ", "")}
                           </span>
-                          <span className={isShort ? 'font-bold text-rose-600' : 'text-[#64748b]'}>
+
+                          <span
+                            className={`shrink-0 ${
+                              isShort ? "font-bold text-rose-600" : ""
+                            }`}
+                          >
                             {shift.count}/{shift.required}
                           </span>
                         </div>
                       );
                     })}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         </div>
 
-        {/* Selected Day Inspector (1 Col) */}
-        <div className="space-y-4">
+        {/* Selected Day Detail */}
+        <div className="min-w-0">
           {activeDayObj ? (
-            <div className="bg-white border border-[#e2e8f0] rounded-lg p-4 shadow-xs space-y-4">
-              <div className="border-b border-[#e2e8f0] pb-3 flex items-center justify-between">
+            <div className="space-y-4 rounded border bg-background p-4">
+              <div className="flex items-start justify-between gap-2 border-b pb-3">
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748b]">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Detail Roster Harian
-                  </span>
-                  <h3 className="text-base font-bold text-[#0f172a] mt-0.5">
-                    {selectedDay} {currentMonth}{' '}
-                    {activeDayObj.isToday && (
-                      <span className="text-xs text-[#2563eb] font-semibold">(Hari Ini)</span>
-                    )}
+                  </p>
+
+                  <h3 className="mt-1 text-sm font-semibold">
+                    {getCurrentDayLabel(selectedDay)}
                   </h3>
+
+                  {activeDayObj.isToday && (
+                    <Badge
+                      variant="secondary"
+                      className="mt-1 rounded text-[10px]"
+                    >
+                      Hari Ini
+                    </Badge>
+                  )}
                 </div>
-                <button
-                  onClick={() => onNavigate('tambah-jadwal')}
-                  className="px-2 py-1 rounded bg-[#eff6ff] text-[#2563eb] text-xs font-bold hover:bg-[#dbeafe]"
-                  title="Tambah Shift Baru di Tanggal Ini"
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 shrink-0 rounded"
+                  onClick={() => onNavigate("tambah-jadwal")}
                 >
-                  + Shift
-                </button>
+                  <CalendarPlus className="size-3.5" />
+                  Shift
+                </Button>
               </div>
 
-              {/* Shifts for the Day */}
               <div className="space-y-4">
-                {activeDayObj.shifts.map((shift, idx) => {
+                {activeDayObj.shifts.map((shift, index) => {
                   const isShortage = shift.count < shift.required;
-                  const shiftBadge =
-                    shift.type === 'Pagi'
-                      ? 'border-emerald-300 bg-emerald-50/50'
-                      : shift.type === 'Siang'
-                      ? 'border-blue-300 bg-blue-50/50'
-                      : 'border-purple-300 bg-purple-50/50';
+                  const config = SHIFT_CONFIG[shift.type];
 
                   return (
                     <div
-                      key={idx}
-                      className={`p-3 rounded-lg border text-xs space-y-2.5 ${shiftBadge}`}
+                      key={`${shift.type}-${index}`}
+                      className={`space-y-3 rounded border p-3 text-xs ${config.selected}`}
                     >
-                      <div className="flex items-center justify-between">
+                      {/* Shift Heading */}
+                      <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className="font-bold text-[#0f172a] text-sm">
-                            Shift {shift.type === 'Siang' ? 'Siang / Sore' : shift.type}
-                          </span>
-                          <span className="text-[11px] text-[#64748b] ml-1.5 font-mono">
-                            {shift.type === 'Pagi'
-                              ? '07:00-15:00'
-                              : shift.type === 'Siang'
-                              ? '15:00-23:00'
-                              : '23:00-07:00'}
-                          </span>
+                          <p className="font-semibold text-foreground">
+                            Shift{" "}
+                            {shift.type === "Siang"
+                              ? "Siang / Sore"
+                              : shift.type}
+                          </p>
+
+                          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                            {config.time}
+                          </p>
                         </div>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+
+                        <Badge
+                          variant="outline"
+                          className={`rounded text-[10px] ${
                             isShortage
-                              ? 'bg-rose-100 text-rose-700'
-                              : 'bg-emerald-100 text-emerald-800'
+                              ? "border-rose-200 bg-rose-50 text-rose-700"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700"
                           }`}
                         >
-                          {isShortage ? 'Kurang Personel' : 'Lengkap'}
-                        </span>
+                          {isShortage ? "Kurang Personel" : "Lengkap"}
+                        </Badge>
                       </div>
 
-                      <div className="text-xs text-[#334155] font-semibold">
-                        {shift.squad} · Danru: {shift.danru}
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {shift.squad}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          Danru: {shift.danru || "-"}
+                        </p>
                       </div>
 
                       {shift.sector && (
-                        <div className="text-[11px] text-[#64748b] flex items-center gap-1">
-                          <span className="material-symbols-outlined text-xs text-[#94a3b8]">location_on</span>
-                          <span className="truncate">{shift.sector}</span>
+                        <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                          <MapPin className="mt-0.5 size-3.5 shrink-0" />
+                          <span>{shift.sector}</span>
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between text-[11px] font-medium border-t border-[#e2e8f0]/80 pt-2">
-                        <span>Alokasi: {shift.count}/{shift.required} Personel</span>
-                        <button
-                          onClick={() => handleOpenAssignModal(selectedDay, shift)}
-                          className="px-2 py-0.5 bg-white border border-[#2563eb] text-[#2563eb] rounded text-[11px] font-bold hover:bg-[#eff6ff] flex items-center gap-1"
+                      <Separator />
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-muted-foreground">
+                          Personel:{" "}
+                          <span className="text-foreground">
+                            {shift.count}/{shift.required}
+                          </span>
+                        </span>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 rounded border-primary px-2 text-[11px] text-primary hover:bg-primary/5"
+                          onClick={() =>
+                            handleOpenAssignModal(selectedDay, shift)
+                          }
                         >
-                          <span className="material-symbols-outlined text-xs">person_add</span>
-                          <span>Plot Personel</span>
-                        </button>
+                          <UserPlus className="size-3.5" />
+                          Plot Personel
+                        </Button>
                       </div>
 
-                      {/* Render Assigned Security Officers List */}
+                      {/* Assigned Officers */}
                       {shift.officers && shift.officers.length > 0 ? (
-                        <div className="space-y-1.5 pt-1">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#475569]">
-                            Daftar Personel Bertugas:
-                          </span>
-                          <div className="space-y-1">
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Personel Bertugas
+                          </p>
+
+                          <div className="divide-y rounded border bg-background">
                             {shift.officers.map((officer) => (
                               <div
                                 key={officer.officerId}
-                                className="p-1.5 bg-white border border-[#e2e8f0] rounded text-[11px] flex items-center justify-between"
+                                className="flex items-center justify-between gap-2 px-2.5 py-2"
                               >
-                                <div>
-                                  <div className="font-bold text-[#0f172a] flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                    <span>{officer.officerName}</span>
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+
+                                    <span className="truncate text-[11px] font-semibold text-foreground">
+                                      {officer.officerName}
+                                    </span>
+
                                     {officer.callSign && (
-                                      <span className="text-[9px] px-1 bg-[#f1f5f9] text-[#64748b] rounded font-mono">
+                                      <Badge
+                                        variant="secondary"
+                                        className="rounded px-1 py-0 text-[9px] font-normal"
+                                      >
                                         {officer.callSign}
-                                      </span>
+                                      </Badge>
                                     )}
                                   </div>
-                                  <div className="text-[10px] text-[#64748b] truncate max-w-[190px]">
+
+                                  <p className="mt-0.5 truncate pl-3 text-[10px] text-muted-foreground">
                                     {officer.post || officer.role}
-                                  </div>
+                                  </p>
                                 </div>
-                                <button
+
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 shrink-0 rounded text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
+                                  title="Lepas personel dari shift"
                                   onClick={() =>
-                                    onUnassignOfficerFromShift(selectedDay, shift.type, officer.officerId)
+                                    handleUnassignOfficer(
+                                      selectedDay,
+                                      shift,
+                                      officer,
+                                    )
                                   }
-                                  className="text-[#94a3b8] hover:text-rose-600 p-0.5"
-                                  title="Lepas Personel dari Shift Ini"
                                 >
-                                  <span className="material-symbols-outlined text-xs">close</span>
-                                </button>
+                                  <X className="size-3.5" />
+                                </Button>
                               </div>
                             ))}
                           </div>
                         </div>
                       ) : (
-                        <div className="p-2 bg-white/70 border border-dashed border-[#cbd5e1] rounded text-[10px] text-[#64748b] text-center">
-                          Belum ada rincian personel yang di-plot.
-                          <button
-                            onClick={() => handleOpenAssignModal(selectedDay, shift)}
-                            className="block mx-auto mt-1 text-[#2563eb] font-semibold hover:underline"
+                        <div className="space-y-2 rounded border border-dashed bg-background/70 p-3 text-center">
+                          <p className="text-[11px] text-muted-foreground">
+                            Belum ada personel yang di-plot.
+                          </p>
+
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs"
+                            onClick={() =>
+                              handleOpenAssignModal(selectedDay, shift)
+                            }
                           >
-                            + Assign Personel Sekarang
-                          </button>
+                            <UserPlus className="size-3.5" />
+                            Assign Personel
+                          </Button>
                         </div>
                       )}
                     </div>
                   );
                 })}
+
+                {activeDayObj.shifts.length === 0 && (
+                  <div className="py-8 text-center">
+                    <CalendarDays className="mx-auto size-7 text-muted-foreground/50" />
+                    <p className="mt-2 text-xs font-medium">Belum ada shift</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Belum terdapat penugasan pada tanggal ini.
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {/* Quick Actions for Selected Day */}
+              {/* Quick Actions */}
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => onNavigate('tukar-shift')}
-                  className="p-2 rounded bg-cyan-50 border border-cyan-200 text-cyan-800 text-[11px] font-bold hover:bg-cyan-100 flex items-center justify-center gap-1.5 transition-colors"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-auto min-h-9 rounded px-2 py-2 text-[10px]"
+                  onClick={() => onNavigate("tukar-shift")}
                 >
-                  <span className="material-symbols-outlined text-sm">swap_horiz</span>
-                  <span>Tukar Shift Hari Ini</span>
-                </button>
-                <button
-                  onClick={() => onNavigate('cuti-izin')}
-                  className="p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold hover:bg-amber-100 flex items-center justify-center gap-1.5 transition-colors"
+                  <ArrowLeftRight className="size-3.5 shrink-0" />
+                  Tukar Shift
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-auto min-h-9 rounded px-2 py-2 text-[10px]"
+                  onClick={() => onNavigate("cuti-izin")}
                 >
-                  <span className="material-symbols-outlined text-sm">person_off</span>
-                  <span>Ajukan Cuti/Izin</span>
-                </button>
+                  <UserMinus className="size-3.5 shrink-0" />
+                  Cuti / Izin
+                </Button>
               </div>
 
-              {/* Operational Dispatch Notice */}
-              <div className="p-3 bg-[#eff6ff] border border-[#bfdbfe] rounded-lg text-xs text-[#1e40af]">
-                <p className="font-semibold flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-sm">shield</span>
-                  <span>Prosedur Serah Terima Shift</span>
+              {/* Handover Notice */}
+              <div className="space-y-1.5 rounded border border-blue-200 bg-blue-50 p-3 text-blue-900">
+                <p className="flex items-center gap-2 text-xs font-semibold">
+                  <ShieldCheck className="size-4" />
+                  Prosedur Serah Terima Shift
                 </p>
-                <p className="text-[11px] text-[#3b82f6] mt-1 leading-relaxed">
-                  Apel serah terima giliran jaga wajib dilakukan 15 menit sebelum jam shift dimulai di posko utama masing-masing site.
+
+                <p className="text-[11px] leading-relaxed text-blue-700">
+                  Apel serah terima giliran jaga wajib dilakukan 15 menit
+                  sebelum jam shift dimulai di posko utama masing-masing site.
                 </p>
               </div>
             </div>
           ) : (
-            <div className="bg-white border border-[#e2e8f0] rounded-lg p-5 text-center text-xs text-[#64748b]">
-              Pilih tanggal pada kalender untuk melihat dan mengelola plotting shift personel sekuriti.
+            <div className="flex min-h-48 flex-col items-center justify-center rounded border bg-background p-5 text-center">
+              <CalendarDays className="size-8 text-muted-foreground/50" />
+
+              <p className="mt-3 text-sm font-medium">Pilih Tanggal</p>
+
+              <p className="mt-1 max-w-52 text-xs leading-relaxed text-muted-foreground">
+                Pilih tanggal pada kalender untuk melihat dan mengelola plotting
+                shift personel sekuriti.
+              </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Modal: Assign Security Officer to Shift */}
-      {assignModalShift && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full border border-[#cbd5e1] overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="px-5 py-4 bg-[#101b35] text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-xl text-[#60a5fa]">assignment_ind</span>
-                <div>
-                  <h3 className="text-sm font-bold leading-tight">
-                    Plot Personel Sekuriti ke Shift {assignModalShift.shift.type}
-                  </h3>
-                  <span className="text-[11px] text-[#94a3b8]">
-                    {assignModalShift.day} Mei 2025 · {assignModalShift.shift.squad}
-                  </span>
-                </div>
+      {/* Assign Officer Dialog */}
+      <Dialog
+        open={!!assignModalShift}
+        onOpenChange={(open) => {
+          if (!open) setAssignModalShift(null);
+        }}
+      >
+        <DialogContent className="max-w-md rounded">
+          <form onSubmit={handleSaveAssignModal}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <UserPlus className="size-5 text-primary" />
+                Plot Personel Sekuriti
+              </DialogTitle>
+
+              <DialogDescription>
+                {assignModalShift && (
+                  <>
+                    Shift {assignModalShift.shift.type} · {assignModalShift.day}{" "}
+                    {currentMonth} · {assignModalShift.shift.squad}
+                  </>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-5">
+              <div className="space-y-2">
+                <Label htmlFor="assign-officer">
+                  Personel Sekuriti <span className="text-destructive">*</span>
+                </Label>
+
+                <Select
+                  value={selectedOfficerId}
+                  onValueChange={(value) =>
+                    setSelectedOfficerId(value as string)
+                  }
+                  disabled={availableOfficers.length === 0}
+                >
+                  <SelectTrigger id="assign-officer" className="w-full rounded">
+                    <SelectValue placeholder="Pilih personel" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {availableOfficers.map((officer) => (
+                      <SelectItem
+                        key={officer.officerId}
+                        value={officer.officerId}
+                      >
+                        {officer.officerName} ({officer.npp})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {availableOfficers.length === 0 && (
+                  <p className="flex items-center gap-1.5 text-xs text-amber-600">
+                    <AlertCircle className="size-3.5" />
+                    Semua personel sudah ditugaskan pada shift ini.
+                  </p>
+                )}
               </div>
-              <button
-                onClick={() => setAssignModalShift(null)}
-                className="text-white/70 hover:text-white"
-              >
-                <span className="material-symbols-outlined text-xl">close</span>
-              </button>
+
+              <div className="space-y-2">
+                <Label htmlFor="assign-post">
+                  Pos Penugasan <span className="text-destructive">*</span>
+                </Label>
+
+                <Select
+                  value={selectedPost}
+                  onValueChange={(value) => setSelectedPost(value as string)}
+                >
+                  <SelectTrigger id="assign-post" className="w-full rounded">
+                    <SelectValue placeholder="Pilih pos penugasan" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {POST_OPTIONS.map((post) => (
+                      <SelectItem key={post} value={post}>
+                        {post}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-start gap-2 rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
+                <PersonStanding className="mt-0.5 size-4 shrink-0" />
+                <p className="leading-relaxed">
+                  Personel yang ditambahkan akan langsung terdaftar di roster
+                  harian dan menambah jumlah alokasi pada kalender shift.
+                </p>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveAssignModal} className="p-5 space-y-4 text-xs">
-              <div>
-                <label className="block text-xs font-bold text-[#334155] uppercase mb-1.5">
-                  Pilih Personel Sekuriti <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={selectedOfficerId}
-                  onChange={(e) => setSelectedOfficerId(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#cbd5e1] rounded text-xs text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
-                  required
-                >
-                  {INITIAL_OFFICERS_POOL.map((officer) => (
-                    <option key={officer.officerId} value={officer.officerId}>
-                      {officer.officerName} ({officer.npp} · {officer.role})
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded"
+                onClick={() => setAssignModalShift(null)}
+              >
+                Batal
+              </Button>
 
-              <div>
-                <label className="block text-xs font-bold text-[#334155] uppercase mb-1.5">
-                  Pos Penugasan / Plotting <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={selectedPost}
-                  onChange={(e) => setSelectedPost(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#cbd5e1] rounded text-xs text-[#0f172a] focus:outline-none focus:border-[#2563eb]"
-                  required
-                >
-                  {POST_OPTIONS.map((pos) => (
-                    <option key={pos} value={pos}>
-                      {pos}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="p-3 bg-[#f8fafc] border border-[#e2e8f0] rounded text-[11px] text-[#64748b]">
-                Personel yang ditambahkan akan langsung terdaftar di roster harian dan menambah jumlah alokasi pada kalender shift.
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2 border-t border-[#e2e8f0]">
-                <button
-                  type="button"
-                  onClick={() => setAssignModalShift(null)}
-                  className="px-3.5 py-1.5 rounded border border-[#cbd5e1] text-[#334155] font-semibold text-xs hover:bg-[#f8fafc]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded bg-[#2563eb] text-white font-bold text-xs hover:bg-[#1d4ed8] shadow-xs flex items-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-sm">check</span>
-                  <span>Plot Personel Sekarang</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+              <Button
+                type="submit"
+                className="rounded"
+                disabled={!selectedOfficerId || availableOfficers.length === 0}
+              >
+                <Check className="size-4" />
+                Plot Personel
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
