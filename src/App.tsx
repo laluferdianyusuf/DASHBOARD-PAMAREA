@@ -33,6 +33,7 @@ import {
   unassignOfficerFromDayShift,
 } from "./utils/security-logic";
 
+import { useLocation, useNavigate } from "react-router-dom";
 import { AnalyticAuditView } from "./components/AnalyticAuditView";
 import { CutiIzinView } from "./components/CutiIzinView";
 import { JadwalPatroliView } from "./components/JadwalPatroliView";
@@ -48,8 +49,7 @@ import { TitikPatroliView } from "./components/TitikPatroliView";
 import { TukarShiftView } from "./components/TukarShiftView";
 import { AuthProvider } from "./contexts/AuthProvider";
 import { ScheduleProvider } from "./contexts/ScheduleProvider";
-import LoginForm from "./components/LoginForm";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useMe } from "./hooks/auth";
 
 export default function App() {
   const location = useLocation();
@@ -62,6 +62,7 @@ export default function App() {
   const [selectedSite, setSelectedSite] = useState<string>("all");
 
   // Synchronized Checkpoint and NFC inventory state
+  const siteId = data?.data.siteId ?? "";
   const [checkpoints, setCheckpoints] = useState<CheckpointItem[]>(CHECKPOINTS);
   const [tags, setTags] = useState<NfcTagItem[]>(NFC_TAGS);
 
