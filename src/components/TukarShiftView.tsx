@@ -1,7 +1,43 @@
-import React, { useState } from 'react';
-import { NavTab } from './Sidebar';
-import { DayShift, ShiftSwapRecord, ShiftOfficerAssignment } from '../utils/security-logic';
-import { INITIAL_OFFICERS_POOL } from '../data/calendarMockData';
+import React, { useState } from "react";
+import { INITIAL_OFFICERS_POOL } from "../data/calendarMockData";
+import { DayShift, ShiftSwapRecord } from "../utils/security-logic";
+import { NavTab } from "./Sidebar";
+
+import {
+  AlertCircle,
+  ArrowLeftRight,
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  History,
+  Info,
+  ShieldCheck,
+  UserMinus,
+  X,
+} from "lucide-react";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 
 interface TukarShiftViewProps {
   onNavigate: (tab: NavTab) => void;
@@ -11,15 +47,76 @@ interface TukarShiftViewProps {
     dateStr: string;
     officerAId: string;
     officerAName: string;
-    shiftTypeA: 'Pagi' | 'Siang' | 'Malam';
+    shiftTypeA: "Pagi" | "Siang" | "Malam";
     postA?: string;
     officerBId: string;
     officerBName: string;
-    shiftTypeB: 'Pagi' | 'Siang' | 'Malam';
+    shiftTypeB: "Pagi" | "Siang" | "Malam";
     postB?: string;
     reason: string;
   }) => void;
 }
+
+type ShiftType = "Pagi" | "Siang" | "Malam";
+
+const SHIFT_OPTIONS: {
+  value: ShiftType;
+  label: string;
+  time: string;
+  badgeClass: string;
+}[] = [
+  {
+    value: "Pagi",
+    label: "Shift Pagi",
+    time: "07:00 - 15:00",
+    badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  {
+    value: "Siang",
+    label: "Shift Siang",
+    time: "15:00 - 23:00",
+    badgeClass: "border-blue-200 bg-blue-50 text-blue-700",
+  },
+  {
+    value: "Malam",
+    label: "Shift Malam",
+    time: "23:00 - 07:00",
+    badgeClass: "border-purple-200 bg-purple-50 text-purple-700",
+  },
+];
+
+const getTodayLocalDate = () => {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+};
+
+const formatDate = (dateString: string) => {
+  if (!dateString) return "-";
+
+  const date = new Date(`${dateString}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) return dateString;
+
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+};
+
+const getShiftBadgeClass = (shift: string) => {
+  switch (shift) {
+    case "Pagi":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "Siang":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "Malam":
+      return "border-purple-200 bg-purple-50 text-purple-700";
+    default:
+      return "border-muted bg-muted text-muted-foreground";
+  }
+};
 
 export const TukarShiftView: React.FC<TukarShiftViewProps> = ({
   onNavigate,
@@ -27,390 +124,802 @@ export const TukarShiftView: React.FC<TukarShiftViewProps> = ({
   swapRecords,
   onExecuteSwap,
 }) => {
-  const [selectedDate, setSelectedDate] = useState('2025-05-24');
-  const [officerAId, setOfficerAId] = useState('USR-003'); // Rian Hidayat
-  const [shiftTypeA, setShiftTypeA] = useState<'Pagi' | 'Siang' | 'Malam'>('Siang');
-  const [officerBId, setOfficerBId] = useState('USR-005'); // Wahyu Hidayat
-  const [shiftTypeB, setShiftTypeB] = useState<'Pagi' | 'Siang' | 'Malam'>('Malam');
-  const [reason, setReason] = useState('Penyesuaian jam kuliah malam dan keperluan keluarga mendesak');
+  const [selectedDate, setSelectedDate] = useState(getTodayLocalDate);
+
+  const [officerAId, setOfficerAId] = useState(
+    INITIAL_OFFICERS_POOL[2]?.officerId ??
+      INITIAL_OFFICERS_POOL[0]?.officerId ??
+      "",
+  );
+
+  const [shiftTypeA, setShiftTypeA] = useState<ShiftType>("Siang");
+
+  const [officerBId, setOfficerBId] = useState(
+    INITIAL_OFFICERS_POOL[4]?.officerId ??
+      INITIAL_OFFICERS_POOL[1]?.officerId ??
+      "",
+  );
+
+  const [shiftTypeB, setShiftTypeB] = useState<ShiftType>("Malam");
+
+  const [reason, setReason] = useState(
+    "Penyesuaian jadwal dan keperluan keluarga.",
+  );
+
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Officers scheduled on selected date
-  const dayNumber = parseInt(selectedDate.split('-')[2], 10);
-  const currentDayObj = calendarDays.find((d) => d && d.day === dayNumber);
+  const dayNumber = Number(selectedDate.split("-")[2]);
 
-  const officerAObj = INITIAL_OFFICERS_POOL.find((o) => o.officerId === officerAId);
-  const officerBObj = INITIAL_OFFICERS_POOL.find((o) => o.officerId === officerBId);
+  const currentDayObj = calendarDays.find(
+    (day) => day && day.day === dayNumber,
+  );
 
-  const handleSubmitSwap = (e: React.FormEvent) => {
-    e.preventDefault();
+  const officerAObj = INITIAL_OFFICERS_POOL.find(
+    (officer) => officer.officerId === officerAId,
+  );
+
+  const officerBObj = INITIAL_OFFICERS_POOL.find(
+    (officer) => officer.officerId === officerBId,
+  );
+
+  const isSameOfficer = officerAId === officerBId;
+  const isSameShift = shiftTypeA === shiftTypeB;
+
+  const handleSubmitSwap = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
     setFormError(null);
+    setSuccessMessage(null);
 
-    if (officerAId === officerBId) {
-      setFormError('Petugas 1 dan Petugas 2 tidak boleh orang yang sama.');
+    if (!selectedDate) {
+      setFormError("Tanggal pertukaran shift wajib dipilih.");
       return;
     }
 
-    if (shiftTypeA === shiftTypeB) {
-      setFormError('Shift asal kedua petugas tidak boleh sama (pilih shift yang berbeda untuk pertukaran).');
+    if (!officerAId || !officerBId) {
+      setFormError("Kedua personel wajib dipilih.");
+      return;
+    }
+
+    if (isSameOfficer) {
+      setFormError(
+        "Petugas 1 dan Petugas 2 tidak boleh merupakan orang yang sama.",
+      );
+      return;
+    }
+
+    if (isSameShift) {
+      setFormError(
+        "Shift asal kedua petugas tidak boleh sama. Pilih shift yang berbeda.",
+      );
       return;
     }
 
     if (!reason.trim()) {
-      setFormError('Alasan pertukaran jaga wajib dicantumkan.');
+      setFormError("Alasan pertukaran jaga wajib dicantumkan.");
+      return;
+    }
+
+    if (!officerAObj || !officerBObj) {
+      setFormError("Data personel tidak ditemukan.");
       return;
     }
 
     onExecuteSwap({
       dateStr: selectedDate,
       officerAId,
-      officerAName: officerAObj?.officerName || 'Petugas 1',
+      officerAName: officerAObj.officerName,
       shiftTypeA,
-      postA: officerAObj?.post || 'Pos Jaga',
+      postA: officerAObj.post || "Pos Jaga",
       officerBId,
-      officerBName: officerBObj?.officerName || 'Petugas 2',
+      officerBName: officerBObj.officerName,
       shiftTypeB,
-      postB: officerBObj?.post || 'Pos Jaga',
-      reason,
+      postB: officerBObj.post || "Pos Jaga",
+      reason: reason.trim(),
     });
 
     setSuccessMessage(
-      `Pertukaran jaga pada tanggal ${selectedDate} berhasil disetujui! ${officerAObj?.officerName} bertukar posisi dengan ${officerBObj?.officerName}.`
+      `Pertukaran shift tanggal ${formatDate(selectedDate)} berhasil diterapkan. ${officerAObj.officerName} bertukar dengan ${officerBObj.officerName}.`,
     );
-    setTimeout(() => setSuccessMessage(null), 6000);
+  };
+
+  const handleResetForm = () => {
+    setSelectedDate(getTodayLocalDate());
+
+    setOfficerAId(
+      INITIAL_OFFICERS_POOL[2]?.officerId ??
+        INITIAL_OFFICERS_POOL[0]?.officerId ??
+        "",
+    );
+
+    setShiftTypeA("Siang");
+
+    setOfficerBId(
+      INITIAL_OFFICERS_POOL[4]?.officerId ??
+        INITIAL_OFFICERS_POOL[1]?.officerId ??
+        "",
+    );
+
+    setShiftTypeB("Malam");
+
+    setReason("");
+    setFormError(null);
+    setSuccessMessage(null);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Toast Success */}
+    <div className="space-y-5">
+      {/* Success Notification */}
       {successMessage && (
-        <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-900 text-xs font-semibold flex items-center justify-between shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-emerald-600 text-lg">verified</span>
-            <span>{successMessage}</span>
-          </div>
-          <button
-            onClick={() => onNavigate('kalender')}
-            className="px-2.5 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-          >
-            Buka Kalender Shift
-          </button>
-        </div>
+        <Alert className="rounded border-emerald-200 bg-emerald-50 text-emerald-800">
+          <CheckCircle2 className="size-4 text-emerald-600" />
+
+          <AlertDescription className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <span className="text-xs font-medium">{successMessage}</span>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 rounded border-emerald-300 bg-white text-xs text-emerald-700 hover:bg-emerald-100"
+                onClick={() => onNavigate("kalender")}
+              >
+                <CalendarDays className="size-3.5" />
+                Buka Kalender
+              </Button>
+
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8 rounded text-emerald-700 hover:bg-emerald-100"
+                onClick={() => setSuccessMessage(null)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-[#e2e8f0]">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#eff6ff] text-[#2563eb] border border-[#bfdbfe]">
-              OPERASIONAL PATROLI
-            </span>
-            <span className="text-xs text-[#94a3b8]">/</span>
-            <span className="text-xs font-semibold text-[#64748b]">Tukar Shift (Swap Jaga)</span>
-          </div>
-          <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight">
-            Menu Pertukaran Shift (Swap Shift)
+      <div className="flex flex-col justify-between gap-4 border-b pb-4 md:flex-row md:items-end">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            Pertukaran Shift
           </h1>
-          <p className="text-xs text-[#64748b] mt-1">
-            Fasilitas resmi pertukaran jam jaga antar personel pengamanan pada tanggal tertentu dengan persetujuan Danru &amp; sinkronisasi kalender real-time.
+
+          <p className="max-w-2xl text-xs text-muted-foreground">
+            Kelola pertukaran jadwal jaga antar personel dan sinkronkan
+            perubahan dengan kalender operasional.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigate('kalender')}
-            className="px-3 py-1.5 rounded border border-[#cbd5e1] text-xs font-semibold text-[#334155] hover:bg-white flex items-center gap-1.5 transition-colors"
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded"
+            onClick={() => onNavigate("kalender")}
           >
-            <span className="material-symbols-outlined text-sm">calendar_view_week</span>
-            <span>Lihat Kalender Shift</span>
-          </button>
-          <button
-            onClick={() => onNavigate('cuti-izin')}
-            className="px-3 py-1.5 rounded bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 flex items-center gap-1.5 transition-colors"
+            <CalendarDays className="size-4" />
+            Kalender Shift
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded"
+            onClick={() => onNavigate("cuti-izin")}
           >
-            <span className="material-symbols-outlined text-sm">person_off</span>
-            <span>Cuti &amp; Izin Personel</span>
-          </button>
+            <UserMinus className="size-4" />
+            Cuti &amp; Izin
+          </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Form Tukar Shift */}
-        <div className="lg:col-span-2 bg-white border border-[#e2e8f0] rounded-lg p-5 shadow-xs">
-          <div className="flex items-center gap-2 pb-3 mb-4 border-b border-[#f1f5f9]">
-            <span className="material-symbols-outlined text-cyan-600 text-xl">swap_horiz</span>
-            <h2 className="text-sm font-bold text-[#0f172a]">Formulir Pengajuan Tukar Jaga Resmi</h2>
+      {/* Main Content */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        {/* Swap Form */}
+        <div className="space-y-5 rounded border bg-background p-4 sm:p-5 xl:col-span-2">
+          <div className="flex items-center gap-2 border-b pb-3">
+            <ArrowLeftRight className="size-5 text-primary" />
+
+            <div>
+              <h2 className="text-sm font-semibold">
+                Formulir Pertukaran Shift
+              </h2>
+              <p className="text-[11px] text-muted-foreground">
+                Lengkapi data kedua personel yang akan bertukar jadwal.
+              </p>
+            </div>
           </div>
 
+          {/* Form Error */}
           {formError && (
-            <div className="mb-4 p-3 rounded bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium flex items-center gap-2">
-              <span className="material-symbols-outlined text-rose-600 text-base">error</span>
-              <span>{formError}</span>
-            </div>
+            <Alert variant="destructive" className="rounded">
+              <AlertCircle className="size-4" />
+              <AlertDescription className="text-xs">
+                {formError}
+              </AlertDescription>
+            </Alert>
           )}
 
-          <form onSubmit={handleSubmitSwap} className="space-y-4">
-            {/* Tanggal Pertukaran */}
-            <div>
-              <label className="block text-xs font-bold text-[#334155] mb-1">
-                Pilih Tanggal Pertukaran Shift <span className="text-rose-500">*</span>
-              </label>
-              <div className="flex items-center gap-3">
-                <input
+          <form onSubmit={handleSubmitSwap} className="space-y-5">
+            {/* Date */}
+            <div className="space-y-2">
+              <Label htmlFor="swap-date">
+                Tanggal Pertukaran <span className="text-destructive">*</span>
+              </Label>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  id="swap-date"
                   type="date"
                   value={selectedDate}
-                  min="2025-05-01"
-                  max="2025-05-31"
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="px-3 py-2 border border-[#cbd5e1] rounded text-xs text-[#0f172a] focus:outline-hidden focus:border-[#2563eb] w-48 font-medium"
+                  onChange={(event) => {
+                    setSelectedDate(event.target.value);
+                    setFormError(null);
+                  }}
+                  className="w-full rounded sm:w-52"
+                  required
                 />
-                <span className="text-xs text-[#64748b]">
-                  {currentDayObj ? (
-                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      ✓ Tanggal {dayNumber} Mei 2025 Terjadwal ({currentDayObj.shifts.length} Shift aktif)
-                    </span>
-                  ) : (
-                    'Pilih tanggal dalam rentang operasional Mei 2025'
-                  )}
-                </span>
+
+                {currentDayObj ? (
+                  <Badge
+                    variant="outline"
+                    className="w-fit rounded border-emerald-200 bg-emerald-50 text-emerald-700"
+                  >
+                    <CheckCircle2 className="mr-1 size-3" />
+                    {currentDayObj.shifts.length} Shift Terjadwal
+                  </Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    Tidak ditemukan data roster untuk tanggal ini.
+                  </span>
+                )}
               </div>
             </div>
 
-            {/* Dua Kolom Pertukaran */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-lg bg-[#f8fafc] border border-[#e2e8f0]">
-              {/* Petugas 1 */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-[#cbd5e1]">
-                  <span className="text-xs font-bold text-[#0f172a] flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                    Petugas Pemohon (Pihak 1)
-                  </span>
-                  <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-semibold">
-                    Shift Asal: {shiftTypeA}
-                  </span>
+            <Separator />
+
+            {/* Officers */}
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              {/* Officer A */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="size-2.5 rounded-full bg-blue-600" />
+                    <h3 className="text-xs font-semibold">Petugas Pemohon</h3>
+                  </div>
+
+                  <Badge
+                    variant="outline"
+                    className={`rounded text-[10px] ${getShiftBadgeClass(shiftTypeA)}`}
+                  >
+                    Shift {shiftTypeA}
+                  </Badge>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-[#64748b] mb-1">Nama Petugas</label>
-                  <select
+                <div className="space-y-2">
+                  <Label htmlFor="officer-a" className="text-xs">
+                    Nama Personel
+                  </Label>
+
+                  <Select
                     value={officerAId}
-                    onChange={(e) => setOfficerAId(e.target.value)}
-                    className="w-full px-2.5 py-1.5 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a]"
+                    onValueChange={(value) => {
+                      setOfficerAId(value as string);
+                      setFormError(null);
+                    }}
                   >
-                    {INITIAL_OFFICERS_POOL.map((off) => (
-                      <option key={off.officerId} value={off.officerId}>
-                        {off.officerName} ({off.role} - {off.callSign || off.npp})
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="officer-a" className="w-full rounded">
+                      <SelectValue placeholder="Pilih personel" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {INITIAL_OFFICERS_POOL.map((officer) => (
+                        <SelectItem
+                          key={officer.officerId}
+                          value={officer.officerId}
+                        >
+                          {officer.officerName} (
+                          {officer.callSign || officer.npp})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-[#64748b] mb-1">Shift Yang Ditinggalkan</label>
-                  <select
+                <div className="space-y-2">
+                  <Label htmlFor="shift-a" className="text-xs">
+                    Shift yang Ditinggalkan
+                  </Label>
+
+                  <Select
                     value={shiftTypeA}
-                    onChange={(e) => setShiftTypeA(e.target.value as any)}
-                    className="w-full px-2.5 py-1.5 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a]"
+                    onValueChange={(value) => {
+                      setShiftTypeA(value as ShiftType);
+                      setFormError(null);
+                    }}
                   >
-                    <option value="Pagi">Shift Pagi (07:00 - 15:00)</option>
-                    <option value="Siang">Shift Siang (15:00 - 23:00)</option>
-                    <option value="Malam">Shift Malam (23:00 - 07:00)</option>
-                  </select>
+                    <SelectTrigger id="shift-a" className="w-full rounded">
+                      <SelectValue placeholder="Pilih shift" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {SHIFT_OPTIONS.map((shift) => (
+                        <SelectItem key={shift.value} value={shift.value}>
+                          {shift.label} ({shift.time})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div className="text-[11px] text-[#64748b] bg-white p-2 rounded border border-[#e2e8f0]">
-                  <span className="font-semibold text-[#334155]">Pos Saat Ini:</span> {officerAObj?.post || 'Pos Jaga Utama'}
+                <div className="rounded border bg-muted/30 p-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Informasi Personel
+                  </p>
+
+                  <p className="mt-1 text-xs font-semibold text-foreground">
+                    {officerAObj?.officerName || "Belum dipilih"}
+                  </p>
+
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {officerAObj?.role || "-"} · {officerAObj?.npp || "-"}
+                  </p>
+
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Pos saat ini: {officerAObj?.post || "Pos Jaga Utama"}
+                  </p>
                 </div>
               </div>
 
-              {/* Petugas 2 */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-[#cbd5e1]">
-                  <span className="text-xs font-bold text-[#0f172a] flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-purple-600"></span>
-                    Petugas Penukar (Pihak 2)
-                  </span>
-                  <span className="text-[10px] text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded font-semibold">
-                    Shift Asal: {shiftTypeB}
-                  </span>
+              {/* Officer B */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="size-2.5 rounded-full bg-purple-600" />
+                    <h3 className="text-xs font-semibold">Petugas Penukar</h3>
+                  </div>
+
+                  <Badge
+                    variant="outline"
+                    className={`rounded text-[10px] ${getShiftBadgeClass(shiftTypeB)}`}
+                  >
+                    Shift {shiftTypeB}
+                  </Badge>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-[#64748b] mb-1">Nama Petugas</label>
-                  <select
+                <div className="space-y-2">
+                  <Label htmlFor="officer-b" className="text-xs">
+                    Nama Personel
+                  </Label>
+
+                  <Select
                     value={officerBId}
-                    onChange={(e) => setOfficerBId(e.target.value)}
-                    className="w-full px-2.5 py-1.5 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a]"
+                    onValueChange={(value) => {
+                      setOfficerBId(value as string);
+                      setFormError(null);
+                    }}
                   >
-                    {INITIAL_OFFICERS_POOL.map((off) => (
-                      <option key={off.officerId} value={off.officerId}>
-                        {off.officerName} ({off.role} - {off.callSign || off.npp})
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="officer-b" className="w-full rounded">
+                      <SelectValue placeholder="Pilih personel" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {INITIAL_OFFICERS_POOL.map((officer) => (
+                        <SelectItem
+                          key={officer.officerId}
+                          value={officer.officerId}
+                        >
+                          {officer.officerName} (
+                          {officer.callSign || officer.npp})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-[#64748b] mb-1">Shift Yang Ditinggalkan</label>
-                  <select
+                <div className="space-y-2">
+                  <Label htmlFor="shift-b" className="text-xs">
+                    Shift yang Ditinggalkan
+                  </Label>
+
+                  <Select
                     value={shiftTypeB}
-                    onChange={(e) => setShiftTypeB(e.target.value as any)}
-                    className="w-full px-2.5 py-1.5 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a]"
+                    onValueChange={(value) => {
+                      setShiftTypeB(value as ShiftType);
+                      setFormError(null);
+                    }}
                   >
-                    <option value="Pagi">Shift Pagi (07:00 - 15:00)</option>
-                    <option value="Siang">Shift Siang (15:00 - 23:00)</option>
-                    <option value="Malam">Shift Malam (23:00 - 07:00)</option>
-                  </select>
+                    <SelectTrigger id="shift-b" className="w-full rounded">
+                      <SelectValue placeholder="Pilih shift" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {SHIFT_OPTIONS.map((shift) => (
+                        <SelectItem key={shift.value} value={shift.value}>
+                          {shift.label} ({shift.time})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div className="text-[11px] text-[#64748b] bg-white p-2 rounded border border-[#e2e8f0]">
-                  <span className="font-semibold text-[#334155]">Pos Saat Ini:</span> {officerBObj?.post || 'Pos Jaga Cadangan'}
+                <div className="rounded border bg-muted/30 p-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Informasi Personel
+                  </p>
+
+                  <p className="mt-1 text-xs font-semibold text-foreground">
+                    {officerBObj?.officerName || "Belum dipilih"}
+                  </p>
+
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {officerBObj?.role || "-"} · {officerBObj?.npp || "-"}
+                  </p>
+
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Pos saat ini: {officerBObj?.post || "Pos Jaga Cadangan"}
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Alasan */}
-            <div>
-              <label className="block text-xs font-bold text-[#334155] mb-1">
-                Alasan Pertukaran Jaga / Keterangan <span className="text-rose-500">*</span>
-              </label>
-              <textarea
-                rows={2}
+            <Separator />
+
+            {/* Reason */}
+            <div className="space-y-2">
+              <Label htmlFor="swap-reason">
+                Alasan Pertukaran <span className="text-destructive">*</span>
+              </Label>
+
+              <Textarea
+                id="swap-reason"
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Misal: Keperluan mendesak keluarga, jadwal kuliah malam, atau pergantian jadwal patroli..."
-                className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-xs text-[#0f172a] focus:outline-hidden focus:border-[#2563eb]"
+                onChange={(event) => {
+                  setReason(event.target.value);
+                  setFormError(null);
+                }}
+                rows={3}
+                placeholder="Tuliskan alasan pertukaran shift..."
+                className="resize-none rounded text-xs"
+                required
               />
             </div>
 
-            {/* Preview Dampak */}
-            <div className="p-3 bg-cyan-50 border border-cyan-200 rounded text-xs text-cyan-900">
-              <span className="font-bold flex items-center gap-1 mb-1">
-                <span className="material-symbols-outlined text-sm text-cyan-700">sync_alt</span>
-                Preview Dampak Pertukaran Kalender Shift:
-              </span>
-              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-cyan-800">
-                <li>
-                  <strong>{officerAObj?.officerName}</strong> akan berpindah dari <strong>Shift {shiftTypeA}</strong> ke <strong>Shift {shiftTypeB}</strong> pada tanggal {selectedDate}.
-                </li>
-                <li>
-                  <strong>{officerBObj?.officerName}</strong> akan berpindah dari <strong>Shift {shiftTypeB}</strong> ke <strong>Shift {shiftTypeA}</strong> pada tanggal {selectedDate}.
-                </li>
-              </ul>
+            {/* Swap Preview */}
+            <div className="space-y-3 rounded border border-cyan-200 bg-cyan-50/60 p-3">
+              <div className="flex items-center gap-2 text-cyan-800">
+                <ArrowLeftRight className="size-4" />
+                <span className="text-xs font-semibold">
+                  Preview Pertukaran Shift
+                </span>
+              </div>
+
+              {isSameOfficer || isSameShift ? (
+                <p className="text-xs text-rose-600">
+                  {isSameOfficer
+                    ? "Pilih dua personel yang berbeda."
+                    : "Pilih dua shift yang berbeda."}
+                </p>
+              ) : (
+                <div className="space-y-2 text-xs text-cyan-900">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      {officerAObj?.officerName || "Petugas 1"}
+                    </span>
+
+                    <Badge
+                      variant="outline"
+                      className={`rounded text-[10px] ${getShiftBadgeClass(shiftTypeA)}`}
+                    >
+                      {shiftTypeA}
+                    </Badge>
+
+                    <ArrowLeftRight className="size-3.5" />
+
+                    <Badge
+                      variant="outline"
+                      className={`rounded text-[10px] ${getShiftBadgeClass(shiftTypeB)}`}
+                    >
+                      {shiftTypeB}
+                    </Badge>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      {officerBObj?.officerName || "Petugas 2"}
+                    </span>
+
+                    <Badge
+                      variant="outline"
+                      className={`rounded text-[10px] ${getShiftBadgeClass(shiftTypeB)}`}
+                    >
+                      {shiftTypeB}
+                    </Badge>
+
+                    <ArrowLeftRight className="size-3.5" />
+
+                    <Badge
+                      variant="outline"
+                      className={`rounded text-[10px] ${getShiftBadgeClass(shiftTypeA)}`}
+                    >
+                      {shiftTypeA}
+                    </Badge>
+                  </div>
+
+                  <Separator className="bg-cyan-200" />
+
+                  <p className="text-[11px] text-cyan-700">
+                    Pertukaran akan diterapkan pada tanggal{" "}
+                    <span className="font-semibold">
+                      {formatDate(selectedDate)}
+                    </span>
+                    .
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="pt-2 flex justify-end gap-3">
-              <button
+            {/* Form Actions */}
+            <div className="flex flex-col-reverse justify-end gap-2 border-t pt-4 sm:flex-row">
+              <Button
                 type="button"
-                onClick={() => setReason('')}
-                className="px-4 py-2 border border-[#cbd5e1] rounded text-xs font-semibold text-[#475569] hover:bg-[#f8fafc]"
+                variant="outline"
+                className="rounded"
+                onClick={handleResetForm}
               >
                 Reset Form
-              </button>
-              <button
+              </Button>
+
+              <Button
                 type="submit"
-                className="px-5 py-2 rounded bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-700 shadow-xs flex items-center gap-1.5"
+                className="rounded"
+                disabled={
+                  !officerAId ||
+                  !officerBId ||
+                  isSameOfficer ||
+                  isSameShift ||
+                  !reason.trim()
+                }
               >
-                <span className="material-symbols-outlined text-sm">swap_horiz</span>
-                <span>Setujui &amp; Terapkan Tukar Shift</span>
-              </button>
+                <ArrowLeftRight className="size-4" />
+                Terapkan Pertukaran Shift
+              </Button>
             </div>
           </form>
         </div>
 
-        {/* Panel Informasi SOP Pertukaran Jaga */}
+        {/* SOP Information */}
         <div className="space-y-4">
-          <div className="bg-white border border-[#e2e8f0] rounded-lg p-4 shadow-xs">
-            <h3 className="text-xs font-bold text-[#0f172a] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-base text-blue-600">policy</span>
-              SOP Pertukaran Jaga (Swap)
-            </h3>
-            <ul className="text-xs text-[#64748b] space-y-2 list-disc list-inside">
-              <li>Pertukaran shift harus diajukan minimal 6 jam sebelum shift dimulai.</li>
-              <li>Kedua personel wajib memiliki kualifikasi/sertifikasi pengamanan yang setara.</li>
-              <li>Pergantian posisi dicatat secara otomatis dalam audit log PAMAREA.</li>
-              <li>Komandan Regu (Danru) akan menerima notifikasi otomatis di sistem.</li>
-            </ul>
+          <div className="space-y-3 rounded border bg-background p-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="size-4 text-primary" />
+              <h3 className="text-sm font-semibold">SOP Pertukaran Shift</h3>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3 text-xs text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-foreground">
+                  1
+                </span>
+                <p>
+                  Pertukaran shift harus diajukan minimal 6 jam sebelum shift
+                  dimulai.
+                </p>
+              </div>
+
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-foreground">
+                  2
+                </span>
+                <p>
+                  Kedua personel wajib memiliki kualifikasi atau sertifikasi
+                  pengamanan yang setara.
+                </p>
+              </div>
+
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-foreground">
+                  3
+                </span>
+                <p>Pergantian posisi dicatat dalam audit log PAMAREA.</p>
+              </div>
+
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-foreground">
+                  4
+                </span>
+                <p>
+                  Komandan Regu (Danru) perlu melakukan verifikasi pertukaran.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="bg-[#101b35] text-white rounded-lg p-4 shadow-xs">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-amber-400 text-lg">schedule</span>
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-300">Jadwal Shift Standar</span>
+          {/* Standard Shift Schedule */}
+          <div className="space-y-3 rounded border bg-[#101b35] p-4 text-white">
+            <div className="flex items-center gap-2">
+              <Clock className="size-4 text-blue-300" />
+              <h3 className="text-xs font-semibold">Jadwal Shift Standar</h3>
             </div>
-            <div className="space-y-2 text-xs text-[#cbd5e1]">
-              <div className="flex justify-between pb-1 border-b border-[#1e293b]">
-                <span className="font-semibold text-white">Shift Pagi:</span>
-                <span>07:00 - 15:00 WIB</span>
-              </div>
-              <div className="flex justify-between pb-1 border-b border-[#1e293b]">
-                <span className="font-semibold text-white">Shift Siang/Sore:</span>
-                <span>15:00 - 23:00 WIB</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-semibold text-white">Shift Malam:</span>
-                <span>23:00 - 07:00 WIB</span>
-              </div>
+
+            <Separator className="bg-white/15" />
+
+            <div className="space-y-3">
+              {SHIFT_OPTIONS.map((shift) => (
+                <div
+                  key={shift.value}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span className="text-slate-300">{shift.label}</span>
+                  <span className="font-mono font-medium text-white">
+                    {shift.time}
+                  </span>
+                </div>
+              ))}
             </div>
+
+            <p className="text-[10px] text-slate-400">
+              Seluruh waktu menggunakan WIB.
+            </p>
           </div>
+
+          {/* Information */}
+          <Alert className="rounded">
+            <Info className="size-4" />
+            <AlertDescription className="text-xs leading-relaxed">
+              Pastikan kedua personel telah menyetujui pertukaran sebelum
+              perubahan diterapkan pada kalender operasional.
+            </AlertDescription>
+          </Alert>
         </div>
       </div>
 
-      {/* Tabel Riwayat Tukar Shift */}
-      <div className="bg-white border border-[#e2e8f0] rounded-lg overflow-hidden shadow-xs">
-        <div className="px-5 py-4 border-b border-[#e2e8f0] flex items-center justify-between">
+      {/* Swap History */}
+      <div className="overflow-hidden rounded border bg-background">
+        <div className="flex flex-col justify-between gap-2 border-b px-4 py-3 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-cyan-600 text-lg">history_toggle_off</span>
-            <h3 className="text-sm font-bold text-[#0f172a]">Riwayat Pertukaran Shift (Audit Log)</h3>
+            <History className="size-4 text-primary" />
+
+            <div>
+              <h3 className="text-sm font-semibold">
+                Riwayat Pertukaran Shift
+              </h3>
+              <p className="text-[11px] text-muted-foreground">
+                Catatan transaksi pertukaran shift.
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-[#64748b]">{swapRecords.length} Catatan Pertukaran Terverifikasi</span>
+
+          <Badge variant="secondary" className="w-fit rounded">
+            {swapRecords.length} Transaksi
+          </Badge>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-[#f8fafc] text-[#475569] font-bold border-b border-[#e2e8f0]">
-                <th className="py-2.5 px-4">ID Transaksi</th>
-                <th className="py-2.5 px-4">Tanggal Shift</th>
-                <th className="py-2.5 px-4">Petugas 1 (Shift Asal)</th>
-                <th className="py-2.5 px-4 text-center">Swap</th>
-                <th className="py-2.5 px-4">Petugas 2 (Shift Asal)</th>
-                <th className="py-2.5 px-4">Alasan &amp; Keterangan</th>
-                <th className="py-2.5 px-4">Status &amp; Verifikator</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f1f5f9] text-[#334155]">
-              {swapRecords.map((rec) => (
-                <tr key={rec.id} className="hover:bg-[#fafafa]">
-                  <td className="py-3 px-4 font-mono font-semibold text-[#2563eb]">{rec.id}</td>
-                  <td className="py-3 px-4 font-medium text-[#0f172a]">{rec.dateStr}</td>
-                  <td className="py-3 px-4">
-                    <div className="font-bold text-[#0f172a]">{rec.officerA.officerName}</div>
-                    <span className="text-[10px] text-blue-700 bg-blue-50 px-1 py-0.2 rounded font-semibold">
-                      Shift {rec.officerA.shiftType}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <span className="material-symbols-outlined text-cyan-600 text-base">swap_horiz</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="font-bold text-[#0f172a]">{rec.officerB.officerName}</div>
-                    <span className="text-[10px] text-purple-700 bg-purple-50 px-1 py-0.2 rounded font-semibold">
-                      Shift {rec.officerB.shiftType}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 max-w-xs text-[#64748b] truncate">{rec.reason}</td>
-                  <td className="py-3 px-4">
-                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      {rec.status}
-                    </span>
-                    <div className="text-[10px] text-[#94a3b8] mt-0.5">Disetujui: {rec.approvedBy}</div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead className="whitespace-nowrap">
+                  ID Transaksi
+                </TableHead>
+
+                <TableHead className="whitespace-nowrap">Tanggal</TableHead>
+
+                <TableHead className="min-w-40">Petugas 1</TableHead>
+
+                <TableHead className="text-center">Pertukaran</TableHead>
+
+                <TableHead className="min-w-40">Petugas 2</TableHead>
+
+                <TableHead className="min-w-48">Alasan</TableHead>
+
+                <TableHead className="min-w-36">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+
+            <TableBody>
+              {swapRecords.length > 0 ? (
+                swapRecords.map((record) => (
+                  <TableRow key={record.id}>
+                    <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-primary">
+                      {record.id}
+                    </TableCell>
+
+                    <TableCell className="whitespace-nowrap text-xs font-medium">
+                      {formatDate(record.dateStr)}
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-foreground">
+                          {record.officerA.officerName}
+                        </p>
+
+                        <Badge
+                          variant="outline"
+                          className={`rounded text-[10px] ${getShiftBadgeClass(record.officerA.shiftType)}`}
+                        >
+                          Shift {record.officerA.shiftType}
+                        </Badge>
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="text-center">
+                      <ArrowLeftRight className="mx-auto size-4 text-cyan-600" />
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-foreground">
+                          {record.officerB.officerName}
+                        </p>
+
+                        <Badge
+                          variant="outline"
+                          className={`rounded text-[10px] ${getShiftBadgeClass(record.officerB.shiftType)}`}
+                        >
+                          Shift {record.officerB.shiftType}
+                        </Badge>
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      <p
+                        className="max-w-56 truncate text-xs text-muted-foreground"
+                        title={record.reason}
+                      >
+                        {record.reason}
+                      </p>
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="space-y-1">
+                        <Badge
+                          variant="outline"
+                          className="rounded border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"
+                        >
+                          {record.status}
+                        </Badge>
+
+                        <p className="text-[10px] text-muted-foreground">
+                          Disetujui: {record.approvedBy || "-"}
+                        </p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-32 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <History className="size-7 text-muted-foreground/50" />
+
+                      <p className="text-xs font-medium">
+                        Belum ada riwayat pertukaran
+                      </p>
+
+                      <p className="text-[11px] text-muted-foreground">
+                        Transaksi pertukaran shift akan muncul di sini.
+                      </p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="border-t px-4 py-2.5">
+          <p className="text-[11px] text-muted-foreground">
+            Menampilkan {swapRecords.length} riwayat pertukaran shift.
+          </p>
         </div>
       </div>
     </div>

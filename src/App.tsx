@@ -43,6 +43,7 @@ import { CutiIzinView } from "./components/CutiIzinView";
 import { JadwalPatroliView } from "./components/JadwalPatroliView";
 import { KalenderShiftView } from "./components/KalenderShiftView";
 import { KelolaPenggunaView } from "./components/KelolaPenggunaView";
+import ManajemenRondeView from "./components/ManajemenRondeView";
 import { QuestionBuilderView } from "./components/QuestionBuilderView";
 import { RiwayatPatroliView } from "./components/RiwayatPatroliView";
 import { TagNfcView } from "./components/TagNfcView";
@@ -495,6 +496,9 @@ export default function App() {
                 onSubmitLeave={handleSubmitLeaveRecord}
               />
             )}
+
+            {/* CUTI & IZIN */}
+            {currentTab === "manajemen-ronde" && <ManajemenRondeView />}
 
             {/* TITIK PATROLI */}
             {currentTab === "titik" && (

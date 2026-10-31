@@ -1,14 +1,61 @@
-import React, { useState } from 'react';
-import { NavTab } from './Sidebar';
-import { SecurityLeaveRecord, ShiftOfficerAssignment, DayShift } from '../utils/security-logic';
-import { INITIAL_OFFICERS_POOL } from '../data/calendarMockData';
+import React, { useState } from "react";
+import { INITIAL_OFFICERS_POOL } from "../data/calendarMockData";
+import type {
+  DayShift,
+  SecurityLeaveRecord,
+  ShiftOfficerAssignment,
+} from "../utils/security-logic";
+import { NavTab } from "./Sidebar";
+
+import {
+  AlertCircle,
+  ArrowLeftRight,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardCheck,
+  Clock,
+  ShieldCheck,
+  UserRoundX,
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface CutiIzinViewProps {
   onNavigate: (tab: NavTab) => void;
   calendarDays: (DayShift | null)[];
   leaveRecords: SecurityLeaveRecord[];
-  onSubmitLeave: (leaveRecord: SecurityLeaveRecord, backupOfficer?: ShiftOfficerAssignment) => void;
+  onSubmitLeave: (
+    leaveRecord: SecurityLeaveRecord,
+    backupOfficer?: ShiftOfficerAssignment,
+  ) => void;
 }
+
+const getTodayLocalDate = () => {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+};
 
 export const CutiIzinView: React.FC<CutiIzinViewProps> = ({
   onNavigate,
@@ -16,350 +63,586 @@ export const CutiIzinView: React.FC<CutiIzinViewProps> = ({
   leaveRecords,
   onSubmitLeave,
 }) => {
-  const [officerId, setOfficerId] = useState('USR-004'); // Budi Hartono
-  const [leaveType, setLeaveType] = useState<SecurityLeaveRecord['leaveType']>('Cuti Tahunan');
-  const [startDate, setStartDate] = useState('2025-05-24');
-  const [endDate, setEndDate] = useState('2025-05-26');
-  const [reason, setReason] = useState('Cuti tahunan keperluan keluarga di luar kota');
-  const [backupOfficerId, setBackupOfficerId] = useState('USR-009'); // Surya Saputra
+  const [officerId, setOfficerId] = useState(
+    () =>
+      INITIAL_OFFICERS_POOL.find((off) => off.officerId === "USR-004")
+        ?.officerId ??
+      INITIAL_OFFICERS_POOL[0]?.officerId ??
+      "",
+  );
+
+  const [leaveType, setLeaveType] =
+    useState<SecurityLeaveRecord["leaveType"]>("Cuti Tahunan");
+
+  const [startDate, setStartDate] = useState(getTodayLocalDate);
+  const [endDate, setEndDate] = useState(getTodayLocalDate);
+
+  const [reason, setReason] = useState(
+    "Cuti tahunan keperluan keluarga di luar kota",
+  );
+
+  const [backupOfficerId, setBackupOfficerId] = useState(
+    () =>
+      INITIAL_OFFICERS_POOL.find((off) => off.officerId === "USR-009")
+        ?.officerId ??
+      INITIAL_OFFICERS_POOL.find((off) => off.officerId !== officerId)
+        ?.officerId ??
+      "",
+  );
+
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const selectedOfficer = INITIAL_OFFICERS_POOL.find((o) => o.officerId === officerId);
-  const selectedBackup = INITIAL_OFFICERS_POOL.find((o) => o.officerId === backupOfficerId);
+  const selectedOfficer = INITIAL_OFFICERS_POOL.find(
+    (off) => off.officerId === officerId,
+  );
 
-  // Compute total days requested
+  const selectedBackup = INITIAL_OFFICERS_POOL.find(
+    (off) => off.officerId === backupOfficerId,
+  );
+
+  const availableBackupOfficers = INITIAL_OFFICERS_POOL.filter(
+    (off) => off.officerId !== officerId,
+  );
+
+  // Hitung total durasi cuti, termasuk tanggal mulai dan selesai.
   const diffDays = (() => {
-    const s = new Date(startDate);
-    const e = new Date(endDate);
-    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return 1;
-    return Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1;
+    if (!startDate || !endDate) return 0;
+
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+
+    if (
+      Number.isNaN(start.getTime()) ||
+      Number.isNaN(end.getTime()) ||
+      start > end
+    ) {
+      return 0;
+    }
+
+    return (
+      Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+    );
   })();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const handleOfficerChange = (value: string) => {
+    setOfficerId(value);
 
-    if (officerId === backupOfficerId) {
-      setFormError('Petugas yang cuti/izin tidak bisa menjadi petugas pengganti dirinya sendiri.');
+    if (value === backupOfficerId) {
+      const alternative = INITIAL_OFFICERS_POOL.find(
+        (off) => off.officerId !== value,
+      );
+
+      setBackupOfficerId(alternative?.officerId ?? "");
+    }
+
+    setFormError(null);
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    setFormError(null);
+    setSuccessMessage(null);
+
+    if (!selectedOfficer) {
+      setFormError("Silakan pilih personel security yang mengajukan.");
       return;
     }
 
-    if (new Date(startDate) > new Date(endDate)) {
-      setFormError('Tanggal mulai tidak boleh lebih lambat dari tanggal selesai.');
+    if (!selectedBackup) {
+      setFormError("Silakan tentukan petugas pengganti.");
+      return;
+    }
+
+    if (officerId === backupOfficerId) {
+      setFormError(
+        "Petugas yang mengajukan cuti tidak bisa menjadi pengganti dirinya sendiri.",
+      );
+      return;
+    }
+
+    if (!startDate || !endDate) {
+      setFormError("Tanggal mulai dan selesai wajib diisi.");
+      return;
+    }
+
+    if (new Date(`${startDate}T00:00:00`) > new Date(`${endDate}T00:00:00`)) {
+      setFormError(
+        "Tanggal mulai tidak boleh lebih lambat dari tanggal selesai.",
+      );
       return;
     }
 
     if (!reason.trim()) {
-      setFormError('Alasan cuti/izin wajib dicantumkan.');
+      setFormError("Alasan cuti/izin wajib dicantumkan.");
       return;
     }
 
     const newRecord: SecurityLeaveRecord = {
       id: `LEV-${Date.now().toString().slice(-4)}`,
       officerId,
-      officerName: selectedOfficer?.officerName || 'Petugas Security',
+      officerName: selectedOfficer.officerName,
       leaveType,
       startDate,
       endDate,
-      reason,
-      backupOfficerId: selectedBackup ? selectedBackup.officerId : undefined,
-      backupOfficerName: selectedBackup ? selectedBackup.officerName : undefined,
-      status: 'Disetujui',
-      createdAt: '2025-05-23',
+      reason: reason.trim(),
+      backupOfficerId: selectedBackup.officerId,
+      backupOfficerName: selectedBackup.officerName,
+      status: "Disetujui",
+      createdAt: getTodayLocalDate(),
     };
 
     onSubmitLeave(newRecord, selectedBackup);
 
     setSuccessMessage(
-      `Pengajuan ${leaveType} untuk ${selectedOfficer?.officerName} berhasil disetujui! Petugas pengganti cadangan: ${selectedBackup?.officerName || 'Tidak ditentukan'}. Kalender Shift telah disinkronkan.`
+      `Pengajuan ${leaveType} untuk ${selectedOfficer.officerName} berhasil disetujui. Petugas pengganti: ${selectedBackup.officerName}. Kalender shift telah disinkronkan.`,
     );
-    setTimeout(() => setSuccessMessage(null), 6000);
+
+    window.setTimeout(() => {
+      setSuccessMessage(null);
+    }, 6000);
+  };
+
+  const handleReset = () => {
+    setStartDate(getTodayLocalDate());
+    setEndDate(getTodayLocalDate());
+    setReason("");
+    setFormError(null);
+    setSuccessMessage(null);
   };
 
   return (
     <div className="space-y-6">
-      {/* Toast Success */}
+      {/* Success Message */}
       {successMessage && (
-        <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-900 text-xs font-semibold flex items-center justify-between shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-emerald-600 text-lg">verified</span>
-            <span>{successMessage}</span>
+        <div className="flex flex-col gap-3 rounded border border-emerald-200 bg-emerald-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+            <p className="text-xs font-medium text-emerald-800">
+              {successMessage}
+            </p>
           </div>
-          <button
-            onClick={() => onNavigate('kalender')}
-            className="px-2.5 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => onNavigate("kalender")}
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
           >
-            Lihat di Kalender Shift
-          </button>
+            <CalendarDays className="mr-1.5 size-4" />
+            Lihat Kalender Shift
+          </Button>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-[#e2e8f0]">
+      <div className="flex flex-col justify-between gap-4 border-b pb-4 md:flex-row md:items-end">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#eff6ff] text-[#2563eb] border border-[#bfdbfe]">
-              OPERASIONAL PATROLI
-            </span>
-            <span className="text-xs text-[#94a3b8]">/</span>
-            <span className="text-xs font-semibold text-[#64748b]">Manajemen Absensi &amp; Izin</span>
-          </div>
-          <h1 className="text-2xl font-bold text-[#0f172a] tracking-tight">
-            Pengajuan Cuti, Izin &amp; Sakit Personel
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+            Pengajuan Cuti, Izin & Sakit Personel
           </h1>
-          <p className="text-xs text-[#64748b] mt-1">
-            Pengelolaan izin ketidakhadiran security, penunjukan petugas pengganti cadangan (backup guard), dan penyesuaian kalender jaga.
+
+          <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+            Pengelolaan ketidakhadiran personel security, penunjukan petugas
+            pengganti, dan penyesuaian kalender shift.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigate('kalender')}
-            className="px-3 py-1.5 rounded border border-[#cbd5e1] text-xs font-semibold text-[#334155] hover:bg-white flex items-center gap-1.5 transition-colors"
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onNavigate("kalender")}
           >
-            <span className="material-symbols-outlined text-sm">calendar_view_week</span>
-            <span>Lihat Kalender Shift</span>
-          </button>
-          <button
-            onClick={() => onNavigate('tukar-shift')}
-            className="px-3 py-1.5 rounded bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-700 flex items-center gap-1.5 transition-colors"
+            <CalendarDays className="mr-1.5 size-4" />
+            Kalender Shift
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => onNavigate("tukar-shift")}
+            className="bg-blue-600 text-white hover:bg-blue-700"
           >
-            <span className="material-symbols-outlined text-sm">swap_horiz</span>
-            <span>Tukar Shift (Swap)</span>
-          </button>
+            <ArrowLeftRight className="mr-1.5 size-4" />
+            Tukar Shift
+          </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Form Pengajuan Cuti / Izin */}
-        <div className="lg:col-span-2 bg-white border border-[#e2e8f0] rounded-lg p-5 shadow-xs">
-          <div className="flex items-center gap-2 pb-3 mb-4 border-b border-[#f1f5f9]">
-            <span className="material-symbols-outlined text-amber-500 text-xl">person_off</span>
-            <h2 className="text-sm font-bold text-[#0f172a]">Formulir Pengajuan Cuti / Izin / Sakit</h2>
+      {/* Form and Information */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Form */}
+        <div className="space-y-5 lg:col-span-2">
+          <div className="flex items-center gap-2 border-b pb-3">
+            <UserRoundX className="size-5 text-amber-600" />
+            <h2 className="text-sm font-bold text-slate-900">
+              Formulir Pengajuan Cuti / Izin / Sakit
+            </h2>
           </div>
 
           {formError && (
-            <div className="mb-4 p-3 rounded bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium flex items-center gap-2">
-              <span className="material-symbols-outlined text-rose-600 text-base">error</span>
+            <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
               <span>{formError}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Personel dan Jenis Cuti */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-[#334155] mb-1">
-                  Personel Security Pemohon <span className="text-rose-500">*</span>
-                </label>
-                <select
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Personel and Leave Type */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="officerId" className="text-xs">
+                  Personel Security Pemohon
+                  <span className="ml-1 text-rose-500">*</span>
+                </Label>
+
+                <Select
                   value={officerId}
-                  onChange={(e) => setOfficerId(e.target.value)}
-                  className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a] focus:outline-hidden focus:border-[#2563eb]"
+                  onValueChange={(value) =>
+                    handleOfficerChange(value as string)
+                  }
                 >
-                  {INITIAL_OFFICERS_POOL.map((off) => (
-                    <option key={off.officerId} value={off.officerId}>
-                      {off.officerName} - {off.role} ({off.callSign || off.npp})
-                    </option>
-                  ))}
-                </select>
-                <div className="text-[11px] text-[#64748b] mt-1">
-                  Pos Penugasan: <strong>{selectedOfficer?.post || 'Pos Utama'}</strong>
-                </div>
+                  <SelectTrigger id="officerId" className="w-full">
+                    <SelectValue placeholder="Pilih personel" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {INITIAL_OFFICERS_POOL.map((off) => (
+                      <SelectItem key={off.officerId} value={off.officerId}>
+                        {off.officerName} - {off.role} (
+                        {off.callSign || off.npp})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <p className="text-[11px] text-muted-foreground">
+                  Pos Penugasan:{" "}
+                  <span className="font-semibold text-slate-700">
+                    {selectedOfficer?.post || "Pos Utama"}
+                  </span>
+                </p>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#334155] mb-1">
-                  Jenis Ketidakhadiran <span className="text-rose-500">*</span>
-                </label>
-                <select
+              <div className="space-y-2">
+                <Label htmlFor="leaveType" className="text-xs">
+                  Jenis Ketidakhadiran
+                  <span className="ml-1 text-rose-500">*</span>
+                </Label>
+
+                <Select
                   value={leaveType}
-                  onChange={(e) => setLeaveType(e.target.value as any)}
-                  className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a] focus:outline-hidden focus:border-[#2563eb]"
+                  onValueChange={(value) =>
+                    setLeaveType(value as SecurityLeaveRecord["leaveType"])
+                  }
                 >
-                  <option value="Cuti Tahunan">Cuti Tahunan (Hak Cuti Resmi)</option>
-                  <option value="Izin Urusan Penting">Izin Urusan Penting / Keluarga</option>
-                  <option value="Sakit (Surat Dokter)">Sakit (Dengan Keterangan Dokter)</option>
-                  <option value="Dispensasi Dinas Luar">Dispensasi Pelatihan / Dinas Luar</option>
-                </select>
+                  <SelectTrigger id="leaveType" className="w-full">
+                    <SelectValue placeholder="Pilih jenis ketidakhadiran" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="Cuti Tahunan">Cuti Tahunan</SelectItem>
+                    <SelectItem value="Izin Urusan Penting">
+                      Izin Urusan Penting / Keluarga
+                    </SelectItem>
+                    <SelectItem value="Sakit (Surat Dokter)">
+                      Sakit (Dengan Keterangan Dokter)
+                    </SelectItem>
+                    <SelectItem value="Dispensasi Dinas Luar">
+                      Dispensasi Pelatihan / Dinas Luar
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
-            {/* Rentang Tanggal Cuti */}
-            <div className="p-4 rounded-lg bg-[#f8fafc] border border-[#e2e8f0]">
-              <label className="block text-xs font-bold text-[#334155] mb-2 flex items-center justify-between">
-                <span>Rentang Tanggal Cuti / Izin <span className="text-rose-500">*</span></span>
-                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                  Total Durasi: {diffDays} Hari
-                </span>
-              </label>
+            {/* Date Range */}
+            <div className="space-y-3 rounded border bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <CalendarDays className="size-4 text-slate-500" />
+                  Rentang Tanggal Cuti / Izin
+                  <span className="text-rose-500">*</span>
+                </Label>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <span className="block text-[11px] font-semibold text-[#64748b] mb-1">Tanggal Mulai Cuti:</span>
-                  <input
+                <Badge
+                  variant="outline"
+                  className="rounded border-amber-200 bg-amber-50 text-amber-800"
+                >
+                  <Clock className="mr-1 size-3" />
+                  Total Durasi: {diffDays} Hari
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="startDate"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Tanggal Mulai
+                  </Label>
+
+                  <Input
+                    id="startDate"
                     type="date"
                     value={startDate}
-                    min="2025-05-01"
-                    max="2025-05-31"
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a] focus:outline-hidden focus:border-[#2563eb]"
+                    className="bg-white"
+                    required
                   />
                 </div>
-                <div>
-                  <span className="block text-[11px] font-semibold text-[#64748b] mb-1">Tanggal Selesai Cuti:</span>
-                  <input
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="endDate"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Tanggal Selesai
+                  </Label>
+
+                  <Input
+                    id="endDate"
                     type="date"
                     value={endDate}
-                    min="2025-05-01"
-                    max="2025-05-31"
+                    min={startDate || undefined}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a] focus:outline-hidden focus:border-[#2563eb]"
+                    className="bg-white"
+                    required
                   />
                 </div>
               </div>
             </div>
 
-            {/* Personel Pengganti (Backup Guard) */}
-            <div>
-              <label className="block text-xs font-bold text-[#334155] mb-1">
-                Tugaskan Petugas Cadangan / Pengganti (Backup Guard) <span className="text-rose-500">*</span>
-              </label>
-              <select
+            {/* Backup Officer */}
+            <div className="space-y-2">
+              <Label htmlFor="backupOfficer" className="text-xs">
+                Petugas Cadangan / Pengganti
+                <span className="ml-1 text-rose-500">*</span>
+              </Label>
+
+              <Select
                 value={backupOfficerId}
-                onChange={(e) => setBackupOfficerId(e.target.value)}
-                className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-xs bg-white text-[#0f172a] focus:outline-hidden focus:border-[#2563eb]"
+                onValueChange={(value) => setBackupOfficerId(value as string)}
               >
-                {INITIAL_OFFICERS_POOL.map((off) => (
-                  <option key={off.officerId} value={off.officerId}>
-                    {off.officerName} ({off.role} - Siaga / Cadangan Regu)
-                  </option>
-                ))}
-              </select>
-              <p className="text-[11px] text-[#64748b] mt-1">
-                Petugas pengganti ini akan otomatis menggantikan pos {selectedOfficer?.officerName} pada setiap tanggal cuti ({startDate} s/d {endDate}) di Kalender Shift.
+                <SelectTrigger id="backupOfficer" className="w-full">
+                  <SelectValue placeholder="Pilih petugas pengganti" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {availableBackupOfficers.map((off) => (
+                    <SelectItem key={off.officerId} value={off.officerId}>
+                      {off.officerName} ({off.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <p className="text-[11px] text-muted-foreground">
+                Petugas ini akan menggantikan{" "}
+                <span className="font-semibold text-slate-700">
+                  {selectedOfficer?.officerName || "personel pemohon"}
+                </span>{" "}
+                pada periode {startDate || "-"} s/d {endDate || "-"} di Kalender
+                Shift.
               </p>
             </div>
 
-            {/* Keterangan */}
-            <div>
-              <label className="block text-xs font-bold text-[#334155] mb-1">
-                Alasan / Keterangan Tambahan <span className="text-rose-500">*</span>
-              </label>
-              <textarea
-                rows={2}
+            {/* Reason */}
+            <div className="space-y-2">
+              <Label htmlFor="reason" className="text-xs">
+                Alasan / Keterangan Tambahan
+                <span className="ml-1 text-rose-500">*</span>
+              </Label>
+
+              <Textarea
+                id="reason"
+                rows={3}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Rincian alasan pengajuan cuti atau keterangan surat dokter..."
-                className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-xs text-[#0f172a] focus:outline-hidden focus:border-[#2563eb]"
+                placeholder="Tuliskan alasan pengajuan cuti atau keterangan surat dokter..."
+                className="resize-none text-xs"
+                required
               />
             </div>
 
-            <div className="pt-2 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setReason('')}
-                className="px-4 py-2 border border-[#cbd5e1] rounded text-xs font-semibold text-[#475569] hover:bg-[#f8fafc]"
-              >
+            {/* Actions */}
+            <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={handleReset}>
                 Reset
-              </button>
-              <button
+              </Button>
+
+              <Button
                 type="submit"
-                className="px-5 py-2 rounded bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 shadow-xs flex items-center gap-1.5"
+                disabled={
+                  !INITIAL_OFFICERS_POOL.length ||
+                  !selectedOfficer ||
+                  !selectedBackup
+                }
+                className="bg-amber-600 text-white hover:bg-amber-700"
               >
-                <span className="material-symbols-outlined text-sm">assignment_turned_in</span>
-                <span>Setujui &amp; Terapkan ke Kalender Shift</span>
-              </button>
+                <ClipboardCheck className="mr-1.5 size-4" />
+                Setujui & Terapkan ke Kalender
+              </Button>
             </div>
           </form>
         </div>
 
-        {/* Panel Ringkasan Kuota Cuti & Kuota Pos */}
-        <div className="space-y-4">
-          <div className="bg-white border border-[#e2e8f0] rounded-lg p-4 shadow-xs">
-            <h3 className="text-xs font-bold text-[#0f172a] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-base text-amber-600">health_and_safety</span>
-              Kebijakan Absensi &amp; Cuti PAMAREA
-            </h3>
-            <ul className="text-xs text-[#64748b] space-y-2 list-disc list-inside">
-              <li>Maksimal 1 personel per regu yang dapat mengambil cuti bersamaan agar kuota pos tetap aman.</li>
-              <li>Wajib menyertakan personel pengganti resmi untuk menjaga kontinuitas penjagaan.</li>
-              <li>Izin sakit lebih dari 1 hari wajib melampirkan surat keterangan dokter resmi.</li>
-              <li>Status kalender shift otomatis berlabel <em>[Cadangan Cuti]</em> untuk memudahkan inspeksi supervisor.</li>
+        {/* Information Panel */}
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 border-b pb-3">
+              <ShieldCheck className="size-5 text-amber-600" />
+              <h3 className="text-sm font-bold text-slate-900">
+                Kebijakan Absensi & Cuti
+              </h3>
+            </div>
+
+            <ul className="list-disc space-y-3 pl-4 text-xs leading-relaxed text-muted-foreground">
+              <li>
+                Maksimal satu personel per regu yang dapat mengambil cuti
+                bersamaan agar kuota pos tetap aman.
+              </li>
+              <li>
+                Wajib menyertakan personel pengganti resmi untuk menjaga
+                kontinuitas penjagaan.
+              </li>
+              <li>
+                Izin sakit lebih dari satu hari wajib melampirkan surat
+                keterangan dokter resmi.
+              </li>
+              <li>
+                Kalender shift menggunakan label Cadangan Cuti untuk memudahkan
+                inspeksi supervisor.
+              </li>
             </ul>
           </div>
 
-          <div className="bg-emerald-900 text-white rounded-lg p-4 shadow-xs">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-emerald-300 text-lg">shield_person</span>
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-200">Kesiapan Tim Cadangan</span>
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="size-5 text-emerald-600" />
+              <h3 className="text-sm font-bold text-slate-900">
+                Kesiapan Tim Cadangan
+              </h3>
             </div>
-            <p className="text-xs text-emerald-100 mb-2">
-              Tersedia 4 personel cadangan siaga (Standby Mobile Guards) yang siap dimobilisasi ke pos kosong kapan saja.
+
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Personel cadangan siaga dapat dimobilisasi untuk mengisi pos yang
+              ditinggalkan selama periode cuti atau izin.
             </p>
-            <div className="text-[11px] text-emerald-200/90 bg-emerald-800/60 p-2 rounded">
-              Status Pos Hari Ini: <strong>100% Terisi &amp; Bebas Kekosongan Pos</strong>
+
+            <div className="rounded border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-[11px] text-emerald-700">
+                Status Pos Hari Ini
+              </p>
+              <p className="mt-1 text-sm font-bold text-emerald-800">
+                100% Terisi
+              </p>
+              <p className="mt-1 text-[11px] text-emerald-700">
+                Tidak ada kekosongan pos yang terdata.
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tabel Daftar Pengajuan Cuti & Izin Aktif */}
-      <div className="bg-white border border-[#e2e8f0] rounded-lg overflow-hidden shadow-xs">
-        <div className="px-5 py-4 border-b border-[#e2e8f0] flex items-center justify-between">
+      {/* Leave Records Table */}
+      <div className="space-y-3">
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-amber-600 text-lg">event_available</span>
-            <h3 className="text-sm font-bold text-[#0f172a]">Daftar Cuti &amp; Izin Personel Aktif</h3>
+            <CalendarDays className="size-5 text-amber-600" />
+            <h2 className="text-sm font-bold text-slate-900">
+              Daftar Cuti & Izin Personel Aktif
+            </h2>
           </div>
-          <span className="text-xs text-[#64748b]">{leaveRecords.length} Permohonan Terdata</span>
+
+          <Badge variant="secondary" className="w-fit rounded">
+            {leaveRecords.length} Permohonan Terdata
+          </Badge>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-[#f8fafc] text-[#475569] font-bold border-b border-[#e2e8f0]">
-                <th className="py-2.5 px-4">ID Cuti</th>
-                <th className="py-2.5 px-4">Nama Personel</th>
-                <th className="py-2.5 px-4">Jenis Izin</th>
-                <th className="py-2.5 px-4">Rentang Tanggal</th>
-                <th className="py-2.5 px-4">Petugas Pengganti (Backup)</th>
-                <th className="py-2.5 px-4">Alasan</th>
-                <th className="py-2.5 px-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f1f5f9] text-[#334155]">
-              {leaveRecords.map((l) => (
-                <tr key={l.id} className="hover:bg-[#fafafa]">
-                  <td className="py-3 px-4 font-mono font-semibold text-[#2563eb]">{l.id}</td>
-                  <td className="py-3 px-4 font-bold text-[#0f172a]">{l.officerName}</td>
-                  <td className="py-3 px-4">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                      {l.leaveType}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 font-medium text-[#0f172a]">
-                    {l.startDate} s/d {l.endDate}
-                  </td>
-                  <td className="py-3 px-4">
-                    {l.backupOfficerName ? (
-                      <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        ✓ {l.backupOfficerName}
-                      </span>
-                    ) : (
-                      <span className="text-[#94a3b8] italic">Belum ditentukan</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-[#64748b] max-w-xs truncate">{l.reason}</td>
-                  <td className="py-3 px-4">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      {l.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="overflow-hidden rounded border">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50 hover:bg-slate-50">
+                  <TableHead className="text-xs">ID Cuti</TableHead>
+                  <TableHead className="text-xs">Nama Personel</TableHead>
+                  <TableHead className="text-xs">Jenis Izin</TableHead>
+                  <TableHead className="text-xs">Rentang Tanggal</TableHead>
+                  <TableHead className="text-xs">Petugas Pengganti</TableHead>
+                  <TableHead className="text-xs">Alasan</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {leaveRecords.length > 0 ? (
+                  leaveRecords.map((leave) => (
+                    <TableRow key={leave.id}>
+                      <TableCell className="whitespace-nowrap font-mono text-xs font-semibold text-blue-600">
+                        {leave.id}
+                      </TableCell>
+
+                      <TableCell className="whitespace-nowrap text-xs font-semibold text-slate-900">
+                        {leave.officerName}
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className="rounded border-amber-200 bg-amber-50 text-[10px] text-amber-800"
+                        >
+                          {leave.leaveType}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell className="whitespace-nowrap text-xs font-medium">
+                        {leave.startDate} s/d {leave.endDate}
+                      </TableCell>
+
+                      <TableCell className="whitespace-nowrap text-xs">
+                        {leave.backupOfficerName ? (
+                          <span className="font-medium text-emerald-700">
+                            {leave.backupOfficerName}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            Belum ditentukan
+                          </span>
+                        )}
+                      </TableCell>
+
+                      <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
+                        {leave.reason}
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className="rounded border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"
+                        >
+                          {leave.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="h-24 text-center text-xs text-muted-foreground"
+                    >
+                      Belum ada data pengajuan cuti atau izin.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </div>
     </div>
