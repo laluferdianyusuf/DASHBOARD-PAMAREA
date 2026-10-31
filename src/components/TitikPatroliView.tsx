@@ -1,11 +1,28 @@
-import React, { useState } from "react";
 import {
-  CHECKPOINTS,
-  CheckpointItem,
-  NfcTagItem,
-  SITES,
-} from "../data/mockData";
-import { isValidNfcUid } from "../utils/security-logic";
+  CheckCircle2,
+  Edit,
+  Link2,
+  Plus,
+  RefreshCw,
+  Search,
+  Unlink,
+  X,
+} from "lucide-react";
+import React, { useMemo, useState } from "react";
+
+import {
+  useCreatePatrolPoint,
+  usePatrolPoints,
+  useUpdatePatrolPoint,
+} from "../hooks/patrol-point/usePatrolPoints";
+
+import type {
+  CreatePatrolPointRequest,
+  PatrolPointResponse,
+  UpdatePatrolPointRequest,
+} from "../types/patrol-point/patrolPoint";
+
+import type { PatrolPointStatus } from "../types/enums/prisma-enums";
 
 import {
   AlertDialog,
@@ -17,8 +34,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
 import {
   Dialog,
   DialogContent,
@@ -27,16 +46,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
 import { Input } from "@/components/ui/input";
+
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+
 import { Label } from "@/components/ui/label";
+
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
+
 import { Separator } from "@/components/ui/separator";
+
 import {
   Table,
   TableBody,
@@ -46,90 +75,88 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { useNfcTags } from "../hooks/nfc/useNfc";
+
 import {
-  AlertTriangle,
-  CheckCircle2,
-  Contact,
-  Edit,
-  Link,
-  Link2Off,
-  MapPin,
-  Plus,
-  RefreshCw,
-  ScanLine,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
+  useAssignNfc,
+  useUnassignNfc,
+} from "../hooks/patrol-point-nfc/usePatroPointNfc";
+import type { NfcAssignment } from "../types";
+import type { NfcTagResponse } from "../types/nfc/nfc";
 
 interface TitikPatroliViewProps {
   selectedSite: string;
-  checkpoints?: CheckpointItem[];
-  nfcTags?: NfcTagItem[];
-  onUpdateCheckpoints?: (cps: CheckpointItem[]) => void;
-  onUnassignNfc?: (checkpointId: string) => void;
-  onAssignNfc?: (checkpointId: string, tagUid: string) => void;
 }
 
-const TAG_TYPES: CheckpointItem["tagType"][] = [
-  "NFC NTAG213",
-  "RFID UHF",
-  "QR Code Dynamic",
-];
+interface PointForm {
+  siteId: string;
+  code: string;
+  name: string;
+  description: string;
+  latitude: string;
+  longitude: string;
+  radiusMeters: string;
+  status: PatrolPointStatus;
+}
 
-const CHECKPOINT_STATUSES: CheckpointItem["status"][] = [
-  "Aktif Normal",
-  "Perlu Kalibrasi",
-  "Belum Terhubung Tag",
-  "Rusak / Gangguan",
-];
+const EMPTY_FORM: PointForm = {
+  siteId: "",
+  code: "",
+  name: "",
+  description: "",
+  latitude: "",
+  longitude: "",
+  radiusMeters: "10",
+  status: "INACTIVE" as PatrolPointStatus,
+};
 
-const FREQUENCIES = [
-  "Setiap 30 Menit",
-  "Setiap 1 Jam",
-  "Setiap 2 Jam",
-  "Setiap 3 Jam",
-];
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.response.data.message;
+  }
 
-const OFFICERS = [
-  "Rian Hidayat (Alpha-02)",
-  "Agus Santoso (Charlie-01)",
-  "Budi Hartono (Alpha-03)",
-  "Doni Pratama (Echo-01)",
-];
+  return "Terjadi kesalahan. Silakan coba kembali.";
+};
 
-const generateUid = () =>
-  "04:" +
-  Array.from({ length: 6 }, () =>
-    Math.floor(Math.random() * 256)
-      .toString(16)
-      .toUpperCase()
-      .padStart(2, "0"),
-  ).join(":");
+const getActiveAssignment = (
+  point: PatrolPointResponse,
+): NfcAssignment | undefined => {
+  const nfcAssignments = point.nfcAssignments?.find(
+    (assignment) => assignment.status === "ACTIVE" && !assignment.unassignedAt,
+  );
 
-const getStatusVariant = (status: CheckpointItem["status"]) => {
+  return nfcAssignments;
+};
+
+const getStatusLabel = (status: string) => {
   switch (status) {
-    case "Aktif Normal":
-      return "success";
-    case "Perlu Kalibrasi":
-      return "warning";
-    case "Belum Terhubung Tag":
-      return "warning";
+    case "ACTIVE":
+      return "Aktif";
+
+    case "INACTIVE":
+      return "Nonaktif";
+
+    case "MAINTENANCE":
+      return "Pemeliharaan";
+
     default:
-      return "danger";
+      return status;
   }
 };
 
-const getStatusClass = (status: CheckpointItem["status"]) => {
+const getStatusClass = (status: string) => {
   switch (status) {
-    case "Aktif Normal":
+    case "ACTIVE":
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "Perlu Kalibrasi":
+
+    case "INACTIVE":
+      return "border-slate-200 bg-slate-50 text-slate-600";
+
+    case "MAINTENANCE":
       return "border-amber-200 bg-amber-50 text-amber-700";
-    case "Belum Terhubung Tag":
-      return "border-amber-300 bg-amber-50 text-amber-800";
+
     default:
-      return "border-rose-200 bg-rose-50 text-rose-700";
+      return "border-slate-200 bg-slate-50 text-slate-600";
   }
 };
 
@@ -142,669 +169,681 @@ const Field = ({
 }) => (
   <div className="space-y-1.5">
     <Label className="text-xs font-medium text-slate-600">{label}</Label>
-    {children}
-  </div>
-);
 
-const SelectField = ({
-  label,
-  value,
-  onValueChange,
-  options,
-  placeholder,
-  disabled,
-}: {
-  label: string;
-  value: string;
-  onValueChange: (value: string) => void;
-  options: { label: string; value: string }[];
-  placeholder?: string;
-  disabled?: boolean;
-}) => (
-  <Field label={label}>
-    <Select
-      value={value}
-      onValueChange={(value) => onValueChange(value as string)}
-      disabled={disabled}
-    >
-      <SelectTrigger className="h-9 rounded text-xs">
-        <SelectValue placeholder={placeholder || `Pilih ${label}`} />
-      </SelectTrigger>
-      <SelectContent className="rounded">
-        {options.map((option) => (
-          <SelectItem
-            key={option.value}
-            value={option.value}
-            className="text-xs"
-          >
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </Field>
-);
-
-const InfoPanel = ({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) => (
-  <div
-    className={`rounded border border-slate-200 bg-slate-50 p-3 ${className}`}
-  >
     {children}
   </div>
 );
 
 export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
   selectedSite,
-  checkpoints: propCheckpoints,
-  nfcTags,
-  onUpdateCheckpoints,
-  onUnassignNfc,
-  onAssignNfc,
 }) => {
-  const [localCheckpoints, setLocalCheckpoints] =
-    useState<CheckpointItem[]>(CHECKPOINTS);
+  const {
+    data: pointsData,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = usePatrolPoints(
+    selectedSite !== "all" ? { siteId: selectedSite } : undefined,
+  );
 
-  const checkpoints = propCheckpoints ?? localCheckpoints;
+  const { data: nfcData } = useNfcTags();
 
-  const setCheckpointsList = (
-    updater: (prev: CheckpointItem[]) => CheckpointItem[],
-  ) => {
-    if (onUpdateCheckpoints) {
-      onUpdateCheckpoints(updater(checkpoints));
-    } else {
-      setLocalCheckpoints(updater);
-    }
-  };
+  const createMutation = useCreatePatrolPoint();
+
+  const updateMutation = useUpdatePatrolPoint();
+
+  const assignNfcMutation = useAssignNfc();
+
+  const unassignNfcMutation = useUnassignNfc();
+
+  const checkpoints = (
+    Array.isArray(pointsData) ? pointsData : []
+  ) as PatrolPointResponse[];
+
+  const nfcTags = (Array.isArray(nfcData) ? nfcData : []) as NfcTagResponse[];
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTagType, setSelectedTagType] = useState("all");
+
   const [selectedStatus, setSelectedStatus] = useState("all");
 
-  // Dialog states
+  const [selectedNfcStatus, setSelectedNfcStatus] = useState("all");
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
   const [editingCheckpoint, setEditingCheckpoint] =
-    useState<CheckpointItem | null>(null);
-  const [deletingCheckpoint, setDeletingCheckpoint] =
-    useState<CheckpointItem | null>(null);
-  const [unassigningCheckpoint, setUnassigningCheckpoint] =
-    useState<CheckpointItem | null>(null);
+    useState<PatrolPointResponse | null>(null);
+
   const [assigningCheckpoint, setAssigningCheckpoint] =
-    useState<CheckpointItem | null>(null);
+    useState<PatrolPointResponse | null>(null);
 
-  // Assign NFC
-  const [assignMode, setAssignMode] = useState<"existing" | "custom">(
-    "existing",
-  );
-  const [selectedTagUid, setSelectedTagUid] = useState("");
-  const [customTagUid, setCustomTagUid] = useState("04:8A:2B:3C:4D:5E:6F");
-  const [customTagType, setCustomTagType] =
-    useState<CheckpointItem["tagType"]>("NFC NTAG213");
+  const [unassigningCheckpoint, setUnassigningCheckpoint] =
+    useState<PatrolPointResponse | null>(null);
 
-  // Scan simulation
-  const [simulatingItem, setSimulatingItem] = useState<CheckpointItem | null>(
-    null,
-  );
-  const [simulatedOfficer, setSimulatedOfficer] = useState(OFFICERS[0]);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedNfcId, setSelectedNfcId] = useState("");
 
-  // New checkpoint form
-  const [newCheckpoint, setNewCheckpoint] = useState({
-    name: "",
-    siteId: "site-a",
-    zoneFloor: "",
-    tagType: "NFC NTAG213" as CheckpointItem["tagType"],
-    tagUid: generateUid(),
-    coordinates: "-6.22415, 106.80931",
-    frequency: "Setiap 1 Jam",
-  });
+  const [form, setForm] = useState<PointForm>(EMPTY_FORM);
 
-  const unassignedTags = (nfcTags || []).filter(
-    (tag) =>
-      !tag.linkedCheckpointId ||
-      tag.linkedCheckpointId === "-" ||
-      tag.status === "Belum Ditautkan",
-  );
+  const [formError, setFormError] = useState("");
 
-  const filteredCheckpoints = checkpoints.filter((cp) => {
-    if (selectedSite !== "all" && cp.siteId !== selectedSite) {
-      return false;
-    }
+  const [actionError, setActionError] = useState("");
 
-    if (selectedTagType !== "all") {
-      if (selectedTagType === "unassigned") {
-        if (
-          cp.tagUid &&
-          cp.tagUid !== "-" &&
-          cp.tagType !== "Tanpa Tag (Unassigned)"
-        ) {
-          return false;
-        }
-      } else if (cp.tagType !== selectedTagType) {
+  const [toastMessage, setToastMessage] = useState("");
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
+
+  const isNfcProcessing =
+    assignNfcMutation.isPending || unassignNfcMutation.isPending;
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+
+    window.setTimeout(() => {
+      setToastMessage("");
+    }, 3500);
+  };
+
+  const filteredCheckpoints = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return checkpoints.filter((point) => {
+      const activeAssignment = getActiveAssignment(point);
+
+      const assigned = Boolean(activeAssignment);
+
+      if (selectedStatus !== "all" && point.status !== selectedStatus) {
         return false;
       }
-    }
 
-    if (selectedStatus !== "all" && cp.status !== selectedStatus) {
-      return false;
-    }
-
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-
-      const matches =
-        cp.id.toLowerCase().includes(query) ||
-        cp.name.toLowerCase().includes(query) ||
-        cp.zoneFloor.toLowerCase().includes(query) ||
-        cp.tagUid.toLowerCase().includes(query) ||
-        cp.siteName.toLowerCase().includes(query);
-
-      if (!matches) return false;
-    }
-
-    return true;
-  });
-
-  const showToast = (message: string, duration = 3500) => {
-    setToastMessage(message);
-    setTimeout(() => setToastMessage(null), duration);
-  };
-
-  const handleSimulateScan = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!simulatingItem) return;
-
-    if (
-      !simulatingItem.tagUid ||
-      simulatingItem.tagUid === "-" ||
-      simulatingItem.tagType === "Tanpa Tag (Unassigned)"
-    ) {
-      alert(
-        "Gagal: Checkpoint ini belum terhubung dengan Tag NFC fisik! Harap gunakan fitur Tautkan Tag terlebih dahulu.",
-      );
-      return;
-    }
-
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now
-      .getMinutes()
-      .toString()
-      .padStart(2, "0")} WIB`;
-
-    setCheckpointsList((prev) =>
-      prev.map((checkpoint) =>
-        checkpoint.id === simulatingItem.id
-          ? {
-              ...checkpoint,
-              lastScanned: timeStr,
-              lastGuard: simulatedOfficer,
-              status: "Aktif Normal",
-            }
-          : checkpoint,
-      ),
-    );
-
-    showToast(
-      `Checkpoint ${simulatingItem.id} (${simulatingItem.name}) berhasil dipindai oleh ${simulatedOfficer} pada ${timeStr}!`,
-    );
-
-    setSimulatingItem(null);
-  };
-
-  const handleCreateCheckpoint = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const siteObj =
-      SITES.find((site) => site.id === newCheckpoint.siteId) ?? SITES[0];
-
-    if (!siteObj) return;
-
-    const newId = `CP-${siteObj.code}-${String(checkpoints.length + 1).padStart(
-      3,
-      "0",
-    )}`;
-
-    const created: CheckpointItem = {
-      id: newId,
-      name: newCheckpoint.name,
-      siteId: newCheckpoint.siteId,
-      siteName: siteObj.name.replace(/^Site [A-D] - /, ""),
-      zoneFloor: newCheckpoint.zoneFloor || "Lantai 1 - Koridor Utama",
-      tagType: newCheckpoint.tagType,
-      tagUid: newCheckpoint.tagUid,
-      coordinates: newCheckpoint.coordinates,
-      frequency: newCheckpoint.frequency,
-      status: "Aktif Normal",
-      lastScanned: "Belum pernah",
-      lastGuard: "-",
-      mapX: Math.floor(25 + Math.random() * 50),
-      mapY: Math.floor(25 + Math.random() * 50),
-    };
-
-    setCheckpointsList((prev) => [created, ...prev]);
-    setIsAddModalOpen(false);
-
-    showToast(
-      `Titik checkpoint baru ${newId} (${created.name}) berhasil didaftarkan!`,
-    );
-  };
-
-  const handleSaveEditCheckpoint = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!editingCheckpoint) return;
-
-    setCheckpointsList((prev) =>
-      prev.map((checkpoint) =>
-        checkpoint.id === editingCheckpoint.id ? editingCheckpoint : checkpoint,
-      ),
-    );
-
-    const updatedName = editingCheckpoint.name;
-
-    setEditingCheckpoint(null);
-    showToast(`Data checkpoint ${updatedName} berhasil diperbarui!`);
-  };
-
-  const handleDeleteCheckpoint = () => {
-    if (!deletingCheckpoint) return;
-
-    setCheckpointsList((prev) =>
-      prev.filter((checkpoint) => checkpoint.id !== deletingCheckpoint.id),
-    );
-
-    showToast(
-      `Titik checkpoint ${deletingCheckpoint.id} (${deletingCheckpoint.name}) berhasil dihapus.`,
-    );
-
-    setDeletingCheckpoint(null);
-  };
-
-  const handleConfirmUnassign = () => {
-    if (!unassigningCheckpoint) return;
-
-    const checkpoint = unassigningCheckpoint;
-    const previousTagUid = checkpoint.tagUid;
-
-    if (onUnassignNfc) {
-      onUnassignNfc(checkpoint.id);
-    } else {
-      setCheckpointsList((prev) =>
-        prev.map((item) =>
-          item.id === checkpoint.id
-            ? {
-                ...item,
-                tagUid: "",
-                tagType: "Tanpa Tag (Unassigned)",
-                status: "Belum Terhubung Tag",
-              }
-            : item,
-        ),
-      );
-    }
-
-    setUnassigningCheckpoint(null);
-
-    showToast(
-      `Koneksi Tag NFC (${previousTagUid}) berhasil dilepas dari Checkpoint ${checkpoint.name}!`,
-      4000,
-    );
-  };
-
-  const handleConfirmAssign = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!assigningCheckpoint) return;
-
-    const checkpoint = assigningCheckpoint;
-    let tagToBind = "";
-
-    if (assignMode === "existing") {
-      tagToBind = selectedTagUid || unassignedTags[0]?.uid || "";
-
-      if (!tagToBind) {
-        alert("Tidak ada tag unassigned yang dipilih!");
-        return;
-      }
-    } else {
-      if (!isValidNfcUid(customTagUid)) {
-        alert(
-          "Format UID tidak valid! Gunakan format hex seperti 04:A2:3B:5F:8C:1D:9E",
-        );
-        return;
+      if (selectedNfcStatus === "assigned" && !assigned) {
+        return false;
       }
 
-      tagToBind = customTagUid.toUpperCase();
-    }
+      if (selectedNfcStatus === "unassigned" && assigned) {
+        return false;
+      }
 
-    if (onAssignNfc) {
-      onAssignNfc(checkpoint.id, tagToBind);
-    } else {
-      setCheckpointsList((prev) =>
-        prev.map((item) =>
-          item.id === checkpoint.id
-            ? {
-                ...item,
-                tagUid: tagToBind,
-                tagType:
-                  assignMode === "existing" ? "NFC NTAG213" : customTagType,
-                status: "Aktif Normal",
-              }
-            : item,
-        ),
+      if (!query) {
+        return true;
+      }
+
+      const uid = activeAssignment?.nfcTag?.uid ?? "";
+
+      return (
+        point.code.toLowerCase().includes(query) ||
+        point.name.toLowerCase().includes(query) ||
+        (point.description ?? "").toLowerCase().includes(query) ||
+        (point.site?.name ?? "").toLowerCase().includes(query) ||
+        uid.toLowerCase().includes(query)
       );
-    }
+    });
+  }, [checkpoints, searchQuery, selectedStatus, selectedNfcStatus]);
 
-    setAssigningCheckpoint(null);
-
-    showToast(
-      `Tag NFC ${tagToBind} berhasil ditautkan ke Checkpoint ${checkpoint.name}!`,
-      4000,
-    );
-  };
-
-  const openAssignDialog = (checkpoint: CheckpointItem) => {
-    setAssigningCheckpoint(checkpoint);
-    setAssignMode("existing");
-    setSelectedTagUid(unassignedTags[0]?.uid || "");
-  };
-
-  const generateNewUid = () => {
-    setNewCheckpoint((prev) => ({
+  const updateForm = <K extends keyof PointForm>(
+    key: K,
+    value: PointForm[K],
+  ) => {
+    setForm((prev) => ({
       ...prev,
-      tagUid: generateUid(),
+      [key]: value,
     }));
   };
 
-  const generateCustomUid = () => {
-    setCustomTagUid(generateUid());
+  const openAddDialog = () => {
+    setForm({
+      ...EMPTY_FORM,
+      siteId: selectedSite !== "all" ? selectedSite : "",
+    });
+
+    setFormError("");
+
+    setIsAddModalOpen(true);
   };
 
-  const connectedCount = checkpoints.filter(
-    (checkpoint) =>
-      checkpoint.tagUid &&
-      checkpoint.tagUid !== "-" &&
-      checkpoint.tagType !== "Tanpa Tag (Unassigned)",
-  ).length;
+  const openEditDialog = (point: PatrolPointResponse) => {
+    setForm({
+      siteId: point.siteId,
+      code: point.code,
+      name: point.name,
+      description: point.description ?? "",
+      latitude: String(point.latitude),
+      longitude: String(point.longitude),
+      radiusMeters: String(point.radiusMeters),
+      status: point.status,
+    });
 
-  const unassignedCount = checkpoints.length - connectedCount;
+    setFormError("");
 
+    setEditingCheckpoint(point);
+  };
+
+  const closeFormDialog = () => {
+    setIsAddModalOpen(false);
+
+    setEditingCheckpoint(null);
+
+    setFormError("");
+
+    setForm(EMPTY_FORM);
+  };
+
+  const validateForm = () => {
+    const latitude = Number(form.latitude);
+
+    const longitude = Number(form.longitude);
+
+    const radiusMeters = Number(form.radiusMeters);
+
+    if (!form.siteId.trim()) {
+      return "Site wajib diisi.";
+    }
+
+    if (!form.code.trim() || !form.name.trim()) {
+      return "Kode dan nama titik wajib diisi.";
+    }
+
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+      return "Latitude harus berada antara -90 sampai 90.";
+    }
+
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      return "Longitude harus berada antara -180 sampai 180.";
+    }
+
+    if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
+      return "Radius harus lebih besar dari 0.";
+    }
+
+    return null;
+  };
+
+  const getCreateFormPayload = (): CreatePatrolPointRequest => ({
+    siteId: form.siteId.trim(),
+    code: form.code.trim(),
+    name: form.name.trim(),
+    description: form.description.trim() || null,
+    latitude: Number(form.latitude),
+    longitude: Number(form.longitude),
+    radiusMeters: Number(form.radiusMeters),
+  });
+
+  const getUpdateFormPayload = (): UpdatePatrolPointRequest => ({
+    code: form.code.trim(),
+    name: form.name.trim(),
+    description: form.description.trim() || null,
+    latitude: Number(form.latitude),
+    longitude: Number(form.longitude),
+    radiusMeters: Number(form.radiusMeters),
+  });
+
+  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const validationError = validateForm();
+
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    setFormError("");
+
+    try {
+      const payload = getCreateFormPayload();
+
+      await createMutation.mutateAsync(payload);
+
+      closeFormDialog();
+
+      showToast("Titik patroli berhasil ditambahkan.");
+    } catch (err) {
+      setFormError(getErrorMessage(err));
+    }
+  };
+
+  const handleUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!editingCheckpoint) return;
+
+    const validationError = validateForm();
+
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    setFormError("");
+
+    try {
+      const payload = getUpdateFormPayload();
+
+      await updateMutation.mutateAsync({
+        id: editingCheckpoint.id,
+        payload,
+      });
+
+      closeFormDialog();
+
+      showToast("Titik patroli berhasil diperbarui.");
+    } catch (err) {
+      setFormError(getErrorMessage(err));
+    }
+  };
+
+  const availableNfcTags = nfcTags.filter((tag) => tag.status === "UNASSIGNED");
+
+  const handleAssignNfc = async () => {
+    if (!assigningCheckpoint || !selectedNfcId) {
+      setActionError("Pilih NFC terlebih dahulu.");
+      return;
+    }
+
+    setActionError("");
+
+    try {
+      await assignNfcMutation.mutateAsync({
+        patrolPointId: assigningCheckpoint.id,
+        nfcTagId: selectedNfcId,
+      });
+
+      setAssigningCheckpoint(null);
+
+      setSelectedNfcId("");
+
+      showToast("NFC berhasil ditautkan ke titik patroli.");
+    } catch (err) {
+      setActionError(getErrorMessage(err));
+    }
+  };
+
+  const handleUnassignNfc = async () => {
+    if (!unassigningCheckpoint) return;
+
+    const assignment = getActiveAssignment(unassigningCheckpoint);
+
+    if (!assignment) {
+      setActionError("Titik patroli tidak memiliki NFC aktif.");
+      return;
+    }
+
+    setActionError("");
+
+    try {
+      await unassignNfcMutation.mutateAsync({
+        patrolPointId: unassigningCheckpoint.id,
+        reason: "NFC dilepas melalui manajemen titik patroli",
+      });
+
+      setUnassigningCheckpoint(null);
+
+      showToast("NFC berhasil dilepas dari titik patroli.");
+    } catch (err) {
+      setActionError(getErrorMessage(err));
+    }
+  };
+
+  const renderFormFields = () => (
+    <div className="space-y-4">
+      <Field label="Kode Titik">
+        <Input
+          required
+          value={form.code}
+          onChange={(event) => updateForm("code", event.target.value)}
+          placeholder="CP-001"
+          className="h-9 rounded text-xs"
+        />
+      </Field>
+
+      <Field label="Nama Titik">
+        <Input
+          required
+          value={form.name}
+          onChange={(event) => updateForm("name", event.target.value)}
+          placeholder="Nama titik patroli"
+          className="h-9 rounded text-xs"
+        />
+      </Field>
+
+      <Field label="Subarea">
+        <Input
+          value={form.description}
+          onChange={(event) => updateForm("description", event.target.value)}
+          placeholder="Subarea lokasi"
+          className="h-9 rounded text-xs"
+        />
+      </Field>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Latitude">
+          <Input
+            required
+            type="number"
+            step="any"
+            value={form.latitude}
+            onChange={(event) => updateForm("latitude", event.target.value)}
+            className="h-9 rounded text-xs"
+          />
+        </Field>
+
+        <Field label="Longitude">
+          <Input
+            required
+            type="number"
+            step="any"
+            value={form.longitude}
+            onChange={(event) => updateForm("longitude", event.target.value)}
+            className="h-9 rounded text-xs"
+          />
+        </Field>
+      </div>
+
+      <Field label="Radius (Meter)">
+        <Input
+          required
+          type="number"
+          min="1"
+          value={form.radiusMeters}
+          onChange={(event) => updateForm("radiusMeters", event.target.value)}
+          className="h-9 rounded text-xs"
+        />
+      </Field>
+
+      {formError && (
+        <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+          {formError}
+        </div>
+      )}
+    </div>
+  );
   return (
     <div className="space-y-5">
-      {/* Toast */}
       {toastMessage && (
-        <div className="flex items-center justify-between gap-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+        <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-            <span>{toastMessage}</span>
+            <CheckCircle2 className="size-4" />
+            {toastMessage}
           </div>
 
           <Button
-            type="button"
             variant="ghost"
             size="icon"
-            className="size-7 rounded text-emerald-700 hover:bg-emerald-100"
-            onClick={() => setToastMessage(null)}
+            className="size-7"
+            onClick={() => setToastMessage("")}
           >
             <X className="size-4" />
           </Button>
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-center">
+      <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-center">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-xl font-semibold text-slate-900">
             Manajemen Titik Patroli
           </h1>
+
           <p className="mt-1 text-xs text-slate-500">
-            Kelola checkpoint, tag NFC/RFID, dan monitoring titik patroli.
+            Kelola lokasi checkpoint dan penautan NFC.
           </p>
         </div>
 
-        <Button
-          onClick={() => setIsAddModalOpen(true)}
-          className="h-9 rounded bg-blue-600 text-xs hover:bg-blue-700"
-        >
-          <Plus className="mr-1.5 size-4" />
-          Tambah Checkpoint
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 rounded"
+            disabled={isFetching}
+            onClick={() => refetch()}
+          >
+            <RefreshCw
+              className={`mr-1.5 size-4 ${isFetching ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+
+          <Button
+            size="sm"
+            className="h-9 rounded bg-[#FED400] text-black hover:bg-[#e9c300]"
+            onClick={openAddDialog}
+          >
+            <Plus className="mr-1.5 size-4" />
+            Tambah Titik
+          </Button>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-3 md:flex-row md:items-center">
-        <div className="relative min-w-0 flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <Input
+      <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-3 md:flex-row">
+        <InputGroup className="rounded">
+          <InputGroupAddon>
+            <Search className="size-4 text-slate-400" />
+          </InputGroupAddon>
+
+          <InputGroupInput
+            placeholder="Cari kode, nama, site, atau UID NFC..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari ID, nama titik, zona, UID..."
-            className="h-9 rounded pl-9 text-xs"
+            onChange={(event) => setSearchQuery(event.target.value)}
           />
-        </div>
+        </InputGroup>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:w-auto">
-          <Select
-            value={selectedTagType}
-            onValueChange={(value) => setSelectedTagType(value as string)}
-          >
-            <SelectTrigger className="h-9 w-full rounded text-xs md:w-48">
-              <SelectValue placeholder="Semua Tipe Tag" />
-            </SelectTrigger>
-            <SelectContent className="rounded">
-              <SelectItem value="all">Semua Tipe Tag</SelectItem>
-              {TAG_TYPES.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {type}
-                </SelectItem>
-              ))}
-              <SelectItem value="unassigned">Belum Terhubung</SelectItem>
-            </SelectContent>
-          </Select>
+        <Select
+          value={selectedStatus}
+          onValueChange={(value) => setSelectedStatus(value ?? "all")}
+        >
+          <SelectTrigger className="h-9 rounded text-xs md:w-44">
+            <span className="truncate">
+              {{
+                all: "Semua Status",
+                ACTIVE: "Aktif",
+                INACTIVE: "Nonaktif",
+                MAINTENANCE: "Pemeliharaan",
+              }[selectedStatus] ?? "Status titik"}
+            </span>
+          </SelectTrigger>
 
-          <Select
-            value={selectedStatus}
-            onValueChange={(value) => setSelectedStatus(value as string)}
-          >
-            <SelectTrigger className="h-9 w-full rounded text-xs md:w-48">
-              <SelectValue placeholder="Semua Status" />
-            </SelectTrigger>
-            <SelectContent className="rounded">
-              <SelectItem value="all">Semua Status</SelectItem>
-              {CHECKPOINT_STATUSES.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+          <SelectContent>
+            <SelectItem value="all">Semua Status</SelectItem>
+            <SelectItem value="ACTIVE">Aktif</SelectItem>
+            <SelectItem value="INACTIVE">Nonaktif</SelectItem>
+            <SelectItem value="MAINTENANCE">Pemeliharaan</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <p className="shrink-0 text-xs text-slate-500">
-          Menampilkan{" "}
-          <span className="font-semibold text-slate-900">
-            {filteredCheckpoints.length}
-          </span>{" "}
-          dari {checkpoints.length} titik
-        </p>
+        <Select
+          value={selectedNfcStatus}
+          onValueChange={(value) => setSelectedNfcStatus(value ?? "all")}
+        >
+          <SelectTrigger className="h-9 rounded text-xs md:w-48">
+            <span className="truncate">
+              {{
+                all: "Semua NFC",
+                assigned: "Sudah Ditautkan",
+                unassigned: "Belum Ditautkan",
+              }[selectedNfcStatus] ?? "Status NFC"}
+            </span>
+          </SelectTrigger>
+
+          <SelectContent>
+            <SelectItem value="all">Semua NFC</SelectItem>
+            <SelectItem value="assigned">Sudah Ditautkan</SelectItem>
+            <SelectItem value="unassigned">Belum Ditautkan</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Checkpoint Table */}
       <div className="overflow-hidden rounded border border-slate-200 bg-white">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
-                <TableHead className="whitespace-nowrap text-xs">
-                  ID Checkpoint
-                </TableHead>
-                <TableHead className="whitespace-nowrap text-xs">
-                  Nama Titik
-                </TableHead>
-                <TableHead className="whitespace-nowrap text-xs">
-                  Site / Zona
-                </TableHead>
-                <TableHead className="whitespace-nowrap text-xs">
-                  Tag NFC / RFID
-                </TableHead>
-                <TableHead className="whitespace-nowrap text-xs">
-                  Koordinat
-                </TableHead>
-                <TableHead className="whitespace-nowrap text-xs">
-                  Frekuensi
-                </TableHead>
-                <TableHead className="whitespace-nowrap text-center text-xs">
-                  Status
-                </TableHead>
-                <TableHead className="whitespace-nowrap text-right text-xs">
-                  Aksi
-                </TableHead>
+                <TableHead className="text-xs">Kode</TableHead>
+
+                <TableHead className="text-xs">Nama Titik</TableHead>
+
+                <TableHead className="text-xs">Site</TableHead>
+
+                <TableHead className="text-xs">Koordinat</TableHead>
+
+                <TableHead className="text-xs">Radius</TableHead>
+
+                <TableHead className="text-center text-xs">NFC</TableHead>
+
+                <TableHead className="text-center text-xs">Status</TableHead>
+
+                <TableHead className="text-right text-xs">Aksi</TableHead>
               </TableRow>
             </TableHeader>
 
             <TableBody>
-              {filteredCheckpoints.length === 0 ? (
+              {isLoading ? (
                 <TableRow>
                   <TableCell
                     colSpan={8}
                     className="h-32 text-center text-xs text-slate-500"
                   >
-                    Tidak ada checkpoint yang sesuai dengan pencarian.
+                    Memuat data...
+                  </TableCell>
+                </TableRow>
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="h-32 text-center">
+                    <p className="mb-2 text-xs text-rose-600">
+                      {getErrorMessage(error)}
+                    </p>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => refetch()}
+                    >
+                      Coba Lagi
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ) : filteredCheckpoints.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={8}
+                    className="h-32 text-center text-xs text-slate-500"
+                  >
+                    Tidak ada data titik patroli.
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredCheckpoints.map((cp) => {
-                  const hasTag = Boolean(
-                    cp.tagUid &&
-                    cp.tagUid !== "-" &&
-                    cp.tagType !== "Tanpa Tag (Unassigned)",
-                  );
+                filteredCheckpoints.map((point) => {
+                  const assignment = getActiveAssignment(point);
+
+                  const assigned = Boolean(assignment);
 
                   return (
-                    <TableRow key={cp.id} className="text-xs">
-                      <TableCell className="whitespace-nowrap font-mono font-semibold text-blue-600">
-                        {cp.id}
+                    <TableRow key={point.id} className="text-xs">
+                      <TableCell className="font-mono font-semibold text-blue-600">
+                        {point.code}
                       </TableCell>
 
-                      <TableCell className="min-w-48">
-                        <p className="font-medium text-slate-900">{cp.name}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          Scan terakhir: {cp.lastScanned}
-                          {cp.lastGuard !== "-" && ` · ${cp.lastGuard}`}
+                      <TableCell className="min-w-44">
+                        <p className="font-medium text-slate-900">
+                          {point.name}
                         </p>
+
+                        {point.description && (
+                          <p className="mt-1 max-w-xs truncate text-[11px] text-slate-500">
+                            {point.description}
+                          </p>
+                        )}
                       </TableCell>
 
-                      <TableCell className="min-w-36">
-                        <p className="font-medium text-slate-800">
-                          {cp.siteName}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {cp.zoneFloor}
-                        </p>
+                      <TableCell className="whitespace-nowrap text-slate-600">
+                        {point.site?.name ?? point.siteId}
                       </TableCell>
 
-                      <TableCell className="min-w-40">
-                        {hasTag ? (
-                          <div>
-                            <div className="flex items-center gap-1.5 font-mono font-medium text-blue-600">
-                              <Contact className="size-3.5" />
-                              {cp.tagUid}
-                            </div>
-                            <p className="mt-1 text-[11px] text-slate-500">
-                              {cp.tagType}
+                      <TableCell className="whitespace-nowrap font-mono text-[11px] text-slate-500">
+                        {point.latitude}, {point.longitude}
+                      </TableCell>
+
+                      <TableCell className="whitespace-nowrap">
+                        {point.radiusMeters} m
+                      </TableCell>
+
+                      <TableCell className="text-center">
+                        {assigned ? (
+                          <div className="space-y-1">
+                            <Badge
+                              variant="outline"
+                              className="rounded border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"
+                            >
+                              <CheckCircle2 className="mr-1 size-3" />
+                              Ditautkan
+                            </Badge>
+
+                            <p className="font-mono text-[10px] text-slate-500">
+                              {assignment?.nfcTag?.uid ?? "-"}
                             </p>
                           </div>
                         ) : (
                           <Badge
                             variant="outline"
-                            className="rounded border-amber-200 bg-amber-50 text-[10px] text-amber-700"
+                            className="rounded border-slate-200 bg-slate-50 text-[10px] text-slate-500"
                           >
-                            <Link2Off className="mr-1 size-3" />
                             Belum Ditautkan
                           </Badge>
                         )}
                       </TableCell>
 
-                      <TableCell className="whitespace-nowrap font-mono text-[11px] text-slate-500">
-                        {cp.coordinates}
-                      </TableCell>
-
-                      <TableCell className="whitespace-nowrap text-slate-600">
-                        {cp.frequency}
-                      </TableCell>
-
                       <TableCell className="text-center">
                         <Badge
                           variant="outline"
-                          className={`rounded text-[10px] font-medium ${getStatusClass(cp.status)}`}
+                          className={`rounded text-[10px] ${getStatusClass(
+                            point.status,
+                          )}`}
                         >
-                          {cp.status}
+                          {getStatusLabel(point.status)}
                         </Badge>
                       </TableCell>
 
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
                           <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={!hasTag}
-                            onClick={() => setSimulatingItem(cp)}
-                            className="h-7 rounded px-2 text-[11px]"
-                            title={
-                              hasTag ? "Simulasi scan" : "Tag belum ditautkan"
-                            }
-                          >
-                            <ScanLine className="mr-1 size-3.5" />
-                            Scan
-                          </Button>
-
-                          {hasTag ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setUnassigningCheckpoint(cp)}
-                              className="h-7 rounded border-amber-200 px-2 text-[11px] text-amber-700 hover:bg-amber-50 hover:text-amber-800"
-                            >
-                              <Link2Off className="mr-1 size-3.5" />
-                              Lepas
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openAssignDialog(cp)}
-                              className="h-7 rounded border-blue-200 px-2 text-[11px] text-blue-600 hover:bg-blue-50"
-                            >
-                              <Link className="mr-1 size-3.5" />
-                              Tautkan
-                            </Button>
-                          )}
-
-                          <Button
+                            type="button"
                             size="icon"
                             variant="outline"
-                            onClick={() => setEditingCheckpoint({ ...cp })}
                             className="size-7 rounded"
-                            title="Edit checkpoint"
+                            title="Edit titik"
+                            onClick={() => openEditDialog(point)}
                           >
                             <Edit className="size-3.5" />
                           </Button>
 
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            onClick={() => setDeletingCheckpoint(cp)}
-                            className="size-7 rounded border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                            title="Hapus checkpoint"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
+                          {assigned ? (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              className="size-7 rounded border-rose-200 text-rose-600 hover:bg-rose-50"
+                              title="Lepas NFC"
+                              onClick={() => {
+                                setActionError("");
+                                setUnassigningCheckpoint(point);
+                              }}
+                            >
+                              <Unlink className="size-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              className="size-7 rounded border-blue-200 text-blue-600 hover:bg-blue-50"
+                              title="Tautkan NFC"
+                              onClick={() => {
+                                setActionError("");
+                                setSelectedNfcId("");
+                                setAssigningCheckpoint(point);
+                              }}
+                            >
+                              <Link2 className="size-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -816,142 +855,25 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         </div>
       </div>
 
-      {/* Dialog: Add Checkpoint */}
-      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+      <Dialog
+        open={isAddModalOpen}
+        onOpenChange={(open) => {
+          if (!open) closeFormDialog();
+        }}
+      >
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <MapPin className="size-5 text-blue-600" />
-              Tambah Checkpoint
+            <DialogTitle className="text-base">
+              Tambah Titik Patroli
             </DialogTitle>
+
             <DialogDescription className="text-xs">
-              Daftarkan titik inspeksi dan informasi tag perangkat.
+              Isi data titik patroli baru.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleCreateCheckpoint} className="space-y-4">
-            <Field label="Nama Titik Inspeksi">
-              <Input
-                required
-                value={newCheckpoint.name}
-                onChange={(e) =>
-                  setNewCheckpoint((prev) => ({
-                    ...prev,
-                    name: e.target.value,
-                  }))
-                }
-                placeholder="Contoh: Tangga Darurat Timur Lt. 12"
-                className="h-9 rounded text-xs"
-              />
-            </Field>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <SelectField
-                label="Site / Wilayah"
-                value={newCheckpoint.siteId}
-                onValueChange={(value) =>
-                  setNewCheckpoint((prev) => ({
-                    ...prev,
-                    siteId: value,
-                  }))
-                }
-                options={SITES.filter((site) => site.id !== "all").map(
-                  (site) => ({
-                    label: site.name,
-                    value: site.id,
-                  }),
-                )}
-              />
-
-              <Field label="Zona / Lantai">
-                <Input
-                  required
-                  value={newCheckpoint.zoneFloor}
-                  onChange={(e) =>
-                    setNewCheckpoint((prev) => ({
-                      ...prev,
-                      zoneFloor: e.target.value,
-                    }))
-                  }
-                  placeholder="Contoh: Koridor Timur Lt. 12"
-                  className="h-9 rounded text-xs"
-                />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <SelectField
-                label="Tipe Tag Perangkat"
-                value={newCheckpoint.tagType}
-                onValueChange={(value) =>
-                  setNewCheckpoint((prev) => ({
-                    ...prev,
-                    tagType: value as CheckpointItem["tagType"],
-                  }))
-                }
-                options={TAG_TYPES.map((type) => ({
-                  label: type,
-                  value: type,
-                }))}
-              />
-
-              <Field label="UID Tag">
-                <div className="flex gap-2">
-                  <Input
-                    required
-                    value={newCheckpoint.tagUid}
-                    onChange={(e) =>
-                      setNewCheckpoint((prev) => ({
-                        ...prev,
-                        tagUid: e.target.value,
-                      }))
-                    }
-                    className="h-9 min-w-0 rounded font-mono text-xs"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={generateNewUid}
-                    className="size-9 shrink-0 rounded"
-                    title="Acak UID"
-                  >
-                    <RefreshCw className="size-3.5" />
-                  </Button>
-                </div>
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Koordinat GPS">
-                <Input
-                  required
-                  value={newCheckpoint.coordinates}
-                  onChange={(e) =>
-                    setNewCheckpoint((prev) => ({
-                      ...prev,
-                      coordinates: e.target.value,
-                    }))
-                  }
-                  className="h-9 rounded font-mono text-xs"
-                />
-              </Field>
-
-              <SelectField
-                label="Frekuensi Kunjungan"
-                value={newCheckpoint.frequency}
-                onValueChange={(value) =>
-                  setNewCheckpoint((prev) => ({
-                    ...prev,
-                    frequency: value,
-                  }))
-                }
-                options={FREQUENCIES.map((frequency) => ({
-                  label: frequency,
-                  value: frequency,
-                }))}
-              />
-            </div>
+          <form onSubmit={handleCreate} className="space-y-4">
+            {renderFormFields()}
 
             <Separator />
 
@@ -959,572 +881,249 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsAddModalOpen(false)}
                 className="rounded"
+                onClick={closeFormDialog}
               >
                 Batal
               </Button>
+
               <Button
                 type="submit"
+                disabled={isSubmitting}
                 className="rounded bg-blue-600 hover:bg-blue-700"
               >
-                <Plus className="mr-1.5 size-4" />
-                Daftarkan Checkpoint
+                {createMutation.isPending ? "Menyimpan..." : "Simpan"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Edit Checkpoint */}
       <Dialog
-        open={!!editingCheckpoint}
+        open={Boolean(editingCheckpoint)}
         onOpenChange={(open) => {
-          if (!open) setEditingCheckpoint(null);
+          if (!open) closeFormDialog();
         }}
       >
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Edit className="size-5 text-blue-600" />
-              Edit Checkpoint
-            </DialogTitle>
+            <DialogTitle className="text-base">Edit Titik Patroli</DialogTitle>
+
             <DialogDescription className="text-xs">
-              {editingCheckpoint?.id}
+              Perbarui informasi titik patroli.
             </DialogDescription>
           </DialogHeader>
 
-          {editingCheckpoint && (
-            <form onSubmit={handleSaveEditCheckpoint} className="space-y-4">
-              <Field label="Nama Titik Inspeksi">
-                <Input
-                  required
-                  value={editingCheckpoint.name}
-                  onChange={(e) =>
-                    setEditingCheckpoint({
-                      ...editingCheckpoint,
-                      name: e.target.value,
-                    })
-                  }
-                  className="h-9 rounded text-xs"
-                />
-              </Field>
+          <form onSubmit={handleUpdate} className="space-y-4">
+            {renderFormFields()}
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Zona / Lantai">
-                  <Input
-                    required
-                    value={editingCheckpoint.zoneFloor}
-                    onChange={(e) =>
-                      setEditingCheckpoint({
-                        ...editingCheckpoint,
-                        zoneFloor: e.target.value,
-                      })
-                    }
-                    className="h-9 rounded text-xs"
-                  />
-                </Field>
+            <Separator />
 
-                <SelectField
-                  label="Status Operasional"
-                  value={editingCheckpoint.status}
-                  onValueChange={(value) =>
-                    setEditingCheckpoint({
-                      ...editingCheckpoint,
-                      status: value as CheckpointItem["status"],
-                    })
-                  }
-                  options={CHECKPOINT_STATUSES.map((status) => ({
-                    label: status,
-                    value: status,
-                  }))}
-                />
-              </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded"
+                onClick={closeFormDialog}
+              >
+                Batal
+              </Button>
 
-              <InfoPanel className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-slate-700">
-                    Koneksi Tag NFC
-                  </p>
-
-                  {editingCheckpoint.tagUid &&
-                    editingCheckpoint.tagUid !== "-" && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setEditingCheckpoint({
-                            ...editingCheckpoint,
-                            tagUid: "",
-                            tagType: "Tanpa Tag (Unassigned)",
-                            status: "Belum Terhubung Tag",
-                          })
-                        }
-                        className="h-7 rounded px-2 text-xs text-amber-700 hover:bg-amber-50"
-                      >
-                        <Link2Off className="mr-1 size-3.5" />
-                        Lepas Tag
-                      </Button>
-                    )}
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <SelectField
-                    label="Tipe Tag"
-                    value={editingCheckpoint.tagType}
-                    onValueChange={(value) =>
-                      setEditingCheckpoint({
-                        ...editingCheckpoint,
-                        tagType: value as CheckpointItem["tagType"],
-                      })
-                    }
-                    options={[
-                      ...TAG_TYPES.map((type) => ({
-                        label: type,
-                        value: type,
-                      })),
-                      {
-                        label: "Tanpa Tag (Unassigned)",
-                        value: "Tanpa Tag (Unassigned)",
-                      },
-                    ]}
-                  />
-
-                  <Field label="UID Tag Fisik">
-                    <Input
-                      value={editingCheckpoint.tagUid}
-                      onChange={(e) =>
-                        setEditingCheckpoint({
-                          ...editingCheckpoint,
-                          tagUid: e.target.value,
-                        })
-                      }
-                      placeholder="04:XX:XX:XX:XX:XX:XX"
-                      className="h-9 rounded font-mono text-xs"
-                    />
-                  </Field>
-                </div>
-              </InfoPanel>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Koordinat GPS">
-                  <Input
-                    required
-                    value={editingCheckpoint.coordinates}
-                    onChange={(e) =>
-                      setEditingCheckpoint({
-                        ...editingCheckpoint,
-                        coordinates: e.target.value,
-                      })
-                    }
-                    className="h-9 rounded font-mono text-xs"
-                  />
-                </Field>
-
-                <SelectField
-                  label="Frekuensi Inspeksi"
-                  value={editingCheckpoint.frequency}
-                  onValueChange={(value) =>
-                    setEditingCheckpoint({
-                      ...editingCheckpoint,
-                      frequency: value,
-                    })
-                  }
-                  options={FREQUENCIES.map((frequency) => ({
-                    label: frequency,
-                    value: frequency,
-                  }))}
-                />
-              </div>
-
-              <Separator />
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setEditingCheckpoint(null)}
-                  className="rounded"
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  className="rounded bg-blue-600 hover:bg-blue-700"
-                >
-                  Simpan Perubahan
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="rounded bg-blue-600 hover:bg-blue-700"
+              >
+                {updateMutation.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Assign NFC */}
       <Dialog
-        open={!!assigningCheckpoint}
+        open={Boolean(assigningCheckpoint)}
         onOpenChange={(open) => {
-          if (!open) setAssigningCheckpoint(null);
+          if (!open && !isNfcProcessing) {
+            setAssigningCheckpoint(null);
+            setSelectedNfcId("");
+            setActionError("");
+          }
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto rounded">
+        <DialogContent className="max-w-md rounded">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
-              <Link className="size-5 text-blue-600" />
-              Tautkan Tag NFC
+              <Link2 className="size-5 text-blue-600" />
+              Tautkan NFC
             </DialogTitle>
+
             <DialogDescription className="text-xs">
-              Hubungkan tag fisik dengan titik checkpoint.
+              Pilih NFC yang akan ditautkan ke titik patroli.
             </DialogDescription>
           </DialogHeader>
 
           {assigningCheckpoint && (
-            <form onSubmit={handleConfirmAssign} className="space-y-4">
-              <InfoPanel>
-                <p className="text-[11px] text-slate-500">Checkpoint Target</p>
-                <p className="mt-1 font-semibold text-slate-900">
-                  {assigningCheckpoint.id} - {assigningCheckpoint.name}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {assigningCheckpoint.siteName} ·{" "}
-                  {assigningCheckpoint.zoneFloor}
-                </p>
-              </InfoPanel>
+            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Titik patroli</p>
 
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-slate-600">
-                  Metode Penautan
-                </Label>
+              <p className="mt-1 text-sm font-semibold">
+                {assigningCheckpoint.name}
+              </p>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setAssignMode("existing")}
-                    className={`h-auto flex-col items-start rounded p-3 ${
-                      assignMode === "existing"
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : ""
-                    }`}
-                  >
-                    <span className="text-xs font-semibold">Tag Tersedia</span>
-                    <span className="text-[10px] font-normal text-slate-500">
-                      {unassignedTags.length} tag tersedia
-                    </span>
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setAssignMode("custom")}
-                    className={`h-auto flex-col items-start rounded p-3 ${
-                      assignMode === "custom"
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : ""
-                    }`}
-                  >
-                    <span className="text-xs font-semibold">UID Baru</span>
-                    <span className="text-[10px] font-normal text-slate-500">
-                      Input UID manual
-                    </span>
-                  </Button>
-                </div>
-              </div>
-
-              {assignMode === "existing" ? (
-                unassignedTags.length === 0 ? (
-                  <InfoPanel className="border-amber-200 bg-amber-50 text-xs text-amber-800">
-                    Semua tag sudah tertaut. Gunakan metode UID Baru untuk
-                    mendaftarkan tag.
-                  </InfoPanel>
-                ) : (
-                  <SelectField
-                    label="Pilih Tag NFC"
-                    value={selectedTagUid || unassignedTags[0].uid}
-                    onValueChange={setSelectedTagUid}
-                    options={unassignedTags.map((tag) => ({
-                      value: tag.uid,
-                      label: `${tag.uid} (${tag.type} - ${tag.siteName})`,
-                    }))}
-                  />
-                )
-              ) : (
-                <div className="space-y-3">
-                  <Field label="UID Tag Fisik">
-                    <div className="flex gap-2">
-                      <Input
-                        required
-                        value={customTagUid}
-                        onChange={(e) => setCustomTagUid(e.target.value)}
-                        className="h-9 rounded font-mono text-xs"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={generateCustomUid}
-                        className="size-9 shrink-0 rounded"
-                        title="Acak UID"
-                      >
-                        <RefreshCw className="size-4" />
-                      </Button>
-                    </div>
-                  </Field>
-
-                  <SelectField
-                    label="Tipe Chip Hardware"
-                    value={customTagType}
-                    onValueChange={(value) =>
-                      setCustomTagType(value as CheckpointItem["tagType"])
-                    }
-                    options={TAG_TYPES.map((type) => ({
-                      value: type,
-                      label: type,
-                    }))}
-                  />
-                </div>
-              )}
-
-              <Separator />
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setAssigningCheckpoint(null)}
-                  className="rounded"
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    assignMode === "existing" && unassignedTags.length === 0
-                  }
-                  className="rounded bg-blue-600 hover:bg-blue-700"
-                >
-                  <Link className="mr-1.5 size-4" />
-                  Tautkan Tag
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog: Unassign NFC */}
-      <Dialog
-        open={!!unassigningCheckpoint}
-        onOpenChange={(open) => {
-          if (!open) setUnassigningCheckpoint(null);
-        }}
-      >
-        <DialogContent className="max-w-md rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Link2Off className="size-5 text-amber-600" />
-              Lepas Koneksi Tag NFC
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Pastikan Anda ingin melepas tag dari checkpoint ini.
-            </DialogDescription>
-          </DialogHeader>
-
-          {unassigningCheckpoint && (
-            <div className="space-y-4">
-              <InfoPanel className="space-y-3">
-                <div>
-                  <p className="text-[11px] text-slate-500">Titik Checkpoint</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-900">
-                    {unassigningCheckpoint.id} - {unassigningCheckpoint.name}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[11px] text-slate-500">Site dan Zona</p>
-                  <p className="mt-1 text-xs text-slate-700">
-                    {unassigningCheckpoint.siteName} ·{" "}
-                    {unassigningCheckpoint.zoneFloor}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[11px] text-slate-500">UID Tag Saat Ini</p>
-                  <p className="mt-1 font-mono text-xs font-semibold text-blue-600">
-                    {unassigningCheckpoint.tagUid}
-                  </p>
-                </div>
-              </InfoPanel>
-
-              <div className="rounded border border-amber-200 bg-amber-50 p-3">
-                <div className="flex items-center gap-2 text-xs font-semibold text-amber-800">
-                  <AlertTriangle className="size-4" />
-                  Dampak Operasional
-                </div>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-[11px] text-amber-800">
-                  <li>Tag akan dilepas dan kembali menjadi belum ditautkan.</li>
-                  <li>
-                    Checkpoint tidak dapat dipindai sampai tag baru ditautkan.
-                  </li>
-                </ul>
-              </div>
-
-              <Separator />
-
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setUnassigningCheckpoint(null)}
-                  className="rounded"
-                >
-                  Batal
-                </Button>
-                <Button
-                  onClick={handleConfirmUnassign}
-                  className="rounded bg-amber-600 hover:bg-amber-700"
-                >
-                  <Link2Off className="mr-1.5 size-4" />
-                  Lepas Tag
-                </Button>
-              </DialogFooter>
+              <p className="mt-1 font-mono text-xs text-blue-600">
+                {assigningCheckpoint.code}
+              </p>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
 
-      {/* Dialog: Scan Simulation */}
-      <Dialog
-        open={!!simulatingItem}
-        onOpenChange={(open) => {
-          if (!open) setSimulatingItem(null);
-        }}
-      >
-        <DialogContent className="max-w-md rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <ScanLine className="size-5 text-blue-600" />
-              Simulasi Scan NFC
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Simulasikan pemindaian checkpoint oleh petugas lapangan.
-            </DialogDescription>
-          </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-xs">Pilih NFC</Label>
 
-          {simulatingItem && (
-            <form onSubmit={handleSimulateScan} className="space-y-4">
-              <InfoPanel className="space-y-3">
-                <div className="flex justify-between gap-3">
-                  <span className="text-xs text-slate-500">ID</span>
-                  <span className="font-mono text-xs font-semibold text-blue-600">
-                    {simulatingItem.id}
-                  </span>
-                </div>
+            <Select
+              value={selectedNfcId}
+              onValueChange={(value) => setSelectedNfcId(value ?? "")}
+              disabled={isNfcProcessing}
+            >
+              <SelectTrigger className="h-10 w-full rounded text-xs">
+                <span className="truncate">
+                  {selectedNfcId
+                    ? (() => {
+                        const selectedTag = availableNfcTags.find(
+                          (tag) => tag.id === selectedNfcId,
+                        );
 
-                <div className="flex justify-between gap-3">
-                  <span className="text-xs text-slate-500">Nama Titik</span>
-                  <span className="text-right text-xs font-medium text-slate-900">
-                    {simulatingItem.name}
-                  </span>
-                </div>
+                        return selectedTag
+                          ? `${selectedTag.label ?? "Tanpa Label"} - ${selectedTag.uid ?? "No UID"}`
+                          : "NFC tidak ditemukan";
+                      })()
+                    : "Pilih NFC yang tersedia"}
+                </span>
+              </SelectTrigger>
 
-                <div className="flex justify-between gap-3">
-                  <span className="text-xs text-slate-500">Tipe Tag</span>
-                  <span className="text-xs text-slate-700">
-                    {simulatingItem.tagType}
-                  </span>
-                </div>
+              <SelectContent>
+                {availableNfcTags.length === 0 ? (
+                  <SelectItem value="none" disabled>
+                    Tidak ada NFC tersedia
+                  </SelectItem>
+                ) : (
+                  availableNfcTags.map((tag) => (
+                    <SelectItem key={tag.id} value={tag.id}>
+                      {tag.label ?? "Tanpa Label"} - {tag.uid ?? "No UID"}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
 
-                <div className="flex justify-between gap-3">
-                  <span className="text-xs text-slate-500">UID</span>
-                  <span className="font-mono text-xs text-slate-900">
-                    {simulatingItem.tagUid}
-                  </span>
-                </div>
-              </InfoPanel>
+            <p className="text-[11px] text-slate-500">
+              Hanya NFC dengan status UNASSIGNED yang dapat dipilih.
+            </p>
+          </div>
 
-              <SelectField
-                label="Petugas Pemindai"
-                value={simulatedOfficer}
-                onValueChange={setSimulatedOfficer}
-                options={OFFICERS.map((officer) => ({
-                  value: officer,
-                  label: officer,
-                }))}
-              />
-
-              <Separator />
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setSimulatingItem(null)}
-                  className="rounded"
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  className="rounded bg-blue-600 hover:bg-blue-700"
-                >
-                  <ScanLine className="mr-1.5 size-4" />
-                  Simulasikan Scan
-                </Button>
-              </DialogFooter>
-            </form>
+          {actionError && (
+            <p className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+              {actionError}
+            </p>
           )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded"
+              disabled={isNfcProcessing}
+              onClick={() => {
+                setAssigningCheckpoint(null);
+                setSelectedNfcId("");
+                setActionError("");
+              }}
+            >
+              Batal
+            </Button>
+
+            <Button
+              type="button"
+              disabled={
+                isNfcProcessing ||
+                !selectedNfcId ||
+                selectedNfcId === "none" ||
+                availableNfcTags.length === 0
+              }
+              onClick={handleAssignNfc}
+              className="rounded bg-blue-600 hover:bg-blue-700"
+            >
+              {assignNfcMutation.isPending ? "Memproses..." : "Tautkan NFC"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Alert Dialog: Delete */}
       <AlertDialog
-        open={!!deletingCheckpoint}
+        open={Boolean(unassigningCheckpoint)}
         onOpenChange={(open) => {
-          if (!open) setDeletingCheckpoint(null);
+          if (!open && !isNfcProcessing) {
+            setUnassigningCheckpoint(null);
+            setActionError("");
+          }
         }}
       >
         <AlertDialogContent className="rounded">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="size-5 text-rose-600" />
-              Hapus Checkpoint?
+              <Unlink className="size-5 text-rose-600" />
+              Lepas Tautan NFC?
             </AlertDialogTitle>
+
             <AlertDialogDescription className="text-xs">
-              Apakah Anda yakin ingin menghapus titik checkpoint ini secara
-              permanen?
+              NFC akan dilepas dari titik patroli. Status titik patroli akan
+              berubah menjadi INACTIVE dan NFC menjadi UNASSIGNED. Riwayat
+              assignment tetap tersimpan di backend.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          {deletingCheckpoint && (
-            <div className="space-y-3">
-              <InfoPanel>
-                <p className="font-mono text-xs font-semibold text-blue-600">
-                  {deletingCheckpoint.id}
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {deletingCheckpoint.name}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {deletingCheckpoint.siteName} · {deletingCheckpoint.zoneFloor}
-                </p>
-              </InfoPanel>
+          {unassigningCheckpoint && (
+            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Titik patroli</p>
 
-              <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                Menghapus checkpoint dapat memengaruhi rute patroli terjadwal
-                yang menggunakan titik ini.
-              </div>
+              <p className="mt-1 text-sm font-semibold">
+                {unassigningCheckpoint.name}
+              </p>
+
+              <p className="mt-1 font-mono text-xs text-blue-600">
+                {unassigningCheckpoint.code}
+              </p>
+
+              <Separator className="my-2" />
+
+              <p className="text-xs text-slate-500">NFC UID</p>
+
+              <p className="mt-1 font-mono text-xs font-semibold">
+                {getActiveAssignment(unassigningCheckpoint)?.nfcTag?.uid ?? "-"}
+              </p>
             </div>
           )}
 
+          {actionError && (
+            <p className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+              {actionError}
+            </p>
+          )}
+
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded">Batal</AlertDialogCancel>
+            <AlertDialogCancel className="rounded" disabled={isNfcProcessing}>
+              Batal
+            </AlertDialogCancel>
+
             <AlertDialogAction
-              onClick={handleDeleteCheckpoint}
+              disabled={isNfcProcessing}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleUnassignNfc();
+              }}
               className="rounded bg-rose-600 hover:bg-rose-700"
             >
-              <Trash2 className="mr-1.5 size-4" />
-              Hapus Checkpoint
+              {unassignNfcMutation.isPending ? "Memproses..." : "Lepas NFC"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1532,3 +1131,5 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
     </div>
   );
 };
+
+export default TitikPatroliView;

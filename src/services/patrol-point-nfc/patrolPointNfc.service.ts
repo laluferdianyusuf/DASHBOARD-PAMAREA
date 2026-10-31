@@ -8,6 +8,7 @@ import type {
   PatrolPointNfcResponse,
   RemoveNfcAssignmentRequest,
   ReplaceNfcAssignmentRequest,
+  UnassignNfcRequest,
 } from "../../types/patrol-point-nfc/patrol-point-nfc";
 
 // POST /patrol-point-nfc
@@ -18,6 +19,21 @@ export const assignNfc = async (
   const response = await apiClient.post<PatrolPointNfcResponse>(
     "/patrol-point-nfc",
     payload,
+  );
+
+  return response.data;
+};
+
+export const unassignNfc = async (
+  payload: UnassignNfcRequest,
+): Promise<PatrolPointNfcResponse> => {
+  const response = await apiClient.delete<PatrolPointNfcResponse>(
+    `/patrol-point-nfc/${payload.patrolPointId}/unassign`,
+    {
+      data: {
+        reason: payload.reason,
+      },
+    },
   );
 
   return response.data;

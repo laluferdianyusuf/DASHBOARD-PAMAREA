@@ -43,7 +43,7 @@ import { CutiIzinView } from "./components/CutiIzinView";
 import { JadwalPatroliView } from "./components/JadwalPatroliView";
 import { KalenderShiftView } from "./components/KalenderShiftView";
 import { KelolaPenggunaView } from "./components/KelolaPenggunaView";
-import ManajemenRondeView from "./components/ManajemenRondeView";
+import LoginForm from "./components/LoginForm";
 import { QuestionBuilderView } from "./components/QuestionBuilderView";
 import { RiwayatPatroliView } from "./components/RiwayatPatroliView";
 import { TagNfcView } from "./components/TagNfcView";
@@ -52,12 +52,12 @@ import { TemuanPatroliView } from "./components/TemuanPatroliView";
 import { TitikPatroliView } from "./components/TitikPatroliView";
 import { TukarShiftView } from "./components/TukarShiftView";
 import { AuthProvider } from "./contexts/AuthProvider";
-import { useMe } from "./hooks/auth";
 import { ScheduleProvider } from "./contexts/ScheduleProvider";
-import LoginForm from "./components/LoginForm";
+import { useMe } from "./hooks/auth";
 
 export default function App() {
   const { data, isPending, isError } = useMe();
+
   const [currentTab, setCurrentTab] = useState<NavTab>("dashboard");
   const [selectedSite, setSelectedSite] = useState<string>("all");
 
@@ -516,7 +516,7 @@ export default function App() {
                 {/* TITIK PATROLI */}
                 {currentTab === "titik" && (
                   <TitikPatroliView
-                    selectedSite={selectedSite}
+                    selectedSite={data?.data.site?.id ?? ""}
                     checkpoints={checkpoints}
                     nfcTags={tags}
                     onUpdateCheckpoints={setCheckpoints}
