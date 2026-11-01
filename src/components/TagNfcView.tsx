@@ -223,11 +223,9 @@ const getTagAssignments = (tag: NfcTagItem): NfcAssignment[] => {
 };
 
 const getActiveAssignment = (tag: NfcTagItem): NfcAssignment | undefined => {
-  return getTagAssignments(tag).find((assignment) => {
-    const activeStatus = !assignment.status || assignment.status === "ACTIVE";
-
-    return activeStatus && !assignment.unassignedAt;
-  });
+  return getTagAssignments(tag).find(
+    (assignment) => assignment.status === "ACTIVE" && !assignment.unassignedAt,
+  );
 };
 
 const isTagAssigned = (tag: NfcTagItem): boolean => {
@@ -368,13 +366,12 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       const statusLabel = getStatusLabel(tag.status);
 
-      if (
-        selectedSite !== "all" &&
-        selectedSite &&
-        assignment?.patrolPoint?.siteId &&
-        assignment.patrolPoint.siteId !== selectedSite
-      ) {
-        return false;
+      if (selectedSite && selectedSite !== "all") {
+        if (!assignment) return false;
+
+        if (assignment.patrolPoint?.siteId !== selectedSite) {
+          return false;
+        }
       }
 
       if (selectedStatus === "unassigned" && assigned) {
