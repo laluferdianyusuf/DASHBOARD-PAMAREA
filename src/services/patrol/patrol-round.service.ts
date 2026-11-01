@@ -1,6 +1,7 @@
 import { apiClient } from "../../lib/apiClient";
 
 import type {
+  GetAllRoundsGroupedByUserParams,
   GetPatrolRoundsByUserParams,
   PatrolRoundListResponse,
   PatrolRoundQuery,
@@ -21,15 +22,20 @@ export const getPatrolRounds = async (
   return response.data;
 };
 
-export const getAllRoundsGroupedByUser =
-  async (): Promise<PatrolRoundsGroupedByUserResponse> => {
-    const response = await apiClient.get<PatrolRoundsGroupedByUserResponse>(
-      "/patrol-rounds/all/grouped-by-user",
-    );
-    console.log(response);
+export const getAllRoundsGroupedByUser = async (
+  params?: GetAllRoundsGroupedByUserParams,
+): Promise<PatrolRoundsGroupedByUserResponse> => {
+  const response = await apiClient.get<PatrolRoundsGroupedByUserResponse>(
+    "/patrol-rounds/all/grouped-by-user",
+    {
+      params,
+    },
+  );
 
-    return response.data;
-  };
+  console.log("[GROUPED ROUNDS]", response.data);
+
+  return response.data;
+};
 
 export const getPatrolRoundsByUser = async ({
   userId,

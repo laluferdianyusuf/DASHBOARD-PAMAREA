@@ -1,4 +1,4 @@
-import { CheckCircle2, Edit, Link2, Search, Unlink, X } from "lucide-react";
+import { CheckCircle2, Edit, Link2, Search, Unlink } from "lucide-react";
 
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -54,6 +54,7 @@ import type { NfcTagResponse } from "../types/nfc/nfc";
 
 import AssignNfcDialog from "./patrolPoints/AssignNfcDialog";
 
+import { toast } from "sonner";
 import {
   getActiveAssignment,
   getStatusClass,
@@ -143,20 +144,10 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
   const [actionError, setActionError] = useState("");
 
-  const [toastMessage, setToastMessage] = useState("");
-
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   const isNfcProcessing =
     assignNfcMutation.isPending || unassignNfcMutation.isPending;
-
-  const showToast = (message: string) => {
-    setToastMessage(message);
-
-    window.setTimeout(() => {
-      setToastMessage("");
-    }, 3500);
-  };
 
   const filteredCheckpoints = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -332,10 +323,6 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
     radiusMeters: Number(form.radiusMeters),
   });
 
-  // =====================================================
-  // CREATE PATROL POINT
-  // =====================================================
-
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -357,15 +344,13 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
       setForm(EMPTY_FORM);
 
-      showToast("Titik patroli berhasil ditambahkan.");
+      toast.success("Titik patroli berhasil ditambahkan.");
     } catch (err) {
-      setFormError(getErrorMessage(err));
+      toast.error("Gagal menambahkan titik patroli.", {
+        description: getErrorMessage(err),
+      });
     }
   };
-
-  // =====================================================
-  // UPDATE PATROL POINT
-  // =====================================================
 
   const handleUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -390,18 +375,15 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
       });
 
       setEditingCheckpoint(null);
-
       setForm(EMPTY_FORM);
 
-      showToast("Titik patroli berhasil diperbarui.");
+      toast.success("Titik patroli berhasil diperbarui.");
     } catch (err) {
-      setFormError(getErrorMessage(err));
+      toast.error("Gagal memperbarui titik patroli.", {
+        description: getErrorMessage(err),
+      });
     }
   };
-
-  // =====================================================
-  // ASSIGN NFC
-  // =====================================================
 
   const openAssignDialog = (point: PatrolPointResponse) => {
     setActionError("");
@@ -436,18 +418,15 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
       });
 
       setAssigningCheckpoint(null);
-
       setSelectedNfcId("");
 
-      showToast("NFC berhasil ditautkan ke titik patroli.");
+      toast.success("NFC berhasil ditautkan ke titik patroli.");
     } catch (err) {
-      setActionError(getErrorMessage(err));
+      toast.error("Gagal menautkan NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
-
-  // =====================================================
-  // UNASSIGN NFC
-  // =====================================================
 
   const openUnassignDialog = (point: PatrolPointResponse) => {
     setActionError("");
@@ -473,8 +452,6 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
       return;
     }
 
-    setActionError("");
-
     try {
       await unassignNfcMutation.mutateAsync({
         patrolPointId: unassigningCheckpoint.id,
@@ -483,34 +460,16 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
       setUnassigningCheckpoint(null);
 
-      showToast("NFC berhasil dilepas dari titik patroli.");
+      toast.success("NFC berhasil dilepas dari titik patroli.");
     } catch (err) {
-      setActionError(getErrorMessage(err));
+      toast.error("Gagal melepas NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
   return (
     <div className="space-y-5">
-      {/* TOAST */}
-      {toastMessage && (
-        <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-4" />
-            {toastMessage}
-          </div>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            onClick={() => setToastMessage("")}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      )}
-
-      {/* HEADER */}
       <TitikPatroliHeader
         isFetching={isFetching}
         onAdd={openAddDialog}
@@ -575,7 +534,6 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         </Select>
       </div>
 
-      {/* TABLE */}
       <div className="overflow-hidden rounded border border-slate-200 bg-white">
         <div className="overflow-x-auto">
           <Table>
@@ -749,7 +707,6 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         </div>
       </div>
 
-      {/* PAGINATION */}
       <TitikPatroliPagination
         currentPage={currentPage}
         endItem={endItem}

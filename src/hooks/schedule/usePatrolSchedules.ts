@@ -12,8 +12,8 @@ import {
 import type {
   AddScheduleAssignmentPayload,
   CreatePatrolSchedulePayload,
-  MonthlyRosterItem,
   MonthlyRosterQuery,
+  RosterUser,
   UpdatePatrolSchedulePayload,
 } from "../../types";
 
@@ -81,7 +81,7 @@ export const usePatrolScheduleActivate = () => {
 };
 
 export const useMonthlyRoster = (params: MonthlyRosterQuery | null) => {
-  return useQuery<MonthlyRosterItem[], Error>({
+  return useQuery<RosterUser[], Error>({
     queryKey: ["monthly-roster", params?.siteId, params?.month, params?.year],
     queryFn: () => {
       if (!params) {

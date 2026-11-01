@@ -25,6 +25,7 @@ export const getActiveUsers = async (): Promise<
 > => {
   const response =
     await apiClient.get<ApiResponse<UserResponse[]>>("/users/active");
+
   return response.data;
 };
 

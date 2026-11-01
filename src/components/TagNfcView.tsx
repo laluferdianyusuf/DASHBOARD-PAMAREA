@@ -12,7 +12,6 @@ import {
   Search,
   Trash2,
   Unlink,
-  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +56,8 @@ import {
   useUnassignNfc,
 } from "../hooks/patrol-point-nfc/usePatroPointNfc";
 
+import { toast } from "sonner";
+import { getErrorMessage } from "../helpers/getErrorMessage";
 import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
 import type { NfcTagResponse } from "../types/nfc/nfc";
 import { PatrolPointResponse } from "../types/patrol-point/patrolPoint";
@@ -124,7 +125,7 @@ const SelectField: React.FC<{
   const selectedOption = options.find((option) => option.value === value);
 
   return (
-    <div className="w-full space-y-1.5">
+    <div className="w-full">
       {label && (
         <Label className="text-xs font-semibold text-slate-700">{label}</Label>
       )}
@@ -319,8 +320,6 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
   const [replacementNfcId, setReplacementNfcId] = useState("");
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
   const [formError, setFormError] = useState("");
 
   const [newTagUid, setNewTagUid] = useState("");
@@ -328,14 +327,6 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
   const [newTagCheckpointId, setNewTagCheckpointId] = useState("");
 
   const [editLabel, setEditLabel] = useState("");
-
-  const showToast = (message: string) => {
-    setToastMessage(message);
-
-    window.setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
-  };
 
   const filteredTags = useMemo(() => {
     return nfcTags.filter((tag) => {
@@ -506,13 +497,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${normalizedUid} berhasil didaftarkan.`);
+      toast.success(`Tag NFC ${normalizedUid} berhasil didaftarkan.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal mendaftarkan tag NFC.",
-      );
+      toast.error("Gagal mendaftarkan tag NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -543,13 +532,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Label Tag NFC ${uid} berhasil diperbarui.`);
+      toast.success(`Label Tag NFC ${uid} berhasil diperbarui.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal memperbarui tag NFC.",
-      );
+      toast.error("Gagal memperbarui tag NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -565,13 +552,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag ${tag.uid} berhasil dinonaktifkan.`);
+      toast.success(`Tag ${tag.uid} berhasil dinonaktifkan.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal menonaktifkan tag NFC.",
-      );
+      toast.error("Gagal menonaktifkan tag NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -581,13 +566,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${tag.uid} berhasil diaktifkan.`);
+      toast.success(`Tag NFC ${tag.uid} berhasil diaktifkan.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal mengaktifkan NFC.",
-      );
+      toast.error("Gagal mengaktifkan NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -612,13 +595,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${tag.uid} berhasil dilepas dari checkpoint.`);
+      toast.success(`Tag NFC ${tag.uid} berhasil dilepas dari checkpoint.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal melepas tautan NFC.",
-      );
+      toast.error("Gagal melepas tautan NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -648,11 +629,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${uid} berhasil ditautkan.`);
+      toast.success(`Tag NFC ${uid} berhasil ditautkan.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ?? err?.message ?? "Gagal menautkan NFC.",
-      );
+      toast.error("Gagal menautkan NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -668,13 +649,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${tag.uid} berhasil ditandai sebagai rusak.`);
+      toast.success(`Tag NFC ${tag.uid} berhasil ditandai sebagai rusak.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal menandai NFC sebagai rusak.",
-      );
+      toast.error("Gagal menandai NFC sebagai rusak.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -690,13 +669,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${tag.uid} berhasil ditandai sebagai hilang.`);
+      toast.success(`Tag NFC ${tag.uid} berhasil ditandai sebagai hilang.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal menandai NFC sebagai hilang.",
-      );
+      toast.error("Gagal menandai NFC sebagai hilang.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -724,13 +701,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${oldUid} berhasil diganti.`);
+      toast.success(`Tag NFC ${oldUid} berhasil diganti.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal mengganti tag NFC.",
-      );
+      toast.error("Gagal mengganti tag NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -768,27 +743,6 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
   return (
     <div className="space-y-5">
-      {/* TOAST */}
-
-      {toastMessage && (
-        <div className="flex items-center justify-between gap-3 border border-emerald-200 bg-emerald-50 p-3 rounded animate-in fade-in">
-          <div className="flex items-center gap-2 text-xs font-medium text-emerald-800">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-            <span>{toastMessage}</span>
-          </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-7 rounded text-emerald-700"
-            onClick={() => setToastMessage(null)}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      )}
-
       <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-end">
         <div>
           <h1 className="text-xl font-medium tracking-tight text-slate-900">
@@ -815,7 +769,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
         </Button>
       </div>
 
-      <div className="flex gap-3 border border-slate-200 bg-white p-3 rounded lg:flex-row lg:items-center">
+      <div className="flex items-center gap-3 border border-slate-200 bg-white p-3 rounded lg:flex-row lg:items-center">
         <InputGroup className="rounded">
           <InputGroupAddon>
             <Search className="size-4 text-slate-400" />

@@ -14,10 +14,12 @@ export interface ShiftChangeAssignmentResponse {
   status: string;
   user: {
     id: string;
+    fullName: string;
     [key: string]: unknown;
   };
   schedule: {
     id: string;
+    name: string;
     [key: string]: unknown;
   };
 }
@@ -36,4 +38,9 @@ export interface ShiftChangeResponse {
   updatedAt: string;
   firstAssignment: ShiftChangeAssignmentResponse;
   secondAssignment: ShiftChangeAssignmentResponse;
+}
+
+export interface ShiftChangeParams {
+  status?: string;
+  effectiveDate?: string;
 }

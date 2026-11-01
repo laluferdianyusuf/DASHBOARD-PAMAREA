@@ -1,11 +1,11 @@
 import { apiClient } from "../../lib/apiClient";
 
 import type {
-  PatrolScheduleAssignment,
-  CreateScheduleAssignmentPayload,
   BulkAssignUserPayload,
   BulkAssignUserResponse,
+  CreateScheduleAssignmentPayload,
   DeleteScheduleAssignmentResponse,
+  PatrolScheduleAssignment,
 } from "../../types/schedule/schedule-assignment";
 
 // Menambahkan satu petugas ke schedule
@@ -18,6 +18,17 @@ export const createScheduleAssignment = async (
     payload,
   );
 
+  return response.data;
+};
+
+// satu petugas ke schedule
+export const removeScheduleAssignment = async (
+  scheduleId: string,
+  assignmentId: string,
+): Promise<PatrolScheduleAssignment> => {
+  const response = await apiClient.post<PatrolScheduleAssignment>(
+    `/patrol-schedule-assignments/schedules/${scheduleId}/${assignmentId}`,
+  );
   return response.data;
 };
 

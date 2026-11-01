@@ -191,3 +191,86 @@ export interface CreatePatrolSchedulePayload {
   dates?: string[];
   assignments?: CreateScheduleAssignmentInput[];
 }
+
+// roster
+
+export interface SecurityUser {
+  id: string;
+  fullName: string;
+  employeeNumber?: string | null;
+  username?: string;
+}
+
+export interface Schedule {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  siteId?: string;
+}
+
+export interface RosterOfficer {
+  assignmentId: string;
+  officerId: string;
+  officerName: string;
+  employeeNumber?: string;
+  scheduleId: string;
+  scheduleName: string;
+  startTime: string;
+  endTime: string;
+  type: "ASSIGNMENT" | "REPLACEMENT";
+  post?: string;
+  callSign?: string;
+  role?: string;
+}
+
+export interface RosterEntry {
+  assignmentId?: string;
+  scheduleId?: string;
+  scheduleName?: string;
+  startTime?: string;
+  endTime?: string;
+  type?: "ASSIGNMENT" | "ABSENCE" | "REPLACEMENT";
+  status?: string;
+  absenceType?: string;
+  reason?: string;
+  replacedUser?: {
+    id: string;
+    fullName: string;
+    employeeNumber?: string;
+  };
+}
+
+export interface RosterUser {
+  userId: string;
+  fullName: string;
+  employeeNumber?: string;
+  dates?: Record<string, RosterEntry[]>;
+}
+
+export interface ShiftItem {
+  scheduleId: string;
+  type: string;
+  time: string;
+  startTime: string;
+  endTime: string;
+  officers: RosterOfficer[];
+  count: number;
+  required: number;
+  squad: string;
+  danru: string;
+  sector: string;
+}
+
+export interface DayItem {
+  day: number;
+  date: string;
+  isToday: boolean;
+  shifts: ShiftItem[];
+}
+
+export interface CreateAssignmentPayload {
+  userId: string;
+  startDate: string;
+  endDate: string;
+}

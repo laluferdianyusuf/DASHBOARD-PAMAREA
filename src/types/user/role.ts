@@ -3,7 +3,7 @@ import type { RoleName } from "../enums/prisma-enums";
 // Data role
 export interface Role {
   id: string;
-  name: RoleName;
+  name: string;
   description: string | null;
 
   createdAt: string;

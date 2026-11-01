@@ -1,20 +1,16 @@
 import React, { useMemo, useState } from "react";
 
 import {
-  INITIAL_SQUADS,
   SITES,
-  USER_ACCOUNTS,
   type SecuritySquadItem,
   type UserAccount,
 } from "../data/mockData";
 
 import {
   Check,
-  CircleAlert,
   Edit,
   Eye,
   EyeOff,
-  KeyRound,
   LockKeyhole,
   Plus,
   RotateCcw,
@@ -60,8 +56,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthContext } from "../hooks/auth/useAuthContext";
+import { useRoles } from "../hooks/role/useRole";
+import { useCreateTeam, useTeams } from "../hooks/team/useTeams";
 import {
   useActivateUser,
   useCreateUser,
@@ -70,8 +69,6 @@ import {
   useUpdateUser,
   useUsers,
 } from "../hooks/users/useUsers";
-import { useCreateTeam, useTeams } from "../hooks/team/useTeams";
-import { useRoles } from "../hooks/role/useRole";
 import {
   CreateUserRequest,
   EditUserForm,
@@ -80,7 +77,6 @@ import {
   UserResponse,
 } from "../types";
 import { CreateTeamPayload } from "../types/team/team";
-import { Switch } from "@/components/ui/switch";
 
 interface KelolaPenggunaViewProps {
   selectedSite: string;
@@ -767,7 +763,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
         </div>
 
         <Button
-          className="rounded gap-2 bg-[#FED400] text-black hover:bg-yellow-400"
+          className="rounded gap-2 bg-amber-600 text-white hover:bg-amber-700"
           onClick={() => {
             if (activeSubTab === "personel") {
               setNewUser(initialUserForm);
@@ -913,7 +909,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                             <Badge
                               variant="outline"
                               className={`rounded font-medium ${getRoleBadgeClass(
-                                user.role?.name,
+                                user.role?.name as RoleName,
                               )}`}
                             >
                               {user.role?.name}

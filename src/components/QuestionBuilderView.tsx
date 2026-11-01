@@ -77,6 +77,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   useAssignQuestion,
   usePointQuestions,
@@ -570,22 +571,6 @@ export const QuestionBuilderView: React.FC = () => {
   const [deletingQuestion, setDeletingQuestion] =
     useState<BackendQuestion | null>(null);
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const [toastType, setToastType] = useState<"success" | "error">("success");
-
-  const showToast = (
-    message: string,
-    type: "success" | "error" = "success",
-  ) => {
-    setToastMessage(message);
-    setToastType(type);
-
-    window.setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
-  };
-
   const [formText, setFormText] = useState("");
 
   const [formInputType, setFormInputType] =
@@ -724,13 +709,12 @@ export const QuestionBuilderView: React.FC = () => {
 
       const result = await createQuestionMutation.mutateAsync(payload);
 
-      showToast(`Pertanyaan ${result?.code ?? ""} berhasil ditambahkan.`);
-
+      toast.success(`Pertanyaan ${result?.code ?? ""} berhasil ditambahkan.`);
       closeFormDialog();
     } catch (error) {
-      console.error("Create question error:", error);
-
-      showToast(getErrorMessage(error), "error");
+      toast.error("Gagal menambahkan pertanyaan", {
+        description: getErrorMessage(error),
+      });
     }
   };
 
@@ -777,13 +761,12 @@ export const QuestionBuilderView: React.FC = () => {
           }
         }
       }
-
-      showToast(`Pertanyaan ${editingQuestion.code} berhasil diperbarui.`);
-
+      toast.success(`Pertanyaan ${editingQuestion.code} berhasil diperbarui.`);
       closeFormDialog();
     } catch (error) {
-      console.error("Update question error:", error);
-      showToast(getErrorMessage(error), "error");
+      toast.error("Gagal memperbarui pertanyaan", {
+        description: getErrorMessage(error),
+      });
     }
   };
 
@@ -793,13 +776,15 @@ export const QuestionBuilderView: React.FC = () => {
     try {
       await deactivateQuestionMutation.mutateAsync(deletingQuestion.id);
 
-      showToast(`Pertanyaan ${deletingQuestion.code} berhasil dinonaktifkan.`);
+      toast.success(
+        `Pertanyaan ${deletingQuestion.code} berhasil dinonaktifkan.`,
+      );
 
       setDeletingQuestion(null);
     } catch (error) {
-      console.error("Deactivate question error:", error);
-
-      showToast(getErrorMessage(error), "error");
+      toast.error("Gagal menonaktifkan pertanyaan", {
+        description: getErrorMessage(error),
+      });
     }
   };
 
@@ -808,16 +793,16 @@ export const QuestionBuilderView: React.FC = () => {
       if (question.status === "ACTIVE") {
         await deactivateQuestionMutation.mutateAsync(question.id);
 
-        showToast(`Pertanyaan ${question.code} berhasil dinonaktifkan.`);
+        toast.success(`Pertanyaan ${question.code} berhasil dinonaktifkan.`);
       } else {
         await activateQuestionMutation.mutateAsync(question.id);
 
-        showToast(`Pertanyaan ${question.code} berhasil diaktifkan.`);
+        toast.success(`Pertanyaan ${question.code} berhasil diaktifkan.`);
       }
     } catch (error) {
-      console.error("Toggle question status error:", error);
-
-      showToast(getErrorMessage(error), "error");
+      toast.error("Gagal mengubah status pertanyaan", {
+        description: getErrorMessage(error),
+      });
     }
   };
 
@@ -839,11 +824,11 @@ export const QuestionBuilderView: React.FC = () => {
 
       const result = await createQuestionMutation.mutateAsync(payload);
 
-      showToast(`Pertanyaan berhasil diduplikasi ${result?.code ?? ""}.`);
+      toast.success(`Pertanyaan berhasil diduplikasi ${result?.code ?? ""}.`);
     } catch (error) {
-      console.error("Duplicate question error:", error);
-
-      showToast(getErrorMessage(error), "error");
+      toast.error("Gagal menduplikasi pertanyaan", {
+        description: getErrorMessage(error),
+      });
     }
   };
 
@@ -887,11 +872,11 @@ export const QuestionBuilderView: React.FC = () => {
 
       await refetchPointAssignments();
 
-      showToast(`Pertanyaan berhasil dihubungkan ke Patrol Point.`);
+      toast.success("Pertanyaan berhasil dihubungkan ke Patrol Point.");
     } catch (error) {
-      console.error("Assign question error:", error);
-
-      setAssignmentError(getErrorMessage(error));
+      toast.error("Gagal menghubungkan pertanyaan", {
+        description: getErrorMessage(error),
+      });
     }
   };
 
@@ -911,11 +896,11 @@ export const QuestionBuilderView: React.FC = () => {
 
       await refetchPointAssignments();
 
-      showToast("Pertanyaan berhasil dilepas dari Patrol Point.");
+      toast.success("Pertanyaan berhasil dilepas dari Patrol Point.");
     } catch (error) {
-      console.error("Unassign question error:", error);
-
-      setAssignmentError(getErrorMessage(error));
+      toast.error("Gagal melepas pertanyaan dari Patrol Point", {
+        description: getErrorMessage(error),
+      });
     }
   };
 
@@ -943,36 +928,6 @@ export const QuestionBuilderView: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      {toastMessage && (
-        <div
-          className={`flex items-center justify-between gap-3 rounded border px-4 py-3 text-sm ${
-            toastType === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-rose-200 bg-rose-50 text-rose-800"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {toastType === "success" ? (
-              <CheckCircle2 className="size-4 shrink-0" />
-            ) : (
-              <AlertTriangle className="size-4 shrink-0" />
-            )}
-
-            <span>{toastMessage}</span>
-          </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-7 rounded"
-            onClick={() => setToastMessage(null)}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      )}
-
       <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-center">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">
@@ -984,13 +939,28 @@ export const QuestionBuilderView: React.FC = () => {
           </p>
         </div>
 
-        <Button
-          onClick={handleOpenAdd}
-          className="rounded bg-blue-600 text-white hover:bg-blue-700"
-        >
-          <Plus className="mr-2 size-4" />
-          Tambah Pertanyaan
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 rounded"
+            disabled={isFetching}
+            onClick={() => refetch()}
+          >
+            <RefreshCw
+              className={`mr-1.5 size-4 ${isFetching ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+          <Button
+            size={"sm"}
+            onClick={handleOpenAdd}
+            className="h-9 rounded bg-amber-600 text-white hover:bg-amber-700"
+          >
+            <Plus className="mr-2 size-4" />
+            Tambah Pertanyaan
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3 rounded border border-slate-200 bg-white p-4">
@@ -1012,7 +982,13 @@ export const QuestionBuilderView: React.FC = () => {
             onValueChange={(value) => setSelectedInputType(value ?? "all")}
           >
             <SelectTrigger className="w-full rounded">
-              <SelectValue placeholder="Semua Tipe Input" />
+              <span>
+                {selectedInputType === "all"
+                  ? "Semua Tipe Input"
+                  : (INPUT_TYPES.find(
+                      (type) => type.value === selectedInputType,
+                    )?.label ?? "Semua Tipe Input")}
+              </span>
             </SelectTrigger>
 
             <SelectContent>
@@ -1031,7 +1007,15 @@ export const QuestionBuilderView: React.FC = () => {
             onValueChange={(value) => setSelectedStatus(value ?? "all")}
           >
             <SelectTrigger className="w-full rounded">
-              <SelectValue placeholder="Semua Status" />
+              <span>
+                {selectedStatus === "all"
+                  ? "Semua Status"
+                  : selectedStatus === "ACTIVE"
+                    ? "Aktif"
+                    : selectedStatus === "INACTIVE"
+                      ? "Nonaktif"
+                      : "Semua Status"}
+              </span>
             </SelectTrigger>
 
             <SelectContent>
@@ -1052,20 +1036,6 @@ export const QuestionBuilderView: React.FC = () => {
           </p>
 
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 rounded text-xs text-slate-500"
-              disabled={isFetching}
-              onClick={() => refetch()}
-            >
-              <RefreshCw
-                className={`mr-1 size-3 ${isFetching ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </Button>
-
             {(searchQuery ||
               selectedInputType !== "all" ||
               selectedStatus !== "all") && (

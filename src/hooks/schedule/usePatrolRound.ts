@@ -6,7 +6,10 @@ import {
   getPatrolRoundsByUser,
   reorderPatrolRoundCheckpoints,
 } from "../../services/patrol/patrol-round.service";
-import type { GetPatrolRoundsByUserParams } from "../../types";
+import type {
+  GetAllRoundsGroupedByUserParams,
+  GetPatrolRoundsByUserParams,
+} from "../../types";
 
 export const usePatrolRoundById = (roundId?: string) => {
   return useQuery({
@@ -44,13 +47,15 @@ export const usePatrolRoundsByUser = ({
   });
 };
 
-export const usePatrolRoundsGroupedByUser = () => {
+export const usePatrolRoundsGroupedByUser = (
+  params?: GetAllRoundsGroupedByUserParams,
+) => {
   return useQuery({
-    queryKey: ["patrol-rounds", "grouped-by-user"],
-    queryFn: () => getAllRoundsGroupedByUser(),
+    queryKey: ["patrol-rounds", "grouped-by-user", params ?? {}],
+
+    queryFn: () => getAllRoundsGroupedByUser(params),
 
     retry: false,
-
     staleTime: 30_000,
   });
 };

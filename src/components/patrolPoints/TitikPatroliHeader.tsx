@@ -35,7 +35,7 @@ export const TitikPatroliHeader = ({ isFetching, onRefresh, onAdd }: Props) => {
 
         <Button
           size="sm"
-          className="h-9 rounded bg-[#FED400] text-black hover:bg-[#e9c300]"
+          className="h-9 rounded bg-amber-600 text-white hover:bg-amber-700"
           onClick={onAdd}
         >
           <Plus className="mr-1.5 size-4" />

@@ -10,20 +10,20 @@ import type {
   CreateScheduleAssignmentPayload,
 } from "../../types";
 
-export const useScheduleAssigments = (scheduleId: string) => {
+export const useScheduleAssignments = (scheduleId: string) => {
   return useQuery({
     queryKey: ["patrol-schedule-assignment", scheduleId],
     queryFn: () => getScheduleAssignment(scheduleId),
     // enabled: !!scheduleId,
   });
 };
-export const useGetScheduleAssigments = () => {
+export const useGetScheduleAssignments = () => {
   return useQuery({
     queryKey: ["patrol-schedule-assignment"],
     queryFn: () => getScheduleAssignments(),
   });
 };
-export const useCreateScheduleAssigment = () => {
+export const useCreateScheduleAssignment = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -38,6 +38,9 @@ export const useCreateScheduleAssigment = () => {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
+          queryKey: ["patrol-schedule-roster"],
+        }),
+        queryClient.invalidateQueries({
           queryKey: ["patrol-schedules"],
         }),
         queryClient.invalidateQueries({
@@ -50,6 +53,38 @@ export const useCreateScheduleAssigment = () => {
     },
   });
 };
+
+export const useUnassignScheduleAssignment = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      scheduleId,
+      assignmentId,
+    }: {
+      scheduleId: string;
+      assignmentId: string;
+    }) => unassignScheduleAssignment(scheduleId, assignmentId),
+
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedule-roster"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedules"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedule-assignments"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-rounds"],
+        }),
+      ]);
+    },
+  });
+};
+
 export const useBulkAssignUser = () => {
   const queryClient = useQueryClient();
 

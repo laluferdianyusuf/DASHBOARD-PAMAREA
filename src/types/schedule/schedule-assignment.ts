@@ -1,4 +1,5 @@
 import type { ScheduleAssignmentStatus } from "../enums/prisma-enums";
+import { PatrolRound } from "../patrol/patrol-round";
 import type { UserResponse } from "../user/user";
 import type { PatrolSchedule } from "./patrol-schedule";
 // import type { PatrolSchedule } from "./patrol-schedule";
@@ -21,6 +22,7 @@ export interface PatrolScheduleAssignment {
   createdAt: string;
   updatedAt: string;
 
+  rounds?: PatrolRound[];
   schedule?: PatrolSchedule;
   user?: ScheduleAssignmentUser;
 }

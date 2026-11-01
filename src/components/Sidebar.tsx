@@ -33,8 +33,8 @@ import {
 
 import { Separator } from "@/components/ui/separator";
 import logo from "@/src/assets/logo.png";
-import { useLogout } from "../hooks/auth";
 import { useNavigate } from "react-router-dom";
+import { useLogout } from "../hooks/auth";
 
 export type NavTab =
   | "dashboard"
@@ -140,13 +140,11 @@ export function Sidebar({
           id: "tukar-shift",
           label: "Tukar Shift",
           icon: ArrowLeftRight,
-          badge: "Swap",
         },
         {
           id: "cuti-izin",
           label: "Cuti & Izin",
           icon: UserRoundX,
-          badge: "Izin",
         },
         {
           id: "manajemen-ronde",
@@ -157,7 +155,6 @@ export function Sidebar({
           id: "temuan",
           label: "Temuan",
           icon: TriangleAlert,
-          count: openFindingsCount,
         },
       ],
     },
@@ -173,7 +170,6 @@ export function Sidebar({
           id: "monitoring",
           label: "Monitoring",
           icon: ChartNoAxesCombined,
-          count: activeIncidentsCount,
         },
         {
           id: "analytic-audit",
@@ -306,7 +302,7 @@ export function Sidebar({
                     {item.badge && (
                       <SidebarMenuBadge
                         className="
-                          border-0 bg-slate-700 text-slate-300
+                          border-0 text-orange-600
                           group-data-[collapsible=icon]:hidden
                         "
                       >
