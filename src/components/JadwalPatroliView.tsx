@@ -60,6 +60,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuthContext } from "../hooks/auth/useAuthContext";
 import { CreatePatrolSchedulePayload } from "../types";
 import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
+import { PaginationComponent } from "./PaginationComponent";
 
 interface JadwalPatroliViewProps {
   selectedSite: string;
@@ -103,6 +104,9 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
   const { data: patrolPoints, isLoading: isLoadingPoints } = usePatrolPoints();
 
   const { mutateAsync: createPS } = useCreatePatrolSchedule();
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState("10");
 
   const listShift = shifts?.data ?? [];
   const scheduleAssignment = assignment ?? [];
@@ -154,6 +158,16 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
 
     return true;
   });
+
+  const totalItems = filteredSchedules.length;
+  const numericPageSize = Number(pageSize);
+  const totalPages = Math.max(1, Math.ceil(totalItems / numericPageSize));
+
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * numericPageSize;
+  const endIndex = Math.min(startIndex + numericPageSize, totalItems);
+
+  const paginatedUsers = filteredSchedules.slice(startIndex, endIndex);
 
   const showToast = (message: string) => {
     setSuccessToast(message);
@@ -243,7 +257,7 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {/* Toast */}
       {successToast && (
         <div className="flex items-center justify-between gap-3 rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -341,6 +355,24 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
         </p>
       </div>
 
+      <div className="">
+        <PaginationComponent
+          totalItems={filteredSchedules.length}
+          startItem={totalItems === 0 ? 0 : startIndex + 1}
+          endItem={endIndex}
+          pageSize={pageSize}
+          currentPage={safeCurrentPage}
+          totalPages={totalPages}
+          onPageSizeChange={(value) => {
+            setPageSize(String(value));
+            setCurrentPage(1);
+          }}
+          onPageChange={(page) => {
+            setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+          }}
+        />
+      </div>
+
       {/* Table */}
       <div className="overflow-hidden rounded border bg-background">
         <div className="overflow-x-auto">
@@ -366,7 +398,7 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredSchedules.map((schedule) => {
+                paginatedUsers.map((schedule) => {
                   const ShiftIcon = getShiftIcon(schedule.schedule?.name);
 
                   const currentShift = listShift.find(
@@ -463,10 +495,6 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
 
         <div className="flex flex-col justify-between gap-2 border-t bg-muted/30 px-4 py-3 text-xs text-muted-foreground sm:flex-row">
           <span>Data shift tersinkronisasi dengan server komando pusat.</span>
-          <span>
-            <span className="font-medium text-foreground">Shift aktif:</span>{" "}
-            Shift Siang (15:00 - 23:00 WIB)
-          </span>
         </div>
       </div>
 
