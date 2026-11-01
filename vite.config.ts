@@ -20,7 +20,7 @@ export default defineConfig(() => {
 
       proxy: {
         "/uploads": {
-          target: "http://192.168.1.14:2026",
+          target: "https://api.pamarea.com",
           changeOrigin: true,
           secure: false,
         },
