@@ -1,8 +1,6 @@
 import {
   Check,
   Edit,
-  Eye,
-  EyeOff,
   LockKeyhole,
   Plus,
   RotateCcw,
@@ -14,27 +12,8 @@ import {
 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -44,7 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -87,7 +65,9 @@ import type {
   UserResponse,
 } from "../types";
 import type { CreateTeamPayload } from "../types/team/team";
+import { getPhotoUrl } from "../utils/getPhoto";
 import { PaginationComponent } from "./PaginationComponent";
+import { UserDialogs } from "./UserDialogs";
 
 interface KelolaPenggunaViewProps {
   selectedSite: string;
@@ -268,6 +248,11 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
     description: "",
     site: "",
   });
+
+  const [previewPhoto, setPreviewPhoto] = useState<{
+    url: string;
+    name: string;
+  } | null>(null);
 
   const handleUserColumnFilter = (
     key: keyof typeof userColumnFilters,
@@ -846,8 +831,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
       <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-center">
         <div>
           <div className="flex items-center">
-            <div className="h-8 rounded-xs bg-[#00529C] px-1" />
-            <h1 className="ml-1 text-xl font-semibold tracking-tight">
+            <h1 className="text-xl font-semibold tracking-tight">
               Kelola Pengguna
             </h1>
           </div>
@@ -981,6 +965,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Foto</TableHead>
                     <TableHead>NPP</TableHead>
                     <TableHead>Nama Lengkap</TableHead>
                     <TableHead>No. HP</TableHead>
@@ -991,6 +976,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                   </TableRow>
 
                   <TableRow className="bg-slate-50 hover:bg-slate-50">
+                    <TableHead></TableHead>
                     <TableHead>
                       <Input
                         value={userColumnFilters.npp}
@@ -1083,6 +1069,45 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                   ) : (
                     paginatedUsers.map((item) => (
                       <TableRow key={item.id}>
+                        <TableCell>
+                          <button
+                            type="button"
+                            disabled={!item.photoUrl}
+                            onClick={() =>
+                              item.photoUrl &&
+                              setPreviewPhoto({
+                                url: item.photoUrl,
+                                name: item.fullName,
+                              })
+                            }
+                            className="flex size-10 items-center justify-center overflow-hidden rounded-full border bg-slate-100 transition hover:opacity-80 disabled:cursor-default"
+                            title={
+                              item.photoUrl
+                                ? "Lihat foto"
+                                : "Foto tidak tersedia"
+                            }
+                          >
+                            {item.photoUrl ? (
+                              <img
+                                src={getPhotoUrl(item.photoUrl)}
+                                alt={item.fullName}
+                                className="size-full object-cover"
+                                onError={(event) => {
+                                  event.currentTarget.style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <span className="text-xs font-semibold text-slate-600">
+                                {item.fullName
+                                  ?.split(" ")
+                                  .slice(0, 2)
+                                  .map((name) => name.charAt(0))
+                                  .join("")
+                                  .toUpperCase() || "U"}
+                              </span>
+                            )}
+                          </button>
+                        </TableCell>
                         <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-primary">
                           {item.employeeNumber}
                         </TableCell>
@@ -1238,6 +1263,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                 <TableHeader>
                   <TableRow>
                     <TableHead>ID Regu</TableHead>
+                    <TableHead>ID Regu</TableHead>
                     <TableHead>Nama Regu</TableHead>
                     <TableHead>Deskripsi</TableHead>
                     <TableHead>Site</TableHead>
@@ -1371,834 +1397,91 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
         </TabsContent>
       </Tabs>
 
-      <Dialog
-        open={isAddUserOpen}
-        onOpenChange={(open) => {
-          setIsAddUserOpen(open);
-          if (!open) setRegisterError("");
+      <UserDialogs
+        dialogs={{
+          // Preview foto
+          previewPhoto,
+          setPreviewPhoto,
+
+          // Tambah pengguna
+          isAddUserOpen,
+          setIsAddUserOpen,
+          newUser,
+          setNewUser,
+          handleCreateUser,
+          registerError,
+          setRegisterError,
+          isRegistering,
+          isRolesLoading,
+          isRolesError,
+
+          // Edit pengguna
+          editingUser,
+          setEditingUser,
+          selectedUserId,
+          setSelectedUserId,
+          editingUsernameSameAsNpp,
+          setEditingUsernameSameAsNpp,
+          handleSaveEditUser,
+          isUpdatingUser,
+
+          // Ganti password
+          changingPasswordUser,
+          setChangingPasswordUser,
+          newPassword,
+          setNewPassword,
+          confirmNewPassword,
+          setConfirmNewPassword,
+          passwordError,
+          setPasswordError,
+          handleChangePassword,
+          isChangingPassword,
+          showPassword,
+          setShowPassword,
+          showConfirmPassword,
+          setShowConfirmPassword,
+
+          // Tambah regu
+          isAddSquadOpen,
+          setIsAddSquadOpen,
+          newSquad,
+          setNewSquad,
+          handleCreateSquad,
+          squadError,
+          setSquadError,
+          isCreatingTeam,
+
+          // Edit regu
+          editingSquad,
+          setEditingSquad,
+          handleSaveEditSquad,
+          isUpdatingTeam,
+
+          // Konfirmasi status pengguna
+          statusAction,
+          setStatusAction,
+          handleConfirmStatusChange,
+          isActivatingUser,
+          isDeactivatingUser,
+
+          // Hapus pengguna
+          deletingUser,
+          setDeletingUser,
+          handleDeleteUser,
+          isDeletingUser,
+
+          // Hapus regu
+          deletingSquad,
+          setDeletingSquad,
+          handleDeleteSquad,
+          isDeletingTeam,
+
+          // Helper input
+          renderInput,
+          renderRoleSelect,
+          renderSquadSelect,
         }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
-          <DialogHeader>
-            <DialogTitle className="text-base">
-              Tambah Akun Pengguna
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Masukkan identitas, informasi login, dan penempatan regu.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleCreateUser} className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {renderInput(
-                "NPP",
-                newUser.employeeNumber,
-                (value) =>
-                  setNewUser((previous) => ({
-                    ...previous,
-                    employeeNumber: value,
-                    username: previous.useEmployeeAsUsername
-                      ? value
-                      : previous.username,
-                  })),
-                {
-                  required: true,
-                  placeholder: "Masukkan NPP",
-                },
-              )}
-
-              {renderInput(
-                "Nama Lengkap",
-                newUser.fullName,
-                (value) =>
-                  setNewUser((previous) => ({
-                    ...previous,
-                    fullName: value,
-                  })),
-                {
-                  required: true,
-                  placeholder: "Masukkan nama lengkap",
-                },
-              )}
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Username</Label>
-                <Input
-                  value={
-                    newUser.useEmployeeAsUsername
-                      ? newUser.employeeNumber
-                      : newUser.username
-                  }
-                  disabled={newUser.useEmployeeAsUsername}
-                  onChange={(event) =>
-                    setNewUser((previous) => ({
-                      ...previous,
-                      username: event.target.value,
-                    }))
-                  }
-                  placeholder="Masukkan username"
-                  required
-                  className={inputClass}
-                />
-
-                <div className="flex items-center gap-2 pt-1">
-                  <Checkbox
-                    id="new-user-same-npp"
-                    checked={newUser.useEmployeeAsUsername}
-                    onCheckedChange={(checked) =>
-                      setNewUser((previous) => ({
-                        ...previous,
-                        useEmployeeAsUsername: checked === true,
-                        username:
-                          checked === true
-                            ? previous.employeeNumber
-                            : previous.username,
-                      }))
-                    }
-                  />
-                  <Label
-                    htmlFor="new-user-same-npp"
-                    className="cursor-pointer text-xs font-normal text-muted-foreground"
-                  >
-                    Gunakan NPP sebagai username
-                  </Label>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Password</Label>
-                <div className="relative">
-                  <Input
-                    type={showPassword ? "text" : "password"}
-                    value={newUser.password}
-                    onChange={(event) =>
-                      setNewUser((previous) => ({
-                        ...previous,
-                        password: event.target.value,
-                      }))
-                    }
-                    placeholder="Minimal 8 karakter"
-                    minLength={8}
-                    required
-                    className="h-9 rounded pr-10 text-xs"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 size-9 rounded"
-                    onClick={() => setShowPassword((previous) => !previous)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="size-4" />
-                    ) : (
-                      <Eye className="size-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {renderInput(
-                "Email",
-                newUser.email,
-                (value) =>
-                  setNewUser((previous) => ({
-                    ...previous,
-                    email: value,
-                  })),
-                {
-                  type: "email",
-                  placeholder: "nama@email.com",
-                },
-              )}
-
-              {renderInput(
-                "No. HP",
-                newUser.phone,
-                (value) =>
-                  setNewUser((previous) => ({
-                    ...previous,
-                    phone: value,
-                  })),
-                {
-                  required: true,
-                  type: "tel",
-                  placeholder: "08xxxxxxxxxx",
-                },
-              )}
-
-              {renderRoleSelect(newUser.role, (value) =>
-                setNewUser((previous) => ({
-                  ...previous,
-                  role: value,
-                  teamId: "",
-                })),
-              )}
-
-              {renderSquadSelect(newUser.teamId, (value) =>
-                setNewUser((previous) => ({
-                  ...previous,
-                  teamId: value,
-                })),
-              )}
-            </div>
-
-            <div className="border bg-slate-50 p-3 text-xs text-muted-foreground">
-              <div className="flex items-start gap-2">
-                <LockKeyhole className="mt-0.5 size-4 shrink-0" />
-                <p>
-                  Password digunakan untuk login ke PAMAREA. Password harus
-                  di-hash di backend sebelum disimpan ke database.
-                </p>
-              </div>
-            </div>
-
-            {registerError && (
-              <div
-                role="alert"
-                className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700"
-              >
-                {registerError}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                className={buttonClass}
-                disabled={isRegistering}
-                onClick={() => setIsAddUserOpen(false)}
-              >
-                Batal
-              </Button>
-              <Button
-                type="submit"
-                className={buttonClass}
-                disabled={isRegistering || isRolesLoading || isRolesError}
-              >
-                {isRegistering ? "Menyimpan..." : "Simpan Akun"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!editingUser}
-        onOpenChange={(open) => {
-          if (!open && !isUpdatingUser) {
-            setEditingUser(null);
-            setSelectedUserId("");
-            setRegisterError("");
-          }
-        }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
-          <DialogHeader>
-            <DialogTitle className="text-base">Edit Akun Pengguna</DialogTitle>
-            <DialogDescription className="text-xs">
-              Perbarui informasi akun dan penempatan regu.
-            </DialogDescription>
-          </DialogHeader>
-
-          {editingUser && (
-            <form onSubmit={handleSaveEditUser} className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {renderInput(
-                  "NPP",
-                  editingUser.employeeNumber,
-                  (value) =>
-                    setEditingUser((previous) =>
-                      previous
-                        ? {
-                            ...previous,
-                            employeeNumber: value,
-                            username: editingUsernameSameAsNpp
-                              ? value
-                              : previous.username,
-                          }
-                        : previous,
-                    ),
-                  { required: true },
-                )}
-
-                {renderInput(
-                  "Nama Lengkap",
-                  editingUser.fullName,
-                  (value) =>
-                    setEditingUser((previous) =>
-                      previous ? { ...previous, fullName: value } : previous,
-                    ),
-                  { required: true },
-                )}
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Username</Label>
-                  <Input
-                    value={editingUser.username}
-                    disabled={editingUsernameSameAsNpp}
-                    onChange={(event) =>
-                      setEditingUser((previous) =>
-                        previous
-                          ? {
-                              ...previous,
-                              username: event.target.value,
-                            }
-                          : previous,
-                      )
-                    }
-                    required
-                    className={inputClass}
-                  />
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <Checkbox
-                      id="edit-user-same-npp"
-                      checked={editingUsernameSameAsNpp}
-                      onCheckedChange={(checked) => {
-                        const useNpp = checked === true;
-
-                        setEditingUsernameSameAsNpp(useNpp);
-
-                        setEditingUser((previous) =>
-                          previous
-                            ? {
-                                ...previous,
-                                username: useNpp
-                                  ? previous.employeeNumber
-                                  : previous.username ===
-                                      previous.employeeNumber
-                                    ? ""
-                                    : previous.username,
-                              }
-                            : previous,
-                        );
-                      }}
-                    />
-                    <Label
-                      htmlFor="edit-user-same-npp"
-                      className="cursor-pointer text-xs font-normal text-muted-foreground"
-                    >
-                      Gunakan NPP sebagai username
-                    </Label>
-                  </div>
-                </div>
-
-                {renderInput(
-                  "Email",
-                  editingUser.email,
-                  (value) =>
-                    setEditingUser((previous) =>
-                      previous ? { ...previous, email: value } : previous,
-                    ),
-                  { type: "email" },
-                )}
-
-                {renderInput(
-                  "No. HP",
-                  editingUser.phone,
-                  (value) =>
-                    setEditingUser((previous) =>
-                      previous ? { ...previous, phone: value } : previous,
-                    ),
-                  { type: "tel", required: true },
-                )}
-
-                {renderRoleSelect(editingUser.role, (value) =>
-                  setEditingUser((previous) =>
-                    previous ? { ...previous, role: value } : previous,
-                  ),
-                )}
-
-                {renderSquadSelect(editingUser.teamId, (value) =>
-                  setEditingUser((previous) =>
-                    previous ? { ...previous, teamId: value } : previous,
-                  ),
-                )}
-              </div>
-
-              {registerError && (
-                <div
-                  role="alert"
-                  className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700"
-                >
-                  {registerError}
-                </div>
-              )}
-
-              <Separator />
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={buttonClass}
-                  disabled={isUpdatingUser}
-                  onClick={() => {
-                    setEditingUser(null);
-                    setSelectedUserId("");
-                  }}
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  className={buttonClass}
-                  disabled={isUpdatingUser}
-                >
-                  {isUpdatingUser ? "Menyimpan..." : "Simpan Perubahan"}
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!changingPasswordUser}
-        onOpenChange={(open) => {
-          if (!open && !isChangingPassword) {
-            setChangingPasswordUser(null);
-            setNewPassword("");
-            setConfirmNewPassword("");
-            setPasswordError("");
-            setShowPassword(false);
-            setShowConfirmPassword(false);
-          }
-        }}
-      >
-        <DialogContent className="max-w-md rounded">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <LockKeyhole className="size-4" />
-              Ganti Password
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Ganti password untuk akun{" "}
-              <strong className="text-foreground">
-                {changingPasswordUser?.fullName}
-              </strong>
-              .
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleChangePassword} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Password Baru</Label>
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  placeholder="Minimal 8 karakter"
-                  minLength={8}
-                  required
-                  className="h-9 rounded pr-10 text-xs"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 size-9 rounded"
-                  onClick={() => setShowPassword((previous) => !previous)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="size-4" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">
-                Konfirmasi Password Baru
-              </Label>
-              <div className="relative">
-                <Input
-                  type={showConfirmPassword ? "text" : "password"}
-                  value={confirmNewPassword}
-                  onChange={(event) =>
-                    setConfirmNewPassword(event.target.value)
-                  }
-                  placeholder="Ulangi password baru"
-                  minLength={8}
-                  required
-                  className="h-9 rounded pr-10 text-xs"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 size-9 rounded"
-                  onClick={() =>
-                    setShowConfirmPassword((previous) => !previous)
-                  }
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff className="size-4" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {passwordError && (
-              <div
-                role="alert"
-                className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700"
-              >
-                {passwordError}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                className={buttonClass}
-                disabled={isChangingPassword}
-                onClick={() => setChangingPasswordUser(null)}
-              >
-                Batal
-              </Button>
-              <Button
-                type="submit"
-                className={buttonClass}
-                disabled={isChangingPassword}
-              >
-                {isChangingPassword ? "Memproses..." : "Simpan Password"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={isAddSquadOpen}
-        onOpenChange={(open) => {
-          setIsAddSquadOpen(open);
-          if (!open) setSquadError("");
-        }}
-      >
-        <DialogContent className="max-w-xl rounded">
-          <DialogHeader>
-            <DialogTitle className="text-base">
-              Tambah Regu Pengamanan
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Masukkan informasi regu dan wilayah tanggung jawab.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleCreateSquad} className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {renderInput(
-                "Nama Regu",
-                newSquad.name,
-                (value) =>
-                  setNewSquad((previous) => ({
-                    ...previous,
-                    name: value,
-                  })),
-                {
-                  required: true,
-                  placeholder: "Contoh: Regu Alpha",
-                },
-              )}
-
-              {renderInput(
-                "Kode Regu",
-                newSquad.code,
-                (value) =>
-                  setNewSquad((previous) => ({
-                    ...previous,
-                    code: value,
-                  })),
-                {
-                  required: true,
-                  placeholder: "Contoh: REGU-A",
-                },
-              )}
-
-              <div className="sm:col-span-2">
-                {renderInput(
-                  "Deskripsi",
-                  newSquad.description,
-                  (value) =>
-                    setNewSquad((previous) => ({
-                      ...previous,
-                      description: value,
-                    })),
-                  {
-                    placeholder: "Deskripsi regu",
-                  },
-                )}
-              </div>
-            </div>
-
-            {squadError && (
-              <div
-                role="alert"
-                className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700"
-              >
-                {squadError}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                className={buttonClass}
-                disabled={isCreatingTeam}
-                onClick={() => setIsAddSquadOpen(false)}
-              >
-                Batal
-              </Button>
-              <Button
-                type="submit"
-                className={buttonClass}
-                disabled={isCreatingTeam}
-              >
-                {isCreatingTeam ? "Menyimpan..." : "Simpan Regu"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!editingSquad}
-        onOpenChange={(open) => {
-          if (!open && !isUpdatingTeam) {
-            setEditingSquad(null);
-            setSquadError("");
-          }
-        }}
-      >
-        <DialogContent className="max-w-xl rounded">
-          <DialogHeader>
-            <DialogTitle className="text-base">
-              Edit Regu Pengamanan
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Perbarui nama, kode, dan deskripsi regu.
-            </DialogDescription>
-          </DialogHeader>
-
-          {editingSquad && (
-            <form onSubmit={handleSaveEditSquad} className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {renderInput(
-                  "Nama Regu",
-                  editingSquad.name,
-                  (value) =>
-                    setEditingSquad((previous) =>
-                      previous ? { ...previous, name: value } : previous,
-                    ),
-                  { required: true },
-                )}
-
-                {renderInput(
-                  "Kode Regu",
-                  editingSquad.code,
-                  (value) =>
-                    setEditingSquad((previous) =>
-                      previous ? { ...previous, code: value } : previous,
-                    ),
-                  { required: true },
-                )}
-
-                <div className="sm:col-span-2">
-                  {renderInput("Deskripsi", editingSquad.description, (value) =>
-                    setEditingSquad((previous) =>
-                      previous ? { ...previous, description: value } : previous,
-                    ),
-                  )}
-                </div>
-              </div>
-
-              {squadError && (
-                <div
-                  role="alert"
-                  className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700"
-                >
-                  {squadError}
-                </div>
-              )}
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={buttonClass}
-                  disabled={isUpdatingTeam}
-                  onClick={() => setEditingSquad(null)}
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  className={buttonClass}
-                  disabled={isUpdatingTeam}
-                >
-                  {isUpdatingTeam ? "Menyimpan..." : "Simpan Perubahan"}
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog
-        open={!!statusAction}
-        onOpenChange={(open) => {
-          if (!open && !isActivatingUser && !isDeactivatingUser) {
-            setStatusAction(null);
-          }
-        }}
-      >
-        <AlertDialogContent className="rounded">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-base">
-              {statusAction?.activate
-                ? "Aktifkan Akun Pengguna?"
-                : "Nonaktifkan Akun Pengguna?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs">
-              {statusAction?.activate ? (
-                <>
-                  Apakah Anda yakin ingin mengaktifkan akun{" "}
-                  <strong className="text-foreground">
-                    {statusAction.user.fullName}
-                  </strong>
-                  ? Pengguna dapat kembali mengakses aplikasi PAMAREA.
-                </>
-              ) : (
-                <>
-                  Apakah Anda yakin ingin menonaktifkan akun{" "}
-                  <strong className="text-foreground">
-                    {statusAction?.user.fullName}
-                  </strong>
-                  ? Pengguna tidak dapat menggunakan akun selama statusnya
-                  nonaktif.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              className={buttonClass}
-              disabled={isActivatingUser || isDeactivatingUser}
-            >
-              Batal
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className={`${buttonClass} ${
-                statusAction?.activate
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                  : "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              }`}
-              disabled={isActivatingUser || isDeactivatingUser}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleConfirmStatusChange();
-              }}
-            >
-              {isActivatingUser || isDeactivatingUser
-                ? "Memproses..."
-                : statusAction?.activate
-                  ? "Ya, Aktifkan"
-                  : "Ya, Nonaktifkan"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={!!deletingUser}
-        onOpenChange={(open) => {
-          if (!open && !isDeletingUser) setDeletingUser(null);
-        }}
-      >
-        <AlertDialogContent className="rounded">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-base">
-              Hapus Akun Pengguna?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs">
-              Apakah Anda yakin ingin menghapus akun{" "}
-              <strong className="text-foreground">
-                {deletingUser?.fullName}
-              </strong>
-              ? Tindakan ini tidak dapat dibatalkan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              className={buttonClass}
-              disabled={isDeletingUser}
-            >
-              Batal
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className={`${buttonClass} bg-destructive text-destructive-foreground hover:bg-destructive/90`}
-              disabled={isDeletingUser}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleDeleteUser();
-              }}
-            >
-              {isDeletingUser ? "Menghapus..." : "Hapus Akun"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={!!deletingSquad}
-        onOpenChange={(open) => {
-          if (!open && !isDeletingTeam) setDeletingSquad(null);
-        }}
-      >
-        <AlertDialogContent className="rounded">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-base">
-              Hapus Regu?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs">
-              Apakah Anda yakin ingin menghapus regu{" "}
-              <strong className="text-foreground">{deletingSquad?.name}</strong>
-              ? Pastikan regu tidak sedang digunakan oleh pengguna.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              className={buttonClass}
-              disabled={isDeletingTeam}
-            >
-              Batal
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className={`${buttonClass} bg-destructive text-destructive-foreground hover:bg-destructive/90`}
-              disabled={isDeletingTeam}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleDeleteSquad();
-              }}
-            >
-              {isDeletingTeam ? "Menghapus..." : "Hapus Regu"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      />
     </div>
   );
 };

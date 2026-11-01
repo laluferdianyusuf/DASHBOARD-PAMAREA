@@ -320,7 +320,8 @@ export function Sidebar({ currentTab, onSelectTab, user }: SidebarProps) {
         <Separator className="mb-3 bg-[#263653] group-data-[collapsible=icon]:hidden" />
 
         <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#17466B] text-xs font-semibold text-white">
+          {/* Avatar */}
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#17466B] text-xs font-semibold text-white group-data-[collapsible=icon]:hidden">
             {user.fullName
               ?.split(" ")
               .slice(0, 2)
@@ -329,6 +330,7 @@ export function Sidebar({ currentTab, onSelectTab, user }: SidebarProps) {
               .toUpperCase() || "U"}
           </div>
 
+          {/* User Info */}
           <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
             <p className="truncate text-sm font-medium text-white">
               {user.fullName || "Pengguna"}
@@ -340,6 +342,7 @@ export function Sidebar({ currentTab, onSelectTab, user }: SidebarProps) {
             </p>
           </div>
 
+          {/* Logout saat expanded */}
           <button
             type="button"
             onClick={handleLogout}
@@ -354,12 +357,13 @@ export function Sidebar({ currentTab, onSelectTab, user }: SidebarProps) {
             )}
           </button>
 
+          {/* Logout saat collapsed */}
           <button
             type="button"
             onClick={handleLogout}
             disabled={isPending}
             title="Logout"
-            className="hidden size-9 items-center justify-center rounded-md text-slate-400 hover:bg-red-500/10 hover:text-red-400 group-data-[collapsible=icon]:flex"
+            className="hidden size-9 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50 group-data-[collapsible=icon]:flex"
           >
             {isPending ? (
               <Loader2 className="size-4 animate-spin" />
