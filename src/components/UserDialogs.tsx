@@ -1,29 +1,30 @@
 import { Eye, EyeOff, LockKeyhole } from "lucide-react";
 
 import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { getPhotoUrl } from "../utils/getPhoto";
 
 const buttonClass = "rounded";
 const inputClass = "h-9 rounded text-xs";
@@ -51,7 +52,7 @@ export const UserDialogs = ({ dialogs: d }: UserDialogsProps) => {
           {d.previewPhoto && (
             <div className="flex justify-center">
               <img
-                src={d.previewPhoto.url}
+                src={getPhotoUrl(d.previewPhoto.url)}
                 alt={d.previewPhoto.name}
                 className="max-h-[65vh] w-auto max-w-full rounded-lg object-contain"
               />

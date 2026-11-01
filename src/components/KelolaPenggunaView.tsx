@@ -159,9 +159,19 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
   const { user } = useAuthContext();
   const siteId = user?.siteId;
 
-  const { data: users, isLoading: isUsersLoading } = useUsers();
-  const { data: teams, isLoading: isTeamsLoading } = useTeams();
+  const {
+    data: users,
+    isLoading: isUsersLoading,
+    isFetching: isUsersFetching,
+    refetch: refetchUsers,
+  } = useUsers();
 
+  const {
+    data: teams,
+    isLoading: isTeamsLoading,
+    isFetching: isTeamsFetching,
+    refetch: refetchTeams,
+  } = useTeams();
   const {
     data: rolesResponse,
     isLoading: isRolesLoading,
@@ -253,6 +263,12 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
     url: string;
     name: string;
   } | null>(null);
+
+  const isRefreshing = isUsersFetching || isTeamsFetching;
+
+  const handleRefresh = async () => {
+    await Promise.all([refetchUsers(), refetchTeams()]);
+  };
 
   const handleUserColumnFilter = (
     key: keyof typeof userColumnFilters,
@@ -840,23 +856,38 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
           </p>
         </div>
 
-        <Button
-          className="gap-2 rounded text-black bg-[#FED400] hover:bg-[#e9c300]"
-          onClick={() => {
-            if (activeSubTab === "personel") {
-              setRegisterError("");
-              setNewUser(initialUserForm);
-              setIsAddUserOpen(true);
-            } else {
-              setSquadError("");
-              setNewSquad(initialSquadForm);
-              setIsAddSquadOpen(true);
-            }
-          }}
-        >
-          <Plus className="size-4" />
-          {activeSubTab === "personel" ? "Tambah Akun" : "Tambah Regu"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            title="Refresh data"
+          >
+            <RotateCcw
+              className={`size-4 ${isRefreshing ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+          <Button
+            className="gap-2 rounded text-black bg-[#FED400] hover:bg-[#e9c300]"
+            onClick={() => {
+              if (activeSubTab === "personel") {
+                setRegisterError("");
+                setNewUser(initialUserForm);
+                setIsAddUserOpen(true);
+              } else {
+                setSquadError("");
+                setNewSquad(initialSquadForm);
+                setIsAddSquadOpen(true);
+              }
+            }}
+          >
+            <Plus className="size-4" />
+            {activeSubTab === "personel" ? "Tambah Akun" : "Tambah Regu"}
+          </Button>
+        </div>
       </div>
 
       <Tabs
