@@ -1,22 +1,16 @@
 import {
   Activity,
-  Download,
   FileSearch,
   Filter,
+  RefreshCw,
   Search,
   ShieldCheck,
   X,
 } from "lucide-react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
-import { SYSTEM_AUDIT_LOGS } from "../data/mockData";
-import {
-  SystemAuditLog,
-  filterItemsByColumnCriteria,
-  filterSystemAuditLogs,
-} from "../utils/security-logic";
+import { SystemAuditLog } from "../utils/security-logic";
 
-// Shadcn UI
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,19 +44,58 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import { useAuditLogs } from "../hooks/audit/useAuditLogs";
+import { PaginationComponent } from "./PaginationComponent";
+
 interface AnalyticAuditViewProps {
   selectedSite: string;
 }
 
-type AuditTab = "all" | "admin" | "patrol" | "findings" | "schedule";
+type AuditTab = "all" | "admin" | "patrol" | "findings" | "schedule" | "tags";
 
-interface ColumnSearch extends Record<string, string> {
+interface ColumnSearch {
   idTimestamp: string;
   category: string;
   action: string;
   actor: string;
-  targetLocation: string;
   status: string;
+}
+
+interface AuditLogResponse {
+  id: string;
+  action: string;
+  entityType?: string | null;
+  entityId?: string | null;
+  description?: string | null;
+  ipAddress?: string | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    fullName?: string | null;
+    employeeNumber?: string | null;
+    role?: {
+      id: string;
+      name: string;
+    } | null;
+    devices?: {
+      id: string;
+      deviceIdentifier?: string | null;
+      osVersion?: string | null;
+      platform?: string | null;
+    }[];
+  } | null;
+}
+
+interface AuditLogMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+interface AuditLogApiResponse {
+  data: AuditLogResponse[];
+  meta?: AuditLogMeta;
 }
 
 const INITIAL_COLUMN_SEARCH: ColumnSearch = {
@@ -70,20 +103,168 @@ const INITIAL_COLUMN_SEARCH: ColumnSearch = {
   category: "",
   action: "",
   actor: "",
-  targetLocation: "",
   status: "",
 };
 
-const CATEGORY_BY_TAB: Record<Exclude<AuditTab, "all">, string> = {
-  admin: "Admin & Pengguna",
-  patrol: "Operasional Patroli",
-  findings: "Temuan & Insiden",
-  schedule: "Jadwal & Shift",
+const normalize = (value: unknown): string =>
+  String(value ?? "")
+    .toLowerCase()
+    .trim();
+
+const formatDateTime = (value: string) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
 };
 
-const formatCsvValue = (value: unknown) => {
-  const text = String(value ?? "");
-  return `"${text.replace(/"/g, '""')}"`;
+const getAuditCategory = (
+  entityType?: string | null,
+  action?: string | null,
+): string => {
+  const normalize = (value?: string | null) =>
+    (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  const entity = normalize(entityType);
+  const act = normalize(action);
+
+  if (
+    entity.includes("FINDING") ||
+    entity.includes("INCIDENT") ||
+    act.includes("FINDING") ||
+    act.includes("INCIDENT")
+  ) {
+    return "Temuan & Insiden";
+  }
+
+  if (
+    entity.includes("SCHEDULE") ||
+    entity.includes("ASSIGNMENT") ||
+    entity.includes("SHIFT") ||
+    entity.includes("ROSTER") ||
+    act.includes("ASSIGNMENT") ||
+    act.includes("SCHEDULE") ||
+    act.includes("SHIFT") ||
+    act.includes("ROSTER")
+  ) {
+    return "Jadwal & Shift";
+  }
+
+  if (
+    entity.includes("NFC") ||
+    entity.includes("TAG") ||
+    act.includes("NFC") ||
+    act.includes("TAG")
+  ) {
+    return "Tag & Checkpoint";
+  }
+
+  if (
+    entity.includes("PATROL") ||
+    entity.includes("CHECKPOINT") ||
+    entity.includes("ROUND") ||
+    entity.includes("POINT") ||
+    act.includes("PATROL") ||
+    act.includes("CHECKPOINT") ||
+    act.includes("ROUND") ||
+    act.includes("ATTENDANCE")
+  ) {
+    return "Operasional Patroli";
+  }
+
+  if (
+    entity.includes("USER") ||
+    entity.includes("ROLE") ||
+    entity.includes("AUTH") ||
+    entity.includes("ADMIN") ||
+    entity.includes("DEVICE") ||
+    entity.includes("SESSION") ||
+    act.includes("LOGIN") ||
+    act.includes("LOGOUT") ||
+    act.includes("TOKEN") ||
+    act.includes("USER") ||
+    act.includes("ROLE") ||
+    act.includes("PASSWORD") ||
+    act.includes("PERMISSION") ||
+    act.includes("DEVICE")
+  ) {
+    return "Admin & Pengguna";
+  }
+
+  return "Lainnya";
+};
+
+const getAuditStatus = (action: string): string => {
+  const normalized = normalize(action);
+
+  if (
+    normalized.includes("fail") ||
+    normalized.includes("error") ||
+    normalized.includes("reject")
+  ) {
+    return "Gagal";
+  }
+
+  if (
+    normalized.includes("warning") ||
+    normalized.includes("bypass") ||
+    normalized.includes("cancel")
+  ) {
+    return "Peringatan";
+  }
+
+  return "Berhasil";
+};
+
+const getAuditActorRole = (role?: string | null): string => {
+  if (!role) return "-";
+
+  const normalized = role.toLowerCase().replace(/[_\s-]/g, "");
+
+  if (normalized.includes("admin")) return "Admin";
+
+  if (normalized.includes("danru") || normalized.includes("leader")) {
+    return "Danru";
+  }
+
+  if (
+    normalized.includes("security") ||
+    normalized.includes("satpam") ||
+    normalized.includes("guard")
+  ) {
+    return "Satpam";
+  }
+
+  return role;
+};
+
+const getCategoryBadge = (category: string) => {
+  const styles: Record<string, string> = {
+    "Admin & Pengguna": "border-purple-200 bg-purple-50 text-purple-700",
+    "Operasional Patroli": "border-emerald-200 bg-emerald-50 text-emerald-700",
+    "Temuan & Insiden": "border-rose-200 bg-rose-50 text-rose-700",
+    "Jadwal & Shift": "border-cyan-200 bg-cyan-50 text-cyan-700",
+    "Tag & Checkpoint": "border-amber-200 bg-amber-50 text-amber-700",
+  };
+
+  return (
+    <Badge
+      variant="outline"
+      className={
+        styles[category] ?? "border-slate-200 bg-slate-50 text-slate-700"
+      }
+    >
+      {category}
+    </Badge>
+  );
 };
 
 const getStatusBadge = (status: string) => {
@@ -120,25 +301,43 @@ const getStatusBadge = (status: string) => {
   }
 };
 
-const getCategoryBadge = (category: string) => {
-  const styles: Record<string, string> = {
-    "Admin & Pengguna": "border-purple-200 bg-purple-50 text-purple-700",
-    "Operasional Patroli": "border-emerald-200 bg-emerald-50 text-emerald-700",
-    "Temuan & Insiden": "border-rose-200 bg-rose-50 text-rose-700",
-    "Jadwal & Shift": "border-cyan-200 bg-cyan-50 text-cyan-700",
-    "Tag & Checkpoint": "border-amber-200 bg-amber-50 text-amber-700",
-  };
+const matchesText = (value: unknown, keyword: string): boolean => {
+  if (!keyword.trim()) return true;
 
-  return (
-    <Badge
-      variant="outline"
-      className={
-        styles[category] ?? "border-slate-200 bg-slate-50 text-slate-700"
-      }
-    >
-      {category}
-    </Badge>
-  );
+  return normalize(value).includes(normalize(keyword));
+};
+
+const extractAuditResponse = (response: unknown): AuditLogApiResponse => {
+  const first = response as Record<string, unknown> | undefined;
+
+  if (!first) {
+    return { data: [] };
+  }
+
+  const firstData = first.data as
+    | Record<string, unknown>
+    | AuditLogResponse[]
+    | undefined;
+
+  if (Array.isArray(firstData)) {
+    return {
+      data: firstData as AuditLogResponse[],
+      meta: first.meta as AuditLogMeta | undefined,
+    };
+  }
+
+  if (firstData && typeof firstData === "object") {
+    const nested = firstData as Record<string, unknown>;
+
+    if (Array.isArray(nested.data)) {
+      return {
+        data: nested.data as AuditLogResponse[],
+        meta: nested.meta as AuditLogMeta | undefined,
+      };
+    }
+  }
+
+  return { data: [] };
 };
 
 export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
@@ -149,6 +348,9 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [activeTab, setActiveTab] = useState<AuditTab>("all");
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState("20");
+
   const [selectedLogDetail, setSelectedLogDetail] =
     useState<SystemAuditLog | null>(null);
 
@@ -156,64 +358,121 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
     INITIAL_COLUMN_SEARCH,
   );
 
-  const logs = SYSTEM_AUDIT_LOGS;
+  const {
+    data: auditData,
+    isLoading,
+    isFetching,
+    isError,
+    refetch,
+  } = useAuditLogs({
+    page: currentPage,
+    limit: Number(pageSize),
+  });
 
-  const baseFilteredLogs = useMemo(() => {
-    const category = activeTab === "all" ? "all" : CATEGORY_BY_TAB[activeTab];
+  const auditResponse = useMemo(
+    () => extractAuditResponse(auditData),
+    [auditData],
+  );
 
-    return filterSystemAuditLogs(logs, {
-      siteId: selectedSite,
-      category,
-      actorRole: selectedRole,
-      status: selectedStatus,
-      searchQuery,
+  const logs = useMemo<SystemAuditLog[]>(() => {
+    return auditResponse.data.map((item) => {
+      const category = getAuditCategory(item.entityType, item.action);
+      const status = getAuditStatus(item.action);
+      const actorRole = getAuditActorRole(item.user?.role?.name);
+
+      return {
+        id: item.id,
+        timestamp: formatDateTime(item.createdAt),
+        category,
+        action: item.action,
+        details: item.description ?? item.entityType ?? "-",
+        actorName: item.user?.fullName ?? "System",
+        actorRole,
+        targetEntity: item.entityId ?? item.entityType ?? "-",
+        siteName: "-",
+        status,
+        ipAddress: item.ipAddress ?? undefined,
+        device: item.user?.devices?.[0]
+          ? `${item.user.devices[0].platform ?? "-"} - ${
+              item.user.devices[0].deviceIdentifier ?? "-"
+            }`
+          : undefined,
+      } as SystemAuditLog;
+    });
+  }, [auditResponse]);
+
+  const meta: AuditLogMeta = auditResponse.meta ?? {
+    page: currentPage,
+    limit: Number(pageSize),
+    total: logs.length,
+    totalPages: logs.length > 0 ? 1 : 0,
+  };
+
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      const category = normalize(log.category);
+      const role = normalize(log.actorRole);
+      const status = normalize(log.status);
+
+      const matchesTab = (() => {
+        if (activeTab === "all") return true;
+
+        const categoryByTab: Record<Exclude<AuditTab, "all">, string> = {
+          admin: "Admin & Pengguna",
+          patrol: "Operasional Patroli",
+          findings: "Temuan & Insiden",
+          schedule: "Jadwal & Shift",
+          tags: "Tag & Checkpoint",
+        };
+
+        return normalize(log.category) === normalize(categoryByTab[activeTab]);
+      })();
+
+      const matchesRole =
+        selectedRole === "all" || role === normalize(selectedRole);
+
+      const matchesStatus =
+        selectedStatus === "all" || status === normalize(selectedStatus);
+
+      const matchesGlobalSearch =
+        !searchQuery.trim() ||
+        [
+          log.id,
+          log.timestamp,
+          log.category,
+          log.action,
+          log.details,
+          log.actorName,
+          log.actorRole,
+          log.targetEntity,
+          log.siteName,
+          log.ipAddress,
+          log.device,
+        ].some((value) => matchesText(value, searchQuery));
+
+      const matchesColumnSearch =
+        matchesText(`${log.id} ${log.timestamp}`, columnSearch.idTimestamp) &&
+        matchesText(log.category, columnSearch.category) &&
+        matchesText(log.action, columnSearch.action) &&
+        matchesText(`${log.actorName} ${log.actorRole}`, columnSearch.actor) &&
+        matchesText(log.status, columnSearch.status);
+
+      return (
+        matchesTab &&
+        matchesRole &&
+        matchesStatus &&
+        matchesGlobalSearch &&
+        matchesColumnSearch
+      );
     });
   }, [
     logs,
-    selectedSite,
     activeTab,
     selectedRole,
     selectedStatus,
     searchQuery,
+    columnSearch,
   ]);
-
-  const filteredLogs = useMemo(() => {
-    return filterItemsByColumnCriteria(baseFilteredLogs, columnSearch, {
-      idTimestamp: (log) => `${log.id} ${log.timestamp}`,
-
-      category: (log) => log.category,
-
-      action: (log) => `${log.action} ${log.details}`,
-
-      actor: (log) => `${log.actorName} ${log.actorRole}`,
-
-      targetLocation: (log) => `${log.targetEntity} ${log.siteName}`,
-
-      status: (log) => log.status,
-    });
-  }, [baseFilteredLogs, columnSearch]);
-
-  const metrics = useMemo(() => {
-    const total = filteredLogs.length;
-
-    const countByCategory = (category: string) =>
-      filteredLogs.filter((log) => log.category === category).length;
-
-    const successCount = filteredLogs.filter(
-      (log) => log.status === "Berhasil",
-    ).length;
-
-    return {
-      total,
-      admin: countByCategory("Admin & Pengguna"),
-      patrol: countByCategory("Operasional Patroli"),
-      findings: countByCategory("Temuan & Insiden"),
-      schedule: countByCategory("Jadwal & Shift"),
-      tag: countByCategory("Tag & Checkpoint"),
-      success: successCount,
-      successRate: total > 0 ? Math.round((successCount / total) * 100) : 0,
-    };
-  }, [filteredLogs]);
 
   const isAnyColumnFilterActive = Object.values(columnSearch).some(
     (value) => value.trim().length > 0,
@@ -223,13 +482,16 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
     searchQuery.trim().length > 0 ||
     selectedRole !== "all" ||
     selectedStatus !== "all" ||
+    activeTab !== "all" ||
     isAnyColumnFilterActive;
 
   const clearAllFilters = () => {
     setSearchQuery("");
     setSelectedRole("all");
     setSelectedStatus("all");
+    setActiveTab("all");
     setColumnSearch(INITIAL_COLUMN_SEARCH);
+    setCurrentPage(1);
   };
 
   const updateColumnSearch = (key: keyof ColumnSearch, value: string) => {
@@ -237,71 +499,27 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
       ...previous,
       [key]: value,
     }));
+
+    setCurrentPage(1);
   };
 
-  // -------------------------------------------------------
-  // EXPORT CSV
-  // -------------------------------------------------------
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    selectedSite,
+    activeTab,
+    selectedRole,
+    selectedStatus,
+    searchQuery,
+    pageSize,
+  ]);
 
-  const handleExportCsv = () => {
-    const headers = [
-      "ID",
-      "Waktu",
-      "Kategori",
-      "Aksi",
-      "Aktor",
-      "Role",
-      "Entitas Target",
-      "Site",
-      "Status",
-      "Detail",
-      "IP Address",
-      "Device",
-    ];
+  const startItem = meta.total === 0 ? 0 : (meta.page - 1) * meta.limit + 1;
 
-    const rows = filteredLogs.map((log) =>
-      [
-        log.id,
-        log.timestamp,
-        log.category,
-        log.action,
-        log.actorName,
-        log.actorRole,
-        log.targetEntity,
-        log.siteName,
-        log.status,
-        log.details,
-        log.ipAddress || "",
-        log.device || "",
-      ]
-        .map(formatCsvValue)
-        .join(","),
-    );
-
-    const csvContent = [headers.map(formatCsvValue).join(","), ...rows].join(
-      "\n",
-    );
-
-    const blob = new Blob(["\uFEFF" + csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `Audit_Trail_${new Date().toISOString().slice(0, 10)}.csv`;
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
-  };
+  const endItem = Math.min(meta.page * meta.limit, meta.total);
 
   return (
     <div className="space-y-5">
-      {/* PAGE HEADER */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">
@@ -314,39 +532,37 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
         </div>
 
         <Button
+          type="button"
           variant="outline"
           size="sm"
-          onClick={handleExportCsv}
-          disabled={filteredLogs.length === 0}
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="w-fit"
         >
-          <Download className="mr-2 size-4" />
-          Export CSV
+          <RefreshCw
+            className={`mr-2 size-4 ${isFetching ? "animate-spin" : ""}`}
+          />
+          Refresh
         </Button>
       </div>
 
       <Separator />
 
-      {/* AUDIT TABLE SECTION */}
       <div className="space-y-4">
-        {/* CATEGORY TABS */}
         <Tabs
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as AuditTab)}
         >
           <TabsList className="h-auto flex-wrap justify-start bg-transparent p-0">
-            <TabsTrigger value="all">Semua ({logs.length})</TabsTrigger>
-
+            <TabsTrigger value="all">Semua ({meta.total})</TabsTrigger>
             <TabsTrigger value="admin">Admin</TabsTrigger>
-
             <TabsTrigger value="patrol">Patroli</TabsTrigger>
-
             <TabsTrigger value="findings">Temuan & Insiden</TabsTrigger>
-
             <TabsTrigger value="schedule">Jadwal & Shift</TabsTrigger>
+            <TabsTrigger value="tags">Tag & Checkpoint</TabsTrigger>
           </TabsList>
         </Tabs>
 
-        {/* FILTER TOOLBAR */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -365,7 +581,17 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
               onValueChange={(value) => setSelectedRole(value ?? "all")}
             >
               <SelectTrigger className="w-full sm:w-[190px]">
-                <SelectValue placeholder="Semua peran" />
+                <SelectValue>
+                  {selectedRole === "all"
+                    ? "Semua Peran"
+                    : selectedRole === "Admin"
+                      ? "Administrator"
+                      : selectedRole === "Danru"
+                        ? "Komandan Regu"
+                        : selectedRole === "Satpam"
+                          ? "Petugas Lapangan"
+                          : "Semua Peran"}
+                </SelectValue>
               </SelectTrigger>
 
               <SelectContent>
@@ -381,7 +607,17 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
               onValueChange={(value) => setSelectedStatus(value ?? "all")}
             >
               <SelectTrigger className="w-full sm:w-[170px]">
-                <SelectValue placeholder="Semua status" />
+                <SelectValue>
+                  {selectedStatus === "all"
+                    ? "Semua Status"
+                    : selectedStatus === "Berhasil"
+                      ? "Berhasil"
+                      : selectedStatus === "Peringatan"
+                        ? "Peringatan"
+                        : selectedStatus === "Gagal"
+                          ? "Gagal"
+                          : "Semua Status"}
+                </SelectValue>
               </SelectTrigger>
 
               <SelectContent>
@@ -406,32 +642,38 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
           </div>
         </div>
 
-        {/* TABLE */}
+        <PaginationComponent
+          totalItems={meta.total}
+          startItem={startItem}
+          endItem={endItem}
+          pageSize={pageSize}
+          currentPage={meta.page}
+          totalPages={meta.totalPages}
+          onPageSizeChange={(value) => {
+            setPageSize(value || "20");
+            setCurrentPage(1);
+          }}
+          onPageChange={(page) => {
+            setCurrentPage(Math.max(1, Math.min(page, meta.totalPages || 1)));
+          }}
+        />
+
         <div className="overflow-hidden rounded border">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="min-w-[150px]">Waktu & ID</TableHead>
-
                   <TableHead className="min-w-[160px]">Kategori</TableHead>
-
                   <TableHead className="min-w-[220px]">
                     Aksi / Kegiatan
                   </TableHead>
-
                   <TableHead className="min-w-[160px]">Aktor</TableHead>
 
-                  <TableHead className="min-w-[180px]">
-                    Target & Lokasi
-                  </TableHead>
-
                   <TableHead className="w-[120px]">Status</TableHead>
-
                   <TableHead className="w-[90px] text-right">Detail</TableHead>
                 </TableRow>
 
-                {/* COLUMN FILTERS */}
                 <TableRow className="bg-background hover:bg-background">
                   <TableHead>
                     <Input
@@ -455,7 +697,9 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                       }
                     >
                       <SelectTrigger className="h-8 min-w-[135px] text-xs">
-                        <SelectValue placeholder="Semua kategori" />
+                        <SelectValue>
+                          {columnSearch.category || "Semua Kategori"}
+                        </SelectValue>
                       </SelectTrigger>
 
                       <SelectContent>
@@ -475,6 +719,7 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                         <SelectItem value="Tag & Checkpoint">
                           Tag & Checkpoint
                         </SelectItem>
+                        <SelectItem value="Lainnya">Lainnya</SelectItem>
                       </SelectContent>
                     </Select>
                   </TableHead>
@@ -502,17 +747,6 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                   </TableHead>
 
                   <TableHead>
-                    <Input
-                      value={columnSearch.targetLocation}
-                      onChange={(event) =>
-                        updateColumnSearch("targetLocation", event.target.value)
-                      }
-                      placeholder="Cari target / lokasi"
-                      className="h-8 min-w-[140px] text-xs"
-                    />
-                  </TableHead>
-
-                  <TableHead>
                     <Select
                       value={columnSearch.status || "all"}
                       onValueChange={(value) =>
@@ -523,7 +757,9 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                       }
                     >
                       <SelectTrigger className="h-8 min-w-[110px] text-xs">
-                        <SelectValue placeholder="Semua" />
+                        <SelectValue>
+                          {columnSearch.status || "Semua"}
+                        </SelectValue>
                       </SelectTrigger>
 
                       <SelectContent>
@@ -552,16 +788,42 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
               </TableHeader>
 
               <TableBody>
-                {filteredLogs.length === 0 ? (
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-36 text-center">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <RefreshCw className="size-7 animate-spin" />
+                        <p className="text-sm">Memuat data audit...</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : isError ? (
                   <TableRow>
                     <TableCell colSpan={7} className="h-36 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <FileSearch className="size-8" />
-
+                        <p className="text-sm font-medium">
+                          Gagal memuat data audit
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => refetch()}
+                        >
+                          Coba Lagi
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredLogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-36 text-center">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <FileSearch className="size-8" />
                         <p className="text-sm font-medium">
                           Tidak ada data audit
                         </p>
-
                         <p className="text-xs">
                           Coba ubah kata kunci atau filter pencarian.
                         </p>
@@ -573,9 +835,8 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                     <TableRow key={log.id}>
                       <TableCell>
                         <div className="font-mono text-xs font-medium text-slate-900">
-                          {log.id}
+                          {log.id.slice(0, 7).toUpperCase()}
                         </div>
-
                         <div className="mt-1 whitespace-nowrap text-xs text-muted-foreground">
                           {log.timestamp}
                         </div>
@@ -587,7 +848,6 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                         <p className="font-medium text-slate-900">
                           {log.action}
                         </p>
-
                         <p className="mt-1 max-w-[280px] truncate text-xs text-muted-foreground">
                           {log.details}
                         </p>
@@ -597,19 +857,8 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                         <p className="font-medium text-slate-900">
                           {log.actorName}
                         </p>
-
                         <p className="mt-1 text-xs text-muted-foreground">
                           {log.actorRole}
-                        </p>
-                      </TableCell>
-
-                      <TableCell>
-                        <p className="font-medium text-slate-900">
-                          {log.targetEntity}
-                        </p>
-
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {log.siteName}
                         </p>
                       </TableCell>
 
@@ -633,7 +882,6 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
           </div>
         </div>
 
-        {/* TABLE FOOTER */}
         <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <span>
             Menampilkan{" "}
@@ -644,17 +892,18 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
             <strong className="font-medium text-slate-900">
               {logs.length}
             </strong>{" "}
-            catatan audit
+            data pada halaman ini
           </span>
 
           <span>
             <Filter className="mr-1 inline size-3.5" />
-            Data mengikuti filter site yang dipilih
+            {selectedSite === "all"
+              ? "Semua site"
+              : "Filter site belum tersedia dari API audit"}
           </span>
         </div>
       </div>
 
-      {/* AUDIT DETAIL DIALOG */}
       <Dialog
         open={Boolean(selectedLogDetail)}
         onOpenChange={(open) => {
@@ -667,7 +916,6 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
               <DialogHeader>
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="size-5 text-blue-600" />
-
                   <DialogTitle>Detail Audit Log</DialogTitle>
                 </div>
 
@@ -678,19 +926,16 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
 
               <Separator />
 
-              {/* GENERAL INFORMATION */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                 <div>
                   <p className="text-xs text-muted-foreground">ID Audit</p>
-
-                  <p className="mt-1 font-mono text-sm font-medium text-slate-900">
-                    {selectedLogDetail.id}
+                  <p className="mt-1 break-all font-mono text-sm font-medium text-slate-900">
+                    {selectedLogDetail.id.slice(0, 7).toUpperCase()}
                   </p>
                 </div>
 
                 <div>
                   <p className="text-xs text-muted-foreground">Waktu</p>
-
                   <p className="mt-1 text-sm font-medium text-slate-900">
                     {selectedLogDetail.timestamp}
                   </p>
@@ -698,7 +943,6 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
 
                 <div>
                   <p className="text-xs text-muted-foreground">Kategori</p>
-
                   <div className="mt-1">
                     {getCategoryBadge(selectedLogDetail.category)}
                   </div>
@@ -706,38 +950,17 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
 
                 <div>
                   <p className="text-xs text-muted-foreground">Status</p>
-
                   <div className="mt-1">
                     {getStatusBadge(selectedLogDetail.status)}
                   </div>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground">Site</p>
-
-                  <p className="mt-1 text-sm font-medium text-slate-900">
-                    {selectedLogDetail.siteName}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground">
-                    Entitas Target
-                  </p>
-
-                  <p className="mt-1 text-sm font-medium text-slate-900">
-                    {selectedLogDetail.targetEntity}
-                  </p>
                 </div>
               </div>
 
               <Separator />
 
-              {/* ACTIVITY */}
               <div className="space-y-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Aksi</p>
-
                   <p className="mt-1 text-sm font-semibold text-slate-900">
                     {selectedLogDetail.action}
                   </p>
@@ -745,11 +968,9 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
 
                 <div>
                   <p className="text-xs text-muted-foreground">Aktor</p>
-
                   <p className="mt-1 text-sm font-medium text-slate-900">
                     {selectedLogDetail.actorName}
                   </p>
-
                   <p className="text-xs text-muted-foreground">
                     {selectedLogDetail.actorRole}
                   </p>
@@ -759,14 +980,12 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                   <p className="text-xs text-muted-foreground">
                     Keterangan Aktivitas
                   </p>
-
                   <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
                     {selectedLogDetail.details || "-"}
                   </p>
                 </div>
               </div>
 
-              {/* METADATA */}
               {(selectedLogDetail.ipAddress || selectedLogDetail.device) && (
                 <>
                   <Separator />
@@ -774,7 +993,6 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Activity className="size-4 text-muted-foreground" />
-
                       <h3 className="text-sm font-semibold text-slate-900">
                         Metadata
                       </h3>
@@ -785,7 +1003,6 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                         <p className="text-xs text-muted-foreground">
                           IP Address
                         </p>
-
                         <p className="mt-1 font-mono text-sm text-slate-900">
                           {selectedLogDetail.ipAddress}
                         </p>
@@ -795,7 +1012,6 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                     {selectedLogDetail.device && (
                       <div>
                         <p className="text-xs text-muted-foreground">Device</p>
-
                         <p className="mt-1 text-sm text-slate-900">
                           {selectedLogDetail.device}
                         </p>

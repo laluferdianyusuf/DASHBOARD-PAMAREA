@@ -81,3 +81,19 @@ export const deleteUser = async (id: string): Promise<{ message: string }> => {
   const response = await apiClient.delete<{ message: string }>(`/users/${id}`);
   return response.data;
 };
+
+export interface ChangeUserPasswordRequest {
+  newPassword: string;
+}
+
+export const changeUserPassword = async (
+  userId: string,
+  payload: ChangeUserPasswordRequest,
+) => {
+  const response = await apiClient.patch(
+    `/users/${userId}/change-password`,
+    payload,
+  );
+
+  return response.data;
+};

@@ -61,8 +61,8 @@ import { getErrorMessage } from "../helpers/getErrorMessage";
 import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
 import type { NfcTagResponse } from "../types/nfc/nfc";
 import { PatrolPointResponse } from "../types/patrol-point/patrolPoint";
+import { PaginationComponent } from "./PaginationComponent";
 import { TagNfcDialogs } from "./tagNfc/TagNfcDialogs";
-import TagNfcPagination from "./tagNfc/TagNfcPagination";
 
 interface CheckpointOption {
   id: string;
@@ -328,10 +328,45 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
   const [editLabel, setEditLabel] = useState("");
 
+  const [columnFilters, setColumnFilters] = useState({
+    uid: "",
+    checkpoint: "",
+    status: "",
+  });
+
+  const handleColumnFilterChange = (
+    key: keyof typeof columnFilters,
+    value: string,
+  ) => {
+    setColumnFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+
+    setCurrentPage(1);
+  };
+
   const filteredTags = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    const uidFilter = columnFilters.uid.trim().toLowerCase();
+    const checkpointFilter = columnFilters.checkpoint.trim().toLowerCase();
+    const statusFilter = columnFilters.status.trim().toLowerCase();
+
     return nfcTags.filter((tag) => {
       const assignment = getActiveAssignment(tag);
       const assigned = Boolean(assignment);
+
+      const checkpointName = assignment?.patrolPoint?.name ?? "";
+      const checkpointCode = assignment?.patrolPoint?.code ?? "";
+      const checkpointId =
+        assignment?.patrolPointId ?? assignment?.patrolPoint?.id ?? "";
+
+      const checkpointLabel = assigned
+        ? `${checkpointCode} ${checkpointName} ${checkpointId}`
+        : "Belum Ditautkan";
+
+      const statusLabel = getStatusLabel(tag.status);
 
       if (
         selectedSite !== "all" &&
@@ -354,26 +389,33 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
         return false;
       }
 
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
+      const globalMatch =
+        !query ||
+        [
+          tag.uid,
+          tag.label ?? "",
+          checkpointName,
+          checkpointCode,
+          statusLabel,
+        ].some((value) => value.toLowerCase().includes(query));
 
-        const checkpointName = assignment?.patrolPoint?.name ?? "";
+      const uidMatch =
+        !uidFilter ||
+        tag.uid.toLowerCase().includes(uidFilter) ||
+        (tag.label ?? "").toLowerCase().includes(uidFilter);
 
-        const checkpointCode = assignment?.patrolPoint?.code ?? "";
+      const checkpointMatch =
+        !checkpointFilter ||
+        checkpointLabel.toLowerCase().includes(checkpointFilter);
 
-        const match =
-          tag.uid.toLowerCase().includes(query) ||
-          (tag.label ?? "").toLowerCase().includes(query) ||
-          checkpointName.toLowerCase().includes(query) ||
-          checkpointCode.toLowerCase().includes(query);
+      const statusMatch =
+        !statusFilter ||
+        statusLabel.toLowerCase().includes(statusFilter) ||
+        tag.status.toLowerCase().includes(statusFilter);
 
-        if (!match) return false;
-      }
-
-      return true;
+      return globalMatch && uidMatch && checkpointMatch && statusMatch;
     });
-  }, [nfcTags, selectedSite, selectedStatus, searchQuery]);
-
+  }, [nfcTags, selectedSite, selectedStatus, searchQuery, columnFilters]);
   const totalItems = filteredTags.length;
 
   const itemsPerPage = Number(pageSize);
@@ -396,14 +438,16 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
     setCurrentPage(page);
   };
 
-  const handlePageSizeChange = (value: string) => {
+  const handlePageSizeChange = (value: string | null) => {
+    if (!value) return;
+
     setPageSize(value);
     setCurrentPage(1);
   };
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedStatus, selectedSite]);
+  }, [searchQuery, selectedStatus, selectedSite, columnFilters]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -742,8 +786,8 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-end">
+    <div className="space-y-3">
+      <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end">
         <div>
           <h1 className="text-xl font-medium tracking-tight text-slate-900">
             Manajemen Tag NFC & RFID Checkpoint
@@ -769,7 +813,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
         </Button>
       </div>
 
-      <div className="flex items-center gap-3 border border-slate-200 bg-white p-3 rounded lg:flex-row lg:items-center">
+      <div className="flex items-center gap-2 border border-slate-200 bg-white p-3 rounded lg:flex-row lg:items-center">
         <InputGroup className="rounded">
           <InputGroupAddon>
             <Search className="size-4 text-slate-400" />
@@ -807,6 +851,19 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
         </div>
       </div>
 
+      <div className="">
+        <PaginationComponent
+          totalItems={totalItems}
+          startItem={startItem}
+          endItem={endItem}
+          pageSize={pageSize}
+          currentPage={currentPage}
+          totalPages={totalPages ?? 1}
+          onPageSizeChange={handlePageSizeChange}
+          onPageChange={handlePageChange}
+        />
+      </div>
+
       <div className="overflow-hidden border border-slate-200 bg-white rounded">
         <div className="overflow-x-auto">
           <Table>
@@ -827,6 +884,49 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
                 <TableHead className="whitespace-nowrap text-center text-[11px] font-semibold uppercase">
                   Aksi
                 </TableHead>
+              </TableRow>
+
+              <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableHead>
+                  <InputGroup className="h-8 rounded">
+                    <InputGroupInput
+                      value={columnFilters.uid}
+                      onChange={(e) =>
+                        handleColumnFilterChange("uid", e.target.value)
+                      }
+                      placeholder="Cari UID..."
+                      className="text-[11px]"
+                    />
+                  </InputGroup>
+                </TableHead>
+
+                <TableHead>
+                  <InputGroup className="h-8 rounded">
+                    <InputGroupInput
+                      value={columnFilters.checkpoint}
+                      onChange={(e) =>
+                        handleColumnFilterChange("checkpoint", e.target.value)
+                      }
+                      placeholder="Cari checkpoint..."
+                      className="text-[11px]"
+                    />
+                  </InputGroup>
+                </TableHead>
+
+                <TableHead>
+                  <InputGroup className="h-8 rounded">
+                    <InputGroupInput
+                      value={columnFilters.status}
+                      onChange={(e) =>
+                        handleColumnFilterChange("status", e.target.value)
+                      }
+                      placeholder="Cari status..."
+                      className="text-[11px]"
+                    />
+                  </InputGroup>
+                </TableHead>
+
+                <TableHead />
               </TableRow>
             </TableHeader>
 
@@ -1037,17 +1137,6 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
           </Table>
         </div>
       </div>
-
-      <TagNfcPagination
-        totalItems={totalItems}
-        currentPage={currentPage}
-        pageSize={pageSize}
-        totalPages={totalPages}
-        startItem={startItem}
-        endItem={endItem}
-        onPageChange={handlePageChange}
-        onPageSizeChange={handlePageSizeChange}
-      />
 
       <TagNfcDialogs
         diagnosingTag={diagnosingTag}

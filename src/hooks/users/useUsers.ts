@@ -1,15 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-  getUsers,
-  getSecurityUsers,
-  getActiveUsers,
-  getUserById,
-  createUser,
-  updateUser,
+  ChangeUserPasswordRequest,
   activateUser,
+  changeUserPassword,
+  createUser,
   deactivateUser,
   deleteUser,
+  getActiveUsers,
+  getSecurityUsers,
+  getUserById,
+  getUsers,
+  updateUser,
 } from "../../services/users/user.service";
 
 import type {
@@ -157,6 +159,37 @@ export const useDeleteUser = () => {
         queryClient.removeQueries({
           queryKey: userKeys.detail(id),
           exact: true,
+        }),
+      ]);
+    },
+  });
+};
+
+export const useChangePassword = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      userId,
+      payload,
+    }: {
+      userId: string;
+      payload: ChangeUserPasswordRequest;
+    }) => changeUserPassword(userId, payload),
+
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: userKeys.lists(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: userKeys.security(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: userKeys.active(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: userKeys.detail(variables.userId),
         }),
       ]);
     },

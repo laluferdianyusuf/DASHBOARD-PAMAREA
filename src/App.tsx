@@ -18,13 +18,11 @@ import {
 import {
   applyDateRangeShiftToCalendar,
   applyLeaveToCalendar,
-  assignOfficerToDayShift,
   DateRangeShiftPayload,
   DayShift,
   SecurityLeaveRecord,
   ShiftOfficerAssignment,
   syncShiftToCalendarDays,
-  unassignOfficerFromDayShift,
 } from "./utils/security-logic";
 
 import { Toaster } from "@/components/ui/sonner";
@@ -160,26 +158,6 @@ export default function App() {
     );
   };
 
-  const handleAssignOfficerToShift = (
-    day: number,
-    shiftType: "Pagi" | "Siang" | "Malam",
-    officer: ShiftOfficerAssignment,
-  ) => {
-    setCalendarDays((prev) =>
-      assignOfficerToDayShift(prev, day, shiftType, officer),
-    );
-  };
-
-  const handleUnassignOfficerFromShift = (
-    day: number,
-    shiftType: "Pagi" | "Siang" | "Malam",
-    officerId: string,
-  ) => {
-    setCalendarDays((prev) =>
-      unassignOfficerFromDayShift(prev, day, shiftType, officerId),
-    );
-  };
-
   if (!hasAccessToken) {
     return <LoginForm />;
   }
@@ -203,6 +181,7 @@ export default function App() {
           <div className="flex min-h-screen w-full text-[#131b2e] font-sans selection:bg-[#2563eb] selection:text-white">
             {/* Sidebar */}
             <Sidebar
+              user={data?.data}
               currentTab={currentTab}
               onSelectTab={setCurrentTab}
               openFindingsCount={openFindingsCount}
@@ -220,6 +199,7 @@ export default function App() {
                     currentTab={currentTab}
                     selectedSite={siteId}
                     onSelectSite={setSelectedSite}
+                    onSelectTab={setCurrentTab}
                   />
                 </div>
               </div>
@@ -231,7 +211,10 @@ export default function App() {
 
                 {/* MONITORING */}
                 {currentTab === "monitoring" && (
-                  <MonitoringView selectedSite={siteId} />
+                  <MonitoringView
+                    selectedSite={siteId}
+                    onNavigate={setCurrentTab}
+                  />
                 )}
 
                 {/* JADWAL PATROLI */}

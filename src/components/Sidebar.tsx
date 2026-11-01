@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   History,
   LayoutDashboard,
+  Loader2,
   LucideLogOut,
   MapPin,
   Nfc,
@@ -35,6 +36,7 @@ import { Separator } from "@/components/ui/separator";
 import logo from "@/src/assets/logo.png";
 import { useNavigate } from "react-router-dom";
 import { useLogout } from "../hooks/auth";
+import { UserResponse } from "../types";
 
 export type NavTab =
   | "dashboard"
@@ -55,6 +57,7 @@ export type NavTab =
 
 interface SidebarProps {
   currentTab: NavTab;
+  user: UserResponse;
   onSelectTab: (tab: NavTab) => void;
   activeIncidentsCount?: number;
   openFindingsCount: number;
@@ -73,12 +76,7 @@ interface MenuGroup {
   items: MenuItem[];
 }
 
-export function Sidebar({
-  currentTab,
-  onSelectTab,
-  activeIncidentsCount = 0,
-  openFindingsCount,
-}: SidebarProps) {
+export function Sidebar({ currentTab, onSelectTab, user }: SidebarProps) {
   const { mutate: logout, isPending } = useLogout();
   const navigate = useNavigate();
 
@@ -168,7 +166,7 @@ export function Sidebar({
         },
         {
           id: "monitoring",
-          label: "Monitoring",
+          label: "Real-time Monitoring",
           icon: ChartNoAxesCombined,
         },
         {
@@ -321,32 +319,56 @@ export function Sidebar({
       <SidebarFooter className="p-3">
         <Separator className="mb-3 bg-[#263653] group-data-[collapsible=icon]:hidden" />
 
-        <div className=" border-t border-[#1C5277]">
+        <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#17466B] text-xs font-semibold text-white">
+            {user.fullName
+              ?.split(" ")
+              .slice(0, 2)
+              .map((name) => name.charAt(0))
+              .join("")
+              .toUpperCase() || "U"}
+          </div>
+
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <p className="truncate text-sm font-medium text-white">
+              {user.fullName || "Pengguna"}
+            </p>
+            <p className="truncate text-xs text-slate-400">
+              {user.role && user.role.name === "ADMIN"
+                ? "Administrator"
+                : (user.role?.name ?? "Login")}
+            </p>
+          </div>
+
           <button
             type="button"
             onClick={handleLogout}
             disabled={isPending}
-            className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50 group-data-[collapsible=icon]:hidden"
+            title="Logout"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50 group-data-[collapsible=icon]:hidden"
           >
-            <LucideLogOut size={20} color="red" />
-
-            <span>{isPending ? "Logging out..." : "Logout"}</span>
+            {isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LucideLogOut size={17} />
+            )}
           </button>
-        </div>
 
-        {/* Collapsed footer */}
-        <div className="hidden h-8 items-center justify-center group-data-[collapsible=icon]:flex">
           <button
             type="button"
             onClick={handleLogout}
             disabled={isPending}
-            className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center cursor-pointer"
+            title="Logout"
+            className="hidden size-9 items-center justify-center rounded-md text-slate-400 hover:bg-red-500/10 hover:text-red-400 group-data-[collapsible=icon]:flex"
           >
-            <LucideLogOut size={20} color="red" />
+            {isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LucideLogOut size={17} />
+            )}
           </button>
         </div>
       </SidebarFooter>
-
       <SidebarRail />
     </ShadcnSidebar>
   );

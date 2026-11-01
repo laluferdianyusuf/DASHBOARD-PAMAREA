@@ -942,8 +942,7 @@ export const QuestionBuilderView: React.FC = () => {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            size="sm"
-            className="h-9 rounded"
+            className="rounded"
             disabled={isFetching}
             onClick={() => refetch()}
           >
@@ -953,9 +952,8 @@ export const QuestionBuilderView: React.FC = () => {
             Refresh
           </Button>
           <Button
-            size={"sm"}
             onClick={handleOpenAdd}
-            className="h-9 rounded bg-amber-600 text-white hover:bg-amber-700"
+            className="rounded text-black bg-[#FED400] hover:bg-[#e9c300]"
           >
             <Plus className="mr-2 size-4" />
             Tambah Pertanyaan

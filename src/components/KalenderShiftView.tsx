@@ -537,7 +537,7 @@ export const KalenderShiftView: React.FC<KalenderShiftViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            className="rounded bg-amber-600 text-white hover:bg-amber-700"
+            className="rounded text-black bg-[#FED400] hover:bg-[#e9c300]"
             onClick={() => onNavigate("tambah-jadwal")}
           >
             <CalendarPlus className="size-4" />

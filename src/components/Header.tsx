@@ -1,11 +1,19 @@
-import { ChevronRight } from "lucide-react";
-import React from "react";
+import { FileSpreadsheet } from "lucide-react";
+import React, { useState } from "react";
 
 import { useMe } from "../hooks/auth";
 import { NavTab } from "./Sidebar";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import ExcelTransferDialog from "./ExcelTransferDialog";
 
 interface HeaderProps {
   currentTab: NavTab;
@@ -13,6 +21,7 @@ interface HeaderProps {
   onSelectSite: (siteId: string) => void;
   activeIncidentsCount?: number;
   onOpenSosModal?: () => void;
+  onSelectTab: (tab: NavTab) => void;
 }
 
 const TAB_TITLES: Record<NavTab, { category: string; title: string }> = {
@@ -78,9 +87,13 @@ const TAB_TITLES: Record<NavTab, { category: string; title: string }> = {
   },
 };
 
-export const Header: React.FC<HeaderProps> = ({ currentTab }) => {
+export const Header: React.FC<HeaderProps> = ({
+  currentTab,
+  selectedSite,
+  onSelectTab,
+}) => {
   const { data: meResponse, isLoading } = useMe();
-
+  const [isExcelDialogOpen, setIsExcelDialogOpen] = useState(false);
   const user = meResponse?.data;
 
   const tabInfo = TAB_TITLES[currentTab] ?? {
@@ -105,59 +118,54 @@ export const Header: React.FC<HeaderProps> = ({ currentTab }) => {
 
   return (
     <header className="flex h-full min-w-0 items-center justify-between gap-4">
-      {/* Breadcrumb */}
-      <div className="flex min-w-0 items-center gap-2 overflow-hidden text-sm">
-        <span className="hidden shrink-0 font-bold tracking-tight text-slate-900 sm:block">
-          PAMAREA
-        </span>
+      <Breadcrumb className="min-w-0 overflow-hidden">
+        <BreadcrumbList className="flex-nowrap text-sm">
+          <BreadcrumbItem className="hidden shrink-0 sm:flex">
+            <BreadcrumbLink
+              onClick={() => onSelectTab("dashboard")}
+              className="font-bold tracking-tight cursor-pointer text-slate-900"
+            >
+              PAMAREA
+            </BreadcrumbLink>
+          </BreadcrumbItem>
 
-        <ChevronRight className="hidden size-3.5 shrink-0 text-slate-400 sm:block" />
+          <BreadcrumbSeparator className="hidden sm:flex" />
 
-        <span className="hidden shrink-0 text-slate-500 md:block">
-          {tabInfo.category}
-        </span>
+          <BreadcrumbItem className="hidden shrink-0 md:flex">
+            <BreadcrumbLink href="#" className="text-slate-500">
+              {tabInfo.category}
+            </BreadcrumbLink>
+          </BreadcrumbItem>
 
-        <ChevronRight className="hidden size-3.5 shrink-0 text-slate-400 md:block" />
+          <BreadcrumbSeparator className="hidden md:flex" />
 
-        <h1 className="truncate font-semibold text-slate-800">
-          {tabInfo.title}
-        </h1>
+          <BreadcrumbItem className="min-w-0">
+            <BreadcrumbPage className="truncate font-semibold text-slate-800">
+              {tabInfo.title}
+            </BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+
+      <div className="flex flex-row items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className="shrink-0 text-black bg-[#FED400] hover:bg-[#e9c300]"
+          title="Import & Export Excel"
+          onClick={() => setIsExcelDialogOpen(true)}
+        >
+          <FileSpreadsheet className="size-4" />
+          Download Template
+        </Button>
       </div>
 
-      {/* User Profile */}
-      <div className="flex shrink-0 items-center gap-3">
-        {isLoading ? (
-          <>
-            <Skeleton className="size-9 rounded-full" />
-
-            <div className="hidden space-y-1.5 sm:block">
-              <Skeleton className="h-3.5 w-24" />
-              <Skeleton className="h-3 w-16" />
-            </div>
-          </>
-        ) : (
-          <>
-            <Avatar className="size-9 border border-slate-200">
-              <AvatarImage
-                src={user?.photoUrl || undefined}
-                alt={user?.fullName || "Pengguna"}
-              />
-
-              <AvatarFallback className="bg-slate-900 text-xs font-semibold text-white">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-
-            <div className="hidden min-w-0 sm:block">
-              <p className="max-w-40 truncate text-sm font-semibold text-slate-800">
-                {user?.fullName || "Pengguna"}
-              </p>
-
-              <p className="text-xs text-slate-500">{userRole || "Pengguna"}</p>
-            </div>
-          </>
-        )}
-      </div>
+      <ExcelTransferDialog
+        open={isExcelDialogOpen}
+        onOpenChange={setIsExcelDialogOpen}
+        siteId={selectedSite}
+      />
     </header>
   );
 };

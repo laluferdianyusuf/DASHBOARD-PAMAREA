@@ -22,8 +22,7 @@ export const TitikPatroliHeader = ({ isFetching, onRefresh, onAdd }: Props) => {
       <div className="flex gap-2">
         <Button
           variant="outline"
-          size="sm"
-          className="h-9 rounded"
+          className="rounded"
           disabled={isFetching}
           onClick={onRefresh}
         >
@@ -34,8 +33,7 @@ export const TitikPatroliHeader = ({ isFetching, onRefresh, onAdd }: Props) => {
         </Button>
 
         <Button
-          size="sm"
-          className="h-9 rounded bg-amber-600 text-white hover:bg-amber-700"
+          className="rounded text-black bg-[#FED400] hover:bg-[#e9c300]"
           onClick={onAdd}
         >
           <Plus className="mr-1.5 size-4" />
