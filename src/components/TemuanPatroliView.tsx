@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 
-import { useFindings } from "../hooks/finding/useFIndings";
+import { useFindings, useResolveFinding } from "../hooks/finding/useFIndings";
 import type { Finding, FindingQuery } from "../types";
 
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/input-group";
 
 import {
+  CheckCircle2,
   ChevronDown,
   Download,
   Eye,
@@ -49,6 +50,7 @@ import {
   X,
 } from "lucide-react";
 
+import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "../helpers/dateTime";
 import { exportFindingExcel } from "../utils/exportFindingExcel";
 import { getPhotoUrl } from "../utils/getPhoto";
@@ -236,6 +238,38 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
     [currentPage, pageSize, selectedStatus, selectedSeverity],
   );
 
+  const [resolvingFinding, setResolvingFinding] = useState<Finding | null>(
+    null,
+  );
+
+  const [resolutionNote, setResolutionNote] = useState("");
+
+  const resolveFindingMutation = useResolveFinding();
+
+  const handleOpenResolveDialog = (finding: Finding) => {
+    setResolvingFinding(finding);
+    setResolutionNote("");
+  };
+
+  const handleResolveFinding = () => {
+    if (!resolvingFinding || !resolutionNote.trim()) return;
+
+    resolveFindingMutation.mutate(
+      {
+        id: resolvingFinding.id,
+        data: {
+          resolutionNote: resolutionNote.trim(),
+        },
+      },
+      {
+        onSuccess: () => {
+          setResolvingFinding(null);
+          setResolutionNote("");
+        },
+      },
+    );
+  };
+
   const analyticsQuery = useMemo<FindingQuery>(
     () => ({
       page: 1,
@@ -284,9 +318,6 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
   };
 
   const chartFindings = useMemo(() => {
-    const year = Number(selectedYear);
-    const month = Number(selectedMonth);
-
     return analyticsFindings.filter((finding) => {
       if (
         selectedSite !== "all" &&
@@ -295,17 +326,9 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
         return false;
       }
 
-      const createdAt = new Date(finding.createdAt);
-
-      if (Number.isNaN(createdAt.getTime())) {
-        return false;
-      }
-
-      return (
-        createdAt.getFullYear() === year && createdAt.getMonth() + 1 === month
-      );
+      return true;
     });
-  }, [analyticsFindings, selectedSite, selectedMonth, selectedYear]);
+  }, [analyticsFindings, selectedSite]);
 
   const timelineData = useMemo<TimelinePoint[]>(() => {
     const year = Number(selectedYear);
@@ -804,6 +827,10 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
                     <TableHead className="text-center text-xs font-semibold">
                       Foto
                     </TableHead>
+
+                    <TableHead className="text-center text-xs font-semibold">
+                      Aksi
+                    </TableHead>
                   </TableRow>
 
                   <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
@@ -970,6 +997,25 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
                               title="Lihat foto bukti"
                             >
                               <Eye className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              -
+                            </span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-center">
+                          {finding.status === "OPEN" ||
+                          finding.status === "IN_PROGRESS" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 whitespace-nowrap border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                              onClick={() => handleOpenResolveDialog(finding)}
+                            >
+                              <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                              Selesaikan
                             </Button>
                           ) : (
                             <span className="text-xs text-muted-foreground">
@@ -1304,6 +1350,105 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
               onClick={() => setViewingPhotoFinding(null)}
             >
               Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!resolvingFinding}
+        onOpenChange={(open) => {
+          if (!open && !resolveFindingMutation.isPending) {
+            setResolvingFinding(null);
+            setResolutionNote("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Selesaikan Temuan</DialogTitle>
+
+            <DialogDescription>
+              Masukkan catatan penyelesaian sebagai dokumentasi tindak lanjut
+              temuan.
+            </DialogDescription>
+          </DialogHeader>
+
+          {resolvingFinding && (
+            <div className="space-y-4">
+              <div className="space-y-1 rounded-md border bg-slate-50 p-3">
+                <p className="text-sm font-medium text-slate-900">
+                  {resolvingFinding.title}
+                </p>
+
+                <p className="text-xs text-muted-foreground">
+                  {resolvingFinding.patrolPoint?.site?.name} ·{" "}
+                  {resolvingFinding.patrolPoint?.name}
+                </p>
+
+                <div className="pt-1">
+                  {getStatusBadge(resolvingFinding.status)}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Catatan Penyelesaian
+                  <span className="ml-1 text-rose-500">*</span>
+                </label>
+
+                <Textarea
+                  placeholder="Jelaskan tindakan yang sudah dilakukan untuk menyelesaikan temuan..."
+                  value={resolutionNote}
+                  onChange={(event) => setResolutionNote(event.target.value)}
+                  rows={4}
+                  maxLength={2000}
+                  disabled={resolveFindingMutation.isPending}
+                />
+
+                <p className="text-right text-xs text-muted-foreground">
+                  {resolutionNote.length}/2000 karakter
+                </p>
+              </div>
+
+              {resolveFindingMutation.isError && (
+                <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600">
+                  Gagal menyelesaikan temuan. Silakan coba kembali.
+                </p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setResolvingFinding(null);
+                setResolutionNote("");
+              }}
+              disabled={resolveFindingMutation.isPending}
+            >
+              Batal
+            </Button>
+
+            <Button
+              onClick={handleResolveFinding}
+              disabled={
+                !resolutionNote.trim() || resolveFindingMutation.isPending
+              }
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {resolveFindingMutation.isPending ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Selesaikan Temuan
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
