@@ -366,12 +366,13 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       const statusLabel = getStatusLabel(tag.status);
 
-      if (selectedSite && selectedSite !== "all") {
-        if (!assignment) return false;
-
-        if (assignment.patrolPoint?.siteId !== selectedSite) {
-          return false;
-        }
+      if (
+        selectedSite !== "all" &&
+        selectedSite &&
+        assignment?.patrolPoint?.siteId &&
+        assignment.patrolPoint.siteId !== selectedSite
+      ) {
+        return false;
       }
 
       if (selectedStatus === "unassigned" && assigned) {
