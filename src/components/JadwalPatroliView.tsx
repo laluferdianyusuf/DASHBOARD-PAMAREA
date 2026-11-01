@@ -51,7 +51,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useGetScheduleAssigments } from "../hooks/schedule/usePatrolScheduleAssignment";
+import { useGetScheduleAssignments } from "../hooks/schedule/usePatrolScheduleAssignment";
 import {
   useCreatePatrolSchedule,
   usePatrolSchedules,
@@ -99,7 +99,7 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
   const siteId = user?.siteId;
 
   const { data: shifts } = usePatrolSchedules();
-  const { data: assignment } = useGetScheduleAssigments();
+  const { data: assignment } = useGetScheduleAssignments();
   const { data: patrolPoints, isLoading: isLoadingPoints } = usePatrolPoints();
 
   const { mutateAsync: createPS } = useCreatePatrolSchedule();

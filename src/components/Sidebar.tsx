@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   History,
   LayoutDashboard,
+  Loader2,
   LucideLogOut,
   MapPin,
   Nfc,
@@ -33,8 +34,9 @@ import {
 
 import { Separator } from "@/components/ui/separator";
 import logo from "@/src/assets/logo.png";
-import { useLogout } from "../hooks/auth";
 import { useNavigate } from "react-router-dom";
+import { useLogout } from "../hooks/auth";
+import { UserResponse } from "../types";
 
 export type NavTab =
   | "dashboard"
@@ -55,6 +57,7 @@ export type NavTab =
 
 interface SidebarProps {
   currentTab: NavTab;
+  user: UserResponse;
   onSelectTab: (tab: NavTab) => void;
   activeIncidentsCount?: number;
   openFindingsCount: number;
@@ -73,12 +76,7 @@ interface MenuGroup {
   items: MenuItem[];
 }
 
-export function Sidebar({
-  currentTab,
-  onSelectTab,
-  activeIncidentsCount = 0,
-  openFindingsCount,
-}: SidebarProps) {
+export function Sidebar({ currentTab, onSelectTab, user }: SidebarProps) {
   const { mutate: logout, isPending } = useLogout();
   const navigate = useNavigate();
 
@@ -140,24 +138,16 @@ export function Sidebar({
           id: "tukar-shift",
           label: "Tukar Shift",
           icon: ArrowLeftRight,
-          badge: "Swap",
         },
         {
           id: "cuti-izin",
           label: "Cuti & Izin",
           icon: UserRoundX,
-          badge: "Izin",
         },
         {
           id: "manajemen-ronde",
           label: "Manajemen Ronde",
           icon: Route,
-        },
-        {
-          id: "temuan",
-          label: "Temuan",
-          icon: TriangleAlert,
-          count: openFindingsCount,
         },
       ],
     },
@@ -165,15 +155,19 @@ export function Sidebar({
       label: "Manajemen Sistem",
       items: [
         {
+          id: "temuan",
+          label: "Temuan Patroli",
+          icon: TriangleAlert,
+        },
+        {
           id: "riwayat",
           label: "Riwayat Patroli",
           icon: History,
         },
         {
           id: "monitoring",
-          label: "Monitoring",
+          label: "Real-time Monitoring",
           icon: ChartNoAxesCombined,
-          count: activeIncidentsCount,
         },
         {
           id: "analytic-audit",
@@ -306,7 +300,7 @@ export function Sidebar({
                     {item.badge && (
                       <SidebarMenuBadge
                         className="
-                          border-0 bg-slate-700 text-slate-300
+                          border-0 text-orange-600
                           group-data-[collapsible=icon]:hidden
                         "
                       >
@@ -325,32 +319,60 @@ export function Sidebar({
       <SidebarFooter className="p-3">
         <Separator className="mb-3 bg-[#263653] group-data-[collapsible=icon]:hidden" />
 
-        <div className=" border-t border-[#1C5277]">
+        <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
+          {/* Avatar */}
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#17466B] text-xs font-semibold text-white group-data-[collapsible=icon]:hidden">
+            {user.fullName
+              ?.split(" ")
+              .slice(0, 2)
+              .map((name) => name.charAt(0))
+              .join("")
+              .toUpperCase() || "U"}
+          </div>
+
+          {/* User Info */}
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <p className="truncate text-sm font-medium text-white">
+              {user.fullName || "Pengguna"}
+            </p>
+            <p className="truncate text-xs text-slate-400">
+              {user.role && user.role.name === "ADMIN"
+                ? "Administrator"
+                : (user.role?.name ?? "Login")}
+            </p>
+          </div>
+
+          {/* Logout saat expanded */}
           <button
             type="button"
             onClick={handleLogout}
             disabled={isPending}
-            className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50 group-data-[collapsible=icon]:hidden"
+            title="Logout"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50 group-data-[collapsible=icon]:hidden"
           >
-            <LucideLogOut size={20} color="red" />
-
-            <span>{isPending ? "Logging out..." : "Logout"}</span>
+            {isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LucideLogOut size={17} />
+            )}
           </button>
-        </div>
 
-        {/* Collapsed footer */}
-        <div className="hidden h-8 items-center justify-center group-data-[collapsible=icon]:flex">
+          {/* Logout saat collapsed */}
           <button
             type="button"
             onClick={handleLogout}
             disabled={isPending}
-            className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center cursor-pointer"
+            title="Logout"
+            className="hidden size-9 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50 group-data-[collapsible=icon]:flex"
           >
-            <LucideLogOut size={20} color="red" />
+            {isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LucideLogOut size={17} />
+            )}
           </button>
         </div>
       </SidebarFooter>
-
       <SidebarRail />
     </ShadcnSidebar>
   );

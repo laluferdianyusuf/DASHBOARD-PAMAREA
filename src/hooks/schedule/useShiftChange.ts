@@ -1,6 +1,12 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ShiftChange } from "../../types/schedule/shift-change";
-import { changeShift } from "../../services/schedule/shift-change.service";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  changeShift,
+  getShiftChanges,
+} from "../../services/schedule/shift-change.service";
+import type {
+  ShiftChange,
+  ShiftChangeParams,
+} from "../../types/schedule/shift-change";
 
 export const useChangeShift = () => {
   const queryClient = useQueryClient();
@@ -10,6 +16,9 @@ export const useChangeShift = () => {
 
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["monthly-roster"],
+        }),
         queryClient.invalidateQueries({
           queryKey: ["shift-changes"],
         }),
@@ -24,5 +33,12 @@ export const useChangeShift = () => {
         }),
       ]);
     },
+  });
+};
+
+export const useShiftChanges = (params?: ShiftChangeParams) => {
+  return useQuery({
+    queryKey: ["shift-changes", params],
+    queryFn: () => getShiftChanges(params),
   });
 };

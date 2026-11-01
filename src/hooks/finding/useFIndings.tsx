@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import type { FindingQuery } from "../../types";
 import {
   getFindingFeed,
   getFindingFeedById,
 } from "../../services/finding/finding.service";
+import type { FindingQuery } from "../../types";
 
 export const useFindings = (query?: FindingQuery) => {
   return useQuery({
@@ -11,6 +11,7 @@ export const useFindings = (query?: FindingQuery) => {
     queryFn: () => getFindingFeed(query),
   });
 };
+
 export const useFindingsById = (id: string) => {
   return useQuery({
     queryKey: ["finding", id],

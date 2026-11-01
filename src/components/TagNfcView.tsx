@@ -12,7 +12,6 @@ import {
   Search,
   Trash2,
   Unlink,
-  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -57,11 +56,13 @@ import {
   useUnassignNfc,
 } from "../hooks/patrol-point-nfc/usePatroPointNfc";
 
+import { toast } from "sonner";
+import { getErrorMessage } from "../helpers/getErrorMessage";
 import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
 import type { NfcTagResponse } from "../types/nfc/nfc";
 import { PatrolPointResponse } from "../types/patrol-point/patrolPoint";
+import { PaginationComponent } from "./PaginationComponent";
 import { TagNfcDialogs } from "./tagNfc/TagNfcDialogs";
-import TagNfcPagination from "./tagNfc/TagNfcPagination";
 
 interface CheckpointOption {
   id: string;
@@ -124,7 +125,7 @@ const SelectField: React.FC<{
   const selectedOption = options.find((option) => option.value === value);
 
   return (
-    <div className="w-full space-y-1.5">
+    <div className="w-full">
       {label && (
         <Label className="text-xs font-semibold text-slate-700">{label}</Label>
       )}
@@ -319,8 +320,6 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
   const [replacementNfcId, setReplacementNfcId] = useState("");
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
   const [formError, setFormError] = useState("");
 
   const [newTagUid, setNewTagUid] = useState("");
@@ -329,18 +328,45 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
   const [editLabel, setEditLabel] = useState("");
 
-  const showToast = (message: string) => {
-    setToastMessage(message);
+  const [columnFilters, setColumnFilters] = useState({
+    uid: "",
+    checkpoint: "",
+    status: "",
+  });
 
-    window.setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
+  const handleColumnFilterChange = (
+    key: keyof typeof columnFilters,
+    value: string,
+  ) => {
+    setColumnFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+
+    setCurrentPage(1);
   };
 
   const filteredTags = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    const uidFilter = columnFilters.uid.trim().toLowerCase();
+    const checkpointFilter = columnFilters.checkpoint.trim().toLowerCase();
+    const statusFilter = columnFilters.status.trim().toLowerCase();
+
     return nfcTags.filter((tag) => {
       const assignment = getActiveAssignment(tag);
       const assigned = Boolean(assignment);
+
+      const checkpointName = assignment?.patrolPoint?.name ?? "";
+      const checkpointCode = assignment?.patrolPoint?.code ?? "";
+      const checkpointId =
+        assignment?.patrolPointId ?? assignment?.patrolPoint?.id ?? "";
+
+      const checkpointLabel = assigned
+        ? `${checkpointCode} ${checkpointName} ${checkpointId}`
+        : "Belum Ditautkan";
+
+      const statusLabel = getStatusLabel(tag.status);
 
       if (
         selectedSite !== "all" &&
@@ -363,26 +389,33 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
         return false;
       }
 
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
+      const globalMatch =
+        !query ||
+        [
+          tag.uid,
+          tag.label ?? "",
+          checkpointName,
+          checkpointCode,
+          statusLabel,
+        ].some((value) => value.toLowerCase().includes(query));
 
-        const checkpointName = assignment?.patrolPoint?.name ?? "";
+      const uidMatch =
+        !uidFilter ||
+        tag.uid.toLowerCase().includes(uidFilter) ||
+        (tag.label ?? "").toLowerCase().includes(uidFilter);
 
-        const checkpointCode = assignment?.patrolPoint?.code ?? "";
+      const checkpointMatch =
+        !checkpointFilter ||
+        checkpointLabel.toLowerCase().includes(checkpointFilter);
 
-        const match =
-          tag.uid.toLowerCase().includes(query) ||
-          (tag.label ?? "").toLowerCase().includes(query) ||
-          checkpointName.toLowerCase().includes(query) ||
-          checkpointCode.toLowerCase().includes(query);
+      const statusMatch =
+        !statusFilter ||
+        statusLabel.toLowerCase().includes(statusFilter) ||
+        tag.status.toLowerCase().includes(statusFilter);
 
-        if (!match) return false;
-      }
-
-      return true;
+      return globalMatch && uidMatch && checkpointMatch && statusMatch;
     });
-  }, [nfcTags, selectedSite, selectedStatus, searchQuery]);
-
+  }, [nfcTags, selectedSite, selectedStatus, searchQuery, columnFilters]);
   const totalItems = filteredTags.length;
 
   const itemsPerPage = Number(pageSize);
@@ -405,14 +438,16 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
     setCurrentPage(page);
   };
 
-  const handlePageSizeChange = (value: string) => {
+  const handlePageSizeChange = (value: string | null) => {
+    if (!value) return;
+
     setPageSize(value);
     setCurrentPage(1);
   };
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedStatus, selectedSite]);
+  }, [searchQuery, selectedStatus, selectedSite, columnFilters]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -506,13 +541,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${normalizedUid} berhasil didaftarkan.`);
+      toast.success(`Tag NFC ${normalizedUid} berhasil didaftarkan.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal mendaftarkan tag NFC.",
-      );
+      toast.error("Gagal mendaftarkan tag NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -543,13 +576,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Label Tag NFC ${uid} berhasil diperbarui.`);
+      toast.success(`Label Tag NFC ${uid} berhasil diperbarui.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal memperbarui tag NFC.",
-      );
+      toast.error("Gagal memperbarui tag NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -565,13 +596,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag ${tag.uid} berhasil dinonaktifkan.`);
+      toast.success(`Tag ${tag.uid} berhasil dinonaktifkan.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal menonaktifkan tag NFC.",
-      );
+      toast.error("Gagal menonaktifkan tag NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -581,13 +610,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${tag.uid} berhasil diaktifkan.`);
+      toast.success(`Tag NFC ${tag.uid} berhasil diaktifkan.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal mengaktifkan NFC.",
-      );
+      toast.error("Gagal mengaktifkan NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -612,13 +639,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${tag.uid} berhasil dilepas dari checkpoint.`);
+      toast.success(`Tag NFC ${tag.uid} berhasil dilepas dari checkpoint.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal melepas tautan NFC.",
-      );
+      toast.error("Gagal melepas tautan NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -648,11 +673,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${uid} berhasil ditautkan.`);
+      toast.success(`Tag NFC ${uid} berhasil ditautkan.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ?? err?.message ?? "Gagal menautkan NFC.",
-      );
+      toast.error("Gagal menautkan NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -668,13 +693,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${tag.uid} berhasil ditandai sebagai rusak.`);
+      toast.success(`Tag NFC ${tag.uid} berhasil ditandai sebagai rusak.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal menandai NFC sebagai rusak.",
-      );
+      toast.error("Gagal menandai NFC sebagai rusak.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -690,13 +713,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${tag.uid} berhasil ditandai sebagai hilang.`);
+      toast.success(`Tag NFC ${tag.uid} berhasil ditandai sebagai hilang.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal menandai NFC sebagai hilang.",
-      );
+      toast.error("Gagal menandai NFC sebagai hilang.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -724,13 +745,11 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
       await refetch();
 
-      showToast(`Tag NFC ${oldUid} berhasil diganti.`);
+      toast.success(`Tag NFC ${oldUid} berhasil diganti.`);
     } catch (err: any) {
-      setFormError(
-        err?.response?.data?.message ??
-          err?.message ??
-          "Gagal mengganti tag NFC.",
-      );
+      toast.error("Gagal mengganti tag NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
@@ -767,29 +786,8 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
   }
 
   return (
-    <div className="space-y-5">
-      {/* TOAST */}
-
-      {toastMessage && (
-        <div className="flex items-center justify-between gap-3 border border-emerald-200 bg-emerald-50 p-3 rounded animate-in fade-in">
-          <div className="flex items-center gap-2 text-xs font-medium text-emerald-800">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-            <span>{toastMessage}</span>
-          </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-7 rounded text-emerald-700"
-            onClick={() => setToastMessage(null)}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      )}
-
-      <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-end">
+    <div className="space-y-3">
+      <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end">
         <div>
           <h1 className="text-xl font-medium tracking-tight text-slate-900">
             Manajemen Tag NFC & RFID Checkpoint
@@ -815,7 +813,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
         </Button>
       </div>
 
-      <div className="flex gap-3 border border-slate-200 bg-white p-3 rounded lg:flex-row lg:items-center">
+      <div className="flex items-center gap-2 border border-slate-200 bg-white p-3 rounded lg:flex-row lg:items-center">
         <InputGroup className="rounded">
           <InputGroupAddon>
             <Search className="size-4 text-slate-400" />
@@ -853,6 +851,19 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
         </div>
       </div>
 
+      <div className="">
+        <PaginationComponent
+          totalItems={totalItems}
+          startItem={startItem}
+          endItem={endItem}
+          pageSize={pageSize}
+          currentPage={currentPage}
+          totalPages={totalPages ?? 1}
+          onPageSizeChange={handlePageSizeChange}
+          onPageChange={handlePageChange}
+        />
+      </div>
+
       <div className="overflow-hidden border border-slate-200 bg-white rounded">
         <div className="overflow-x-auto">
           <Table>
@@ -873,6 +884,49 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
                 <TableHead className="whitespace-nowrap text-center text-[11px] font-semibold uppercase">
                   Aksi
                 </TableHead>
+              </TableRow>
+
+              <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableHead>
+                  <InputGroup className="h-8 rounded">
+                    <InputGroupInput
+                      value={columnFilters.uid}
+                      onChange={(e) =>
+                        handleColumnFilterChange("uid", e.target.value)
+                      }
+                      placeholder="Cari UID..."
+                      className="text-[11px]"
+                    />
+                  </InputGroup>
+                </TableHead>
+
+                <TableHead>
+                  <InputGroup className="h-8 rounded">
+                    <InputGroupInput
+                      value={columnFilters.checkpoint}
+                      onChange={(e) =>
+                        handleColumnFilterChange("checkpoint", e.target.value)
+                      }
+                      placeholder="Cari checkpoint..."
+                      className="text-[11px]"
+                    />
+                  </InputGroup>
+                </TableHead>
+
+                <TableHead>
+                  <InputGroup className="h-8 rounded">
+                    <InputGroupInput
+                      value={columnFilters.status}
+                      onChange={(e) =>
+                        handleColumnFilterChange("status", e.target.value)
+                      }
+                      placeholder="Cari status..."
+                      className="text-[11px]"
+                    />
+                  </InputGroup>
+                </TableHead>
+
+                <TableHead />
               </TableRow>
             </TableHeader>
 
@@ -1083,17 +1137,6 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
           </Table>
         </div>
       </div>
-
-      <TagNfcPagination
-        totalItems={totalItems}
-        currentPage={currentPage}
-        pageSize={pageSize}
-        totalPages={totalPages}
-        startItem={startItem}
-        endItem={endItem}
-        onPageChange={handlePageChange}
-        onPageSizeChange={handlePageSizeChange}
-      />
 
       <TagNfcDialogs
         diagnosingTag={diagnosingTag}

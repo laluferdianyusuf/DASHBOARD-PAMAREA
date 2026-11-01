@@ -1,16 +1,11 @@
 import React, { useMemo, useState } from "react";
 
-import { FINDINGS, FindingItem, SITES } from "../data/mockData";
-
-import {
-  filterItemsByColumnCriteria,
-  generateFindingsTimelineTrend,
-} from "../utils/security-logic";
+import { useFindings } from "../hooks/finding/useFIndings";
+import type { Finding, FindingQuery } from "../types";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 
 import {
   Select,
@@ -39,181 +34,417 @@ import {
 } from "@/components/ui/dialog";
 
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 
 import {
-  AlertTriangle,
-  Check,
   ChevronDown,
   Download,
   Eye,
   Image as ImageIcon,
-  Plus,
+  RefreshCw,
   Search,
-  Trash2,
-  TrendingUp,
   X,
 } from "lucide-react";
+
+import { formatDate } from "../helpers/dateTime";
+import { exportFindingExcel } from "../utils/exportFindingExcel";
+import { getPhotoUrl } from "../utils/getPhoto";
+import { PaginationComponent } from "./PaginationComponent";
 
 interface TemuanPatroliViewProps {
   selectedSite: string;
 }
 
-type ChartMetric = "volume";
+type FindingStatusFilter = "all" | "OPEN" | "IN_PROGRESS" | "RESOLVED";
+
+type FindingSeverityFilter = "all" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 type ColumnSearch = {
-  id: string;
-  hasPhoto: string;
   title: string;
-  severity: string;
-  location: string;
   reportedBy: string;
   assignedTo: string;
   status: string;
+  hasPhoto: string;
 };
 
+interface TimelinePoint {
+  date: Date;
+  key: string;
+  label: string;
+  reportedCount: number;
+  resolvedCount: number;
+  openCount: number;
+  inProgressCount: number;
+}
+
+const now = new Date();
+
+const MONTH_OPTIONS = [
+  { value: "1", label: "Januari" },
+  { value: "2", label: "Februari" },
+  { value: "3", label: "Maret" },
+  { value: "4", label: "April" },
+  { value: "5", label: "Mei" },
+  { value: "6", label: "Juni" },
+  { value: "7", label: "Juli" },
+  { value: "8", label: "Agustus" },
+  { value: "9", label: "September" },
+  { value: "10", label: "Oktober" },
+  { value: "11", label: "November" },
+  { value: "12", label: "Desember" },
+];
+
+const YEAR_OPTIONS = Array.from({ length: 5 }, (_, index) =>
+  String(now.getFullYear() - index),
+);
+
 const INITIAL_COLUMN_SEARCH: ColumnSearch = {
-  id: "",
-  hasPhoto: "",
   title: "",
-  severity: "",
-  location: "",
   reportedBy: "",
   assignedTo: "",
   status: "",
+  hasPhoto: "",
 };
 
-const INITIAL_NEW_FINDING = {
-  title: "",
-  description: "",
-  siteId: "site-a",
-  location: "",
-  assignedTo: "Tim K3 & Fasilitas",
-  photoUrl: "",
-};
+const STATUS_OPTIONS: {
+  value: Exclude<FindingStatusFilter, "all">;
+  label: string;
+}[] = [
+  { value: "OPEN", label: "Open" },
+  { value: "IN_PROGRESS", label: "Progress" },
+  { value: "RESOLVED", label: "Close" },
+];
 
-const STATUS_OPTIONS = [
-  "Baru",
-  "Dalam Penanganan",
-  "Selesai Terverifikasi",
+const DONUT_STATUS_OPTIONS = [
+  {
+    value: "OPEN",
+    label: "Open",
+    color: "#e11d48",
+  },
+  {
+    value: "IN_PROGRESS",
+    label: "Progress",
+    color: "#f59e0b",
+  },
+  {
+    value: "RESOLVED",
+    label: "Selesai",
+    color: "#059669",
+  },
 ] as const;
 
-const formatCurrentDate = () =>
-  new Date().toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-
-const formatCurrentTime = () =>
-  new Date().toLocaleTimeString("id-ID", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-const getNextFindingId = (findings: FindingItem[]) => {
-  const year = new Date().getFullYear();
-
-  const sequences = findings.map((finding) => {
-    const match = finding.id.match(/^FND-\d{4}-(\d+)$/);
-    return match ? Number(match[1]) : 0;
-  });
-
-  const nextNumber = Math.max(79, ...sequences) + 1;
-
-  return `FND-${year}-${String(nextNumber).padStart(3, "0")}`;
+const getStatusLabel = (status: Finding["status"]) => {
+  switch (status) {
+    case "OPEN":
+      return "Open";
+    case "IN_PROGRESS":
+      return "Progress";
+    case "RESOLVED":
+      return "Close";
+    default:
+      return status;
+  }
 };
 
-const getStatusBadge = (status: FindingItem["status"]) => {
+const getStatusBadge = (status: Finding["status"]) => {
   const styles: Record<string, string> = {
-    Baru: "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-50",
-    "Dalam Penanganan":
+    OPEN: "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-50",
+    IN_PROGRESS:
       "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50",
-    "Selesai Terverifikasi":
+    RESOLVED:
       "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50",
   };
 
   return (
     <Badge
       variant="outline"
-      className={`whitespace-nowrap font-medium ${styles[status] || ""}`}
+      className={`whitespace-nowrap font-medium ${styles[status] ?? ""}`}
     >
-      {status}
+      {getStatusLabel(status)}
     </Badge>
   );
 };
 
+const getSeverityLabel = (severity: Finding["severity"]) => {
+  switch (severity) {
+    case "LOW":
+      return "Rendah";
+    case "MEDIUM":
+      return "Sedang";
+    case "HIGH":
+      return "Tinggi";
+    case "CRITICAL":
+      return "Kritis";
+    default:
+      return severity;
+  }
+};
+
+const normalize = (value: unknown) =>
+  String(value ?? "")
+    .toLowerCase()
+    .trim();
+
+const getLocalDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+
 export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
   selectedSite,
 }) => {
-  const [findings, setFindings] = useState<FindingItem[]>(FINDINGS);
-
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSeverity, setSelectedSeverity] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState("10");
+
+  const [selectedSeverity, setSelectedSeverity] =
+    useState<FindingSeverityFilter>("all");
+
+  const [selectedStatus, setSelectedStatus] =
+    useState<FindingStatusFilter>("all");
 
   const [columnSearch, setColumnSearch] = useState<ColumnSearch>(
     INITIAL_COLUMN_SEARCH,
   );
 
   const [showCharts, setShowCharts] = useState(true);
-  const [chartMetric, setChartMetric] = useState<ChartMetric>("volume");
 
-  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(
-    null,
+  const [selectedMonth, setSelectedMonth] = useState(
+    String(now.getMonth() + 1),
   );
 
-  // Dialog states
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingFinding, setEditingFinding] = useState<FindingItem | null>(
-    null,
-  );
-
-  const [deletingFinding, setDeletingFinding] = useState<FindingItem | null>(
-    null,
-  );
+  const [selectedYear, setSelectedYear] = useState(String(now.getFullYear()));
 
   const [viewingPhotoFinding, setViewingPhotoFinding] =
-    useState<FindingItem | null>(null);
+    useState<Finding | null>(null);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const tableQuery = useMemo<FindingQuery>(
+    () => ({
+      page: currentPage,
+      limit: Number(pageSize),
+      ...(selectedStatus !== "all" && {
+        status: selectedStatus as FindingQuery["status"],
+      }),
+      ...(selectedSeverity !== "all" && {
+        severity: selectedSeverity as FindingQuery["severity"],
+      }),
+    }),
+    [currentPage, pageSize, selectedStatus, selectedSeverity],
+  );
 
-  // Form
-  const [newFinding, setNewFinding] = useState(INITIAL_NEW_FINDING);
+  const analyticsQuery = useMemo<FindingQuery>(
+    () => ({
+      page: 1,
+      limit: 100,
+    }),
+    [],
+  );
 
-  const timelineData = useMemo(() => generateFindingsTimelineTrend(), []);
+  const handlePageChange = (page: number) => {
+    if (page < 1 || page > (meta?.totalPages ?? 1)) return;
 
-  const baseFiltered = useMemo(() => {
-    return findings.filter((finding) => {
-      if (selectedSite !== "all" && finding.siteId !== selectedSite) {
+    setCurrentPage(page);
+  };
+
+  const handlePageSizeChange = (value: string | null) => {
+    if (!value) return;
+
+    setPageSize(value);
+    setCurrentPage(1);
+  };
+
+  const {
+    data: findingData,
+    isLoading: isFindingsLoading,
+    isError: isFindingsError,
+    refetch: refetchFindings,
+    isFetching: isFindingsFetching,
+  } = useFindings(tableQuery);
+
+  const {
+    data: analyticsData,
+    isLoading: isAnalyticsLoading,
+    isError: isAnalyticsError,
+    refetch: refetchAnalytics,
+    isFetching: isAnalyticsFetching,
+  } = useFindings(analyticsQuery);
+
+  const findings: Finding[] = findingData?.data ?? [];
+  const analyticsFindings: Finding[] = analyticsData?.data ?? [];
+  const meta = findingData?.meta;
+
+  const isFetching = isFindingsFetching || isAnalyticsFetching;
+
+  const refetchAll = () => {
+    void Promise.all([refetchFindings(), refetchAnalytics()]);
+  };
+
+  const chartFindings = useMemo(() => {
+    const year = Number(selectedYear);
+    const month = Number(selectedMonth);
+
+    return analyticsFindings.filter((finding) => {
+      if (
+        selectedSite !== "all" &&
+        finding.patrolPoint?.site?.id !== selectedSite
+      ) {
         return false;
       }
 
-      if (selectedStatus !== "all" && finding.status !== selectedStatus) {
+      const createdAt = new Date(finding.createdAt);
+
+      if (Number.isNaN(createdAt.getTime())) {
+        return false;
+      }
+
+      return (
+        createdAt.getFullYear() === year && createdAt.getMonth() + 1 === month
+      );
+    });
+  }, [analyticsFindings, selectedSite, selectedMonth, selectedYear]);
+
+  const timelineData = useMemo<TimelinePoint[]>(() => {
+    const year = Number(selectedYear);
+    const month = Number(selectedMonth);
+    const totalDays = new Date(year, month, 0).getDate();
+
+    const days: TimelinePoint[] = Array.from(
+      { length: totalDays },
+      (_, index) => {
+        const date = new Date(year, month - 1, index + 1);
+
+        return {
+          date,
+          key: getLocalDateKey(date),
+          label: String(index + 1),
+          reportedCount: 0,
+          resolvedCount: 0,
+          openCount: 0,
+          inProgressCount: 0,
+        };
+      },
+    );
+
+    const dayMap = new Map(days.map((day) => [day.key, day]));
+
+    chartFindings.forEach((finding) => {
+      const createdAt = new Date(finding.createdAt);
+
+      if (Number.isNaN(createdAt.getTime())) return;
+
+      const day = dayMap.get(getLocalDateKey(createdAt));
+
+      if (!day) return;
+
+      day.reportedCount += 1;
+
+      switch (finding.status) {
+        case "OPEN":
+          day.openCount += 1;
+          break;
+        case "IN_PROGRESS":
+          day.inProgressCount += 1;
+          break;
+        case "RESOLVED":
+          day.resolvedCount += 1;
+          break;
+      }
+    });
+
+    return days;
+  }, [chartFindings, selectedMonth, selectedYear]);
+
+  const dailyChartMax = useMemo(() => {
+    const maxValue = Math.max(
+      0,
+      ...timelineData.flatMap((point) => [
+        point.reportedCount,
+        point.resolvedCount,
+      ]),
+    );
+
+    return Math.max(1, maxValue);
+  }, [timelineData]);
+
+  const statusDistribution = useMemo(() => {
+    const counts = {
+      OPEN: 0,
+      IN_PROGRESS: 0,
+      RESOLVED: 0,
+    };
+
+    chartFindings.forEach((finding) => {
+      if (finding.status in counts) {
+        counts[finding.status as keyof typeof counts] += 1;
+      }
+    });
+
+    const total = counts.OPEN + counts.IN_PROGRESS + counts.RESOLVED;
+
+    return {
+      total,
+      items: DONUT_STATUS_OPTIONS.map((status) => ({
+        ...status,
+        count: counts[status.value],
+        percentage: total > 0 ? (counts[status.value] / total) * 100 : 0,
+      })),
+    };
+  }, [chartFindings]);
+
+  const donutSegments = useMemo(() => {
+    const circumference = 2 * Math.PI * 42;
+    let offset = 0;
+
+    return statusDistribution.items.map((item) => {
+      const segmentLength = (item.percentage / 100) * circumference;
+
+      const segment = {
+        ...item,
+        circumference,
+        segmentLength,
+        offset,
+      };
+
+      offset += segmentLength;
+
+      return segment;
+    });
+  }, [statusDistribution]);
+
+  const baseFiltered = useMemo(() => {
+    return findings.filter((finding) => {
+      if (
+        selectedSite !== "all" &&
+        finding.patrolPoint?.site?.id !== selectedSite
+      ) {
+        return false;
+      }
+
+      if (!finding.patrolPoint || !finding.reportedBy) {
         return false;
       }
 
       if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
+        const query = normalize(searchQuery);
 
         const searchableText = [
           finding.id,
           finding.title,
           finding.description,
-          finding.location,
-          finding.reportedBy,
-          finding.siteName,
+          finding.patrolPoint.code,
+          finding.patrolPoint.name,
+          finding.patrolPoint.site.name,
+          finding.reportedBy.fullName,
+          finding.reportedBy.username,
+          finding.assignedTo?.fullName,
+          finding.assignedTo?.username,
         ]
-          .join(" ")
-          .toLowerCase();
+          .map(normalize)
+          .join(" ");
 
         if (!searchableText.includes(query)) {
           return false;
@@ -222,17 +453,58 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
 
       return true;
     });
-  }, [findings, selectedSite, selectedSeverity, selectedStatus, searchQuery]);
+  }, [findings, selectedSite, searchQuery]);
 
   const filteredFindings = useMemo(() => {
-    return filterItemsByColumnCriteria(baseFiltered, columnSearch, {
-      id: (f) => f.id,
-      hasPhoto: (f) => (f.photoUrl ? "ada" : "tanpa"),
-      title: (f) => `${f.title} ${f.description} ${f.notes || ""}`,
-      location: (f) => `${f.location} ${f.siteName}`,
-      reportedBy: (f) => `${f.reportedBy} ${f.reportedAt}`,
-      assignedTo: (f) => f.assignedTo || "",
-      status: (f) => f.status,
+    return baseFiltered.filter((finding) => {
+      const titleSearch = normalize(columnSearch.title);
+      const reporterSearch = normalize(columnSearch.reportedBy);
+      const assignedSearch = normalize(columnSearch.assignedTo);
+
+      if (titleSearch) {
+        const titleText = normalize(`${finding.title} ${finding.description}`);
+
+        if (!titleText.includes(titleSearch)) return false;
+      }
+
+      if (reporterSearch) {
+        const reporterText = normalize(
+          `${finding.reportedBy?.fullName} ${finding.reportedBy?.username}`,
+        );
+
+        if (!reporterText.includes(reporterSearch)) return false;
+      }
+
+      if (assignedSearch) {
+        const assignedText = normalize(
+          `${finding.assignedTo?.fullName ?? ""} ${
+            finding.assignedTo?.username ?? ""
+          }`,
+        );
+
+        if (!assignedText.includes(assignedSearch)) return false;
+      }
+
+      if (columnSearch.status && finding.status !== columnSearch.status) {
+        return false;
+      }
+
+      if (
+        columnSearch.hasPhoto === "ada" &&
+        (!finding.photos || finding.photos.length === 0)
+      ) {
+        return false;
+      }
+
+      if (
+        columnSearch.hasPhoto === "tanpa" &&
+        finding.photos &&
+        finding.photos.length > 0
+      ) {
+        return false;
+      }
+
+      return true;
     });
   }, [baseFiltered, columnSearch]);
 
@@ -241,9 +513,9 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
   );
 
   const updateColumnSearch = (key: keyof ColumnSearch, value: string) => {
-    setColumnSearch((prev) => ({
-      ...prev,
-      [key]: value,
+    setColumnSearch((previous) => ({
+      ...previous,
+      [key]: value === "all" ? "" : value,
     }));
   };
 
@@ -255,38 +527,43 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
     setSearchQuery("");
     setSelectedSeverity("all");
     setSelectedStatus("all");
+    setCurrentPage(1);
     clearAllColumnFilters();
   };
 
   const handleExportCSV = () => {
     const headers = [
-      "ID",
+      "ID Temuan",
       "Judul",
       "Deskripsi",
-      "Site",
-      "Lokasi",
-      "Pelapor",
-      "Waktu",
+      "Tingkat Keparahan",
       "Status",
-      "Ditugaskan Ke",
-      "Catatan",
+      "Kode Titik",
+      "Titik Patroli",
+      "Site",
+      "Pelapor",
+      "Username Pelapor",
+      "Waktu Temuan",
+      "Jumlah Foto",
     ];
 
     const escapeCSV = (value: unknown) =>
       `"${String(value ?? "-").replace(/"/g, '""')}"`;
 
-    const rows = filteredFindings.map((f) =>
+    const rows = filteredFindings.map((finding) =>
       [
-        f.id,
-        f.title,
-        f.description,
-        f.siteName,
-        f.location,
-        f.reportedBy,
-        f.reportedAt,
-        f.status,
-        f.assignedTo,
-        f.notes,
+        finding.id,
+        finding.title,
+        finding.description,
+        getSeverityLabel(finding.severity),
+        getStatusLabel(finding.status),
+        finding.patrolPoint?.code,
+        finding.patrolPoint?.name,
+        finding.patrolPoint?.site?.name,
+        finding.reportedBy?.fullName,
+        finding.reportedBy?.username,
+        formatDate(finding.createdAt),
+        finding.photos?.length ?? 0,
       ]
         .map(escapeCSV)
         .join(","),
@@ -311,101 +588,49 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleCreateFinding = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const selectedMonthLabel =
+    MONTH_OPTIONS.find((month) => month.value === selectedMonth)?.label ??
+    "Pilih Bulan";
 
-    const siteObj =
-      SITES.find((site) => site.id === newFinding.siteId) || SITES[1];
+  const handleExportExcel = async () => {
+    if (filteredFindings.length === 0 || isExportingExcel) return;
 
-    const newId = getNextFindingId(findings);
+    try {
+      setIsExportingExcel(true);
 
-    const created: FindingItem = {
-      id: newId,
-      title: newFinding.title.trim(),
-      description: newFinding.description.trim(),
-      siteId: newFinding.siteId,
-      siteName: siteObj.name.replace(/^Site [A-D] - /, ""),
-      location: newFinding.location.trim(),
-      reportedBy: "Bambang Prasetyo (Superintendent)",
-      reportedAt: `${formatCurrentDate()}, ${formatCurrentTime()} WIB`,
-      status: "Open",
-      assignedTo: newFinding.assignedTo.trim(),
-      photoUrl: newFinding.photoUrl.trim(),
-    };
+      await exportFindingExcel(
+        filteredFindings.map((finding) => ({
+          id: finding.id,
+          title: finding.title,
+          description: finding.description,
+          createdAt: finding.createdAt,
+          reportedBy: finding.reportedBy
+            ? {
+                fullName: finding.reportedBy.fullName,
+                employeeNumber: finding.reportedBy.employeeNumber,
+                username: finding.reportedBy.username,
+              }
+            : null,
+          patrolPoint: finding.patrolPoint
+            ? {
+                name: finding.patrolPoint.name,
+              }
+            : null,
+          photos:
+            finding.photos?.map((photo) => ({
+              id: photo.id,
+              fileUrl: photo.fileUrl,
+            })) ?? [],
+        })),
+      );
+    } catch (error) {
+      console.error("Gagal mengekspor Excel temuan:", error);
 
-    setFindings((prev) => [created, ...prev]);
-
-    setIsAddModalOpen(false);
-    setNewFinding(INITIAL_NEW_FINDING);
-  };
-
-  const handleEditFinding = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (!editingFinding) return;
-
-    setFindings((prev) =>
-      prev.map((finding) =>
-        finding.id === editingFinding.id ? editingFinding : finding,
-      ),
-    );
-
-    setEditingFinding(null);
-  };
-
-  const handleDeleteFinding = () => {
-    if (!deletingFinding) return;
-
-    setFindings((prev) =>
-      prev.filter((finding) => finding.id !== deletingFinding.id),
-    );
-    setDeletingFinding(null);
-  };
-
-  const handleUpdateStatus = (
-    findingId: string,
-    nextStatus: FindingItem["status"],
-  ) => {
-    setFindings((prev) =>
-      prev.map((finding) =>
-        finding.id === findingId ? { ...finding, status: nextStatus } : finding,
-      ),
-    );
-  };
-
-  const getChartTitle = () => {
-    switch (chartMetric) {
-      case "volume":
-        return "Tren Temuan Masuk, Selesai, dan Backlog";
-      default:
-        return "";
+      alert("Gagal mengekspor laporan temuan. Silakan coba kembali.");
+    } finally {
+      setIsExportingExcel(false);
     }
   };
-
-  const getChartPoints = () => {
-    return timelineData.map((point, index) => {
-      const x = 55 + index * 98;
-
-      return {
-        x,
-        point,
-        yReported: 175 - (point.reportedCount / 7) * 150,
-        yResolved: 175 - (point.resolvedCount / 7) * 150,
-        yBacklog: 175 - (point.openBacklog / 7) * 150,
-        ySla: 175 - ((point.avgResolutionMinutes - 30) / 40) * 150,
-        yDoor: 175 - (point.doorAccessCount / 4) * 150,
-        yElectrical: 175 - (point.electricalCount / 4) * 150,
-        yFire: 175 - (point.fireSafetyCount / 4) * 150,
-      };
-    });
-  };
-
-  const chartPoints = getChartPoints();
-
-  const createPath = (points: { x: number; y: number }[]) =>
-    points
-      .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-      .join(" ");
 
   return (
     <div className="space-y-5">
@@ -422,556 +647,599 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleExportCSV}>
-            <Download className="mr-2 h-4 w-4" />
-            Ekspor CSV
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportExcel}
+            disabled={
+              isFindingsLoading ||
+              isFindingsError ||
+              !filteredFindings.length ||
+              isExportingExcel
+            }
+          >
+            {isExportingExcel ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Memproses...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Ekspor Excel
+              </>
+            )}
           </Button>
 
-          <Button size="sm" onClick={() => setIsAddModalOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Buat Temuan
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded text-xs"
+            disabled={isFetching}
+            onClick={refetchAll}
+          >
+            <RefreshCw
+              className={`mr-2 size-3.5 ${isFetching ? "animate-spin" : ""}`}
+            />
+            Refresh
           </Button>
         </div>
       </div>
 
-      <section className="rounded-md border bg-white">
-        <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold">Analitik Temuan Patroli</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Tren laporan, penyelesaian, SLA, dan kategori temuan.
-            </p>
-          </div>
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,0.85fr)]">
+        <div className="flex min-w-0 flex-col gap-3">
+          <section className="space-y-3">
+            <div className="flex flex-col gap-3 rounded-md border bg-white p-3">
+              <div className="flex flex-col gap-2 lg:flex-row">
+                <InputGroup className="rounded">
+                  <InputGroupAddon>
+                    <Search className="size-4 text-slate-400" />
+                  </InputGroupAddon>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowCharts((prev) => !prev)}
-          >
-            {showCharts ? "Sembunyikan" : "Tampilkan"}
-            <ChevronDown
-              className={`ml-2 h-4 w-4 transition-transform ${
-                showCharts ? "rotate-180" : ""
-              }`}
-            />
-          </Button>
-        </div>
+                  <InputGroupInput
+                    placeholder="Cari ID, judul, deskripsi, pelapor, atau lokasi..."
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                  />
+                </InputGroup>
 
-        {showCharts && (
-          <div className="space-y-4 p-4">
-            <Tabs
-              value={chartMetric}
-              onValueChange={(value) => setChartMetric(value as ChartMetric)}
-            >
-              <TabsContent value="volume">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-medium">{getChartTitle()}</h3>
+                <Select
+                  value={selectedStatus}
+                  onValueChange={(value) => {
+                    setSelectedStatus(value as FindingStatusFilter);
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-full text-xs">
+                    <SelectValue>
+                      {selectedStatus === "all"
+                        ? "Semua Status"
+                        : (STATUS_OPTIONS.find(
+                            (status) => status.value === selectedStatus,
+                          )?.label ?? "Status Penanganan")}
+                    </SelectValue>
+                  </SelectTrigger>
 
-                    <div className="flex flex-wrap gap-3 text-xs">
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-blue-600" />
-                        Dilaporkan
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-emerald-600" />
-                        Selesai
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-amber-500" />
-                        Backlog
-                      </span>
-                    </div>
-                  </div>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Status</SelectItem>
 
-                  <div className="overflow-x-auto rounded-md border bg-slate-50 p-3">
-                    <div className="min-w-[620px]">
-                      <svg
-                        viewBox="0 0 680 210"
-                        className="h-52 w-full select-none"
-                      >
-                        {[25, 65, 105, 145, 175].map((y) => (
-                          <line
-                            key={y}
-                            x1="45"
-                            y1={y}
-                            x2="655"
-                            y2={y}
-                            stroke="#e2e8f0"
-                            strokeDasharray="3 3"
-                          />
-                        ))}
+                    {STATUS_OPTIONS.map((status) => (
+                      <SelectItem key={status.value} value={status.value}>
+                        {status.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-                        {["7", "5", "3", "1", "0"].map((label, index) => (
-                          <text
-                            key={label}
-                            x="35"
-                            y={[29, 69, 109, 149, 178][index]}
-                            textAnchor="end"
-                            fontSize="10"
-                            fill="#94a3b8"
-                          >
-                            {label}
-                          </text>
-                        ))}
-
-                        <path
-                          d={`${createPath(
-                            chartPoints.map((p) => ({
-                              x: p.x,
-                              y: p.yReported,
-                            })),
-                          )} L ${
-                            chartPoints[chartPoints.length - 1]?.x
-                          } 175 L ${chartPoints[0]?.x} 175 Z`}
-                          fill="#2563eb"
-                          fillOpacity="0.08"
-                        />
-
-                        {[
-                          {
-                            key: "backlog",
-                            color: "#f59e0b",
-                            field: "yBacklog" as const,
-                          },
-                          {
-                            key: "resolved",
-                            color: "#059669",
-                            field: "yResolved" as const,
-                          },
-                          {
-                            key: "reported",
-                            color: "#2563eb",
-                            field: "yReported" as const,
-                          },
-                        ].map((series) => (
-                          <path
-                            key={series.key}
-                            d={createPath(
-                              chartPoints.map((p) => ({
-                                x: p.x,
-                                y: p[series.field],
-                              })),
-                            )}
-                            fill="none"
-                            stroke={series.color}
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        ))}
-
-                        {chartPoints.map((p, index) => (
-                          <g
-                            key={p.point.label}
-                            onMouseEnter={() => setHoveredPointIndex(index)}
-                            onMouseLeave={() => setHoveredPointIndex(null)}
-                            className="cursor-pointer"
-                          >
-                            {hoveredPointIndex === index && (
-                              <line
-                                x1={p.x}
-                                y1="25"
-                                x2={p.x}
-                                y2="175"
-                                stroke="#94a3b8"
-                                strokeDasharray="3 3"
-                              />
-                            )}
-
-                            <circle
-                              cx={p.x}
-                              cy={p.yReported}
-                              r="4.5"
-                              fill="#2563eb"
-                              stroke="white"
-                              strokeWidth="2"
-                            />
-
-                            <circle
-                              cx={p.x}
-                              cy={p.yResolved}
-                              r="4"
-                              fill="#059669"
-                              stroke="white"
-                              strokeWidth="2"
-                            />
-
-                            <circle
-                              cx={p.x}
-                              cy={p.yBacklog}
-                              r="3.5"
-                              fill="#f59e0b"
-                              stroke="white"
-                              strokeWidth="2"
-                            />
-                          </g>
-                        ))}
-
-                        {chartPoints.map((p, index) => (
-                          <text
-                            key={p.point.label}
-                            x={p.x}
-                            y="196"
-                            textAnchor="middle"
-                            fontSize="11"
-                            fontWeight={
-                              hoveredPointIndex === index ? "bold" : "normal"
-                            }
-                            fill={
-                              hoveredPointIndex === index
-                                ? "#2563eb"
-                                : "#475569"
-                            }
-                          >
-                            {p.point.label}
-                          </text>
-                        ))}
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            {/* Chart Tooltip */}
-            {hoveredPointIndex !== null && timelineData[hoveredPointIndex] && (
-              <div className="rounded-md border bg-slate-50 p-3">
-                <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                  <TrendingUp className="h-4 w-4 text-blue-600" />
-                  Detail {timelineData[hoveredPointIndex].label}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-                  <div>
-                    <p className="text-muted-foreground">Dilaporkan</p>
-                    <p className="mt-1 font-semibold text-blue-600">
-                      {timelineData[hoveredPointIndex].reportedCount} kasus
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-muted-foreground">Selesai</p>
-                    <p className="mt-1 font-semibold text-emerald-600">
-                      {timelineData[hoveredPointIndex].resolvedCount} kasus
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-muted-foreground">Backlog</p>
-                    <p className="mt-1 font-semibold text-amber-600">
-                      {timelineData[hoveredPointIndex].openBacklog} kasus
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-muted-foreground">Rata-rata SLA</p>
-                    <p className="mt-1 font-semibold text-teal-600">
-                      {timelineData[hoveredPointIndex].avgResolutionMinutes}{" "}
-                      menit
-                    </p>
-                  </div>
-                </div>
+                <Button
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={clearAllFilters}
+                >
+                  <X className="mr-2 h-3.5 w-3.5" />
+                  Reset Filter
+                </Button>
               </div>
-            )}
-          </div>
-        )}
-      </section>
+            </div>
+          </section>
 
-      <section className="space-y-3">
-        <div className="flex flex-col gap-3 rounded-md border bg-white p-3 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari ID, judul, deskripsi, pelapor, atau lokasi..."
-              className="h-9 pl-9 text-sm"
+          <div className="space-y-2">
+            <PaginationComponent
+              totalItems={meta?.total ?? 0}
+              startItem={
+                (meta?.total ?? 0) === 0
+                  ? 0
+                  : (currentPage - 1) * Number(pageSize) + 1
+              }
+              endItem={Math.min(
+                currentPage * Number(pageSize),
+                meta?.total ?? 0,
+              )}
+              pageSize={pageSize}
+              currentPage={currentPage}
+              totalPages={meta?.totalPages ?? 1}
+              onPageSizeChange={handlePageSizeChange}
+              onPageChange={handlePageChange}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2 lg:flex">
-            <Select
-              value={selectedStatus}
-              onValueChange={(value) => setSelectedStatus(value as string)}
-            >
-              <SelectTrigger className="h-9 w-full text-xs lg:w-[190px]">
-                <SelectValue placeholder="Status Penanganan" />
-              </SelectTrigger>
+          <section className="min-w-0 overflow-hidden rounded-md border bg-white">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold">Daftar Temuan Patroli</h2>
 
-              <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                {STATUS_OPTIONS.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Data inspeksi dan tindak lanjut anomali lapangan.
+                </p>
+              </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 shrink-0"
-            onClick={clearAllFilters}
-          >
-            <X className="mr-2 h-3.5 w-3.5" />
-            Reset Filter
-          </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={clearAllColumnFilters}
+                disabled={!isAnyColumnFilterActive}
+              >
+                <X className="mr-1.5 h-3.5 w-3.5" />
+                Reset Kolom
+              </Button>
+            </div>
+
+            <div className="min-w-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 hover:bg-slate-50">
+                    <TableHead className="text-xs font-semibold">
+                      Judul & Deskripsi
+                    </TableHead>
+
+                    <TableHead className="text-xs font-semibold">
+                      Pelapor & Waktu
+                    </TableHead>
+
+                    <TableHead className="text-xs font-semibold">
+                      Status
+                    </TableHead>
+
+                    <TableHead className="text-center text-xs font-semibold">
+                      Foto
+                    </TableHead>
+                  </TableRow>
+
+                  <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
+                    <TableHead>
+                      <Input
+                        placeholder="Cari anomali..."
+                        value={columnSearch.title}
+                        onChange={(event) =>
+                          updateColumnSearch("title", event.target.value)
+                        }
+                        className="h-8 bg-white text-xs"
+                      />
+                    </TableHead>
+
+                    <TableHead>
+                      <Input
+                        placeholder="Cari pelapor..."
+                        value={columnSearch.reportedBy}
+                        onChange={(event) =>
+                          updateColumnSearch("reportedBy", event.target.value)
+                        }
+                        className="h-8 bg-white text-xs"
+                      />
+                    </TableHead>
+
+                    <TableHead>
+                      <Select
+                        value={columnSearch.status || "all"}
+                        onValueChange={(value) =>
+                          updateColumnSearch("status", value ?? "")
+                        }
+                      >
+                        <SelectTrigger className="h-8 bg-white text-xs">
+                          <SelectValue>
+                            {!columnSearch.status
+                              ? "Semua"
+                              : (STATUS_OPTIONS.find(
+                                  (status) =>
+                                    status.value === columnSearch.status,
+                                )?.label ?? "Semua")}
+                          </SelectValue>
+                        </SelectTrigger>
+
+                        <SelectContent>
+                          <SelectItem value="all">Semua</SelectItem>
+
+                          {STATUS_OPTIONS.map((status) => (
+                            <SelectItem key={status.value} value={status.value}>
+                              {status.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableHead>
+
+                    <TableHead>
+                      <Select
+                        value={columnSearch.hasPhoto || "all"}
+                        onValueChange={(value) =>
+                          updateColumnSearch("hasPhoto", value ?? "")
+                        }
+                      >
+                        <SelectTrigger className="h-8 min-w-[80px] bg-white text-xs">
+                          <SelectValue>
+                            {columnSearch.hasPhoto === "ada"
+                              ? "Ada"
+                              : columnSearch.hasPhoto === "tanpa"
+                                ? "Tanpa"
+                                : "Semua"}
+                          </SelectValue>
+                        </SelectTrigger>
+
+                        <SelectContent>
+                          <SelectItem value="all">Semua</SelectItem>
+                          <SelectItem value="ada">Ada</SelectItem>
+                          <SelectItem value="tanpa">Tanpa</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+
+                <TableBody>
+                  {isFindingsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-32 text-center">
+                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+                          Memuat data temuan patroli...
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : isFindingsError ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-32 text-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <p className="text-sm text-rose-600">
+                            Gagal mengambil data temuan patroli.
+                          </p>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void refetchFindings()}
+                          >
+                            Coba Lagi
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredFindings.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-32 text-center">
+                        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                          <Search className="h-6 w-6 opacity-40" />
+
+                          <p className="text-sm font-medium">
+                            Tidak ada temuan ditemukan
+                          </p>
+
+                          <p className="text-xs">
+                            Coba ubah kata kunci atau filter pencarian.
+                          </p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredFindings.map((finding) => (
+                      <TableRow key={finding.id} className="align-middle">
+                        <TableCell>
+                          <p className="font-medium text-slate-900">
+                            {finding.title}
+                          </p>
+
+                          <p className="mt-1 line-clamp-2 max-w-[280px] text-xs leading-relaxed text-muted-foreground">
+                            {finding.description}
+                          </p>
+
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {finding.patrolPoint?.site?.name} ·{" "}
+                            {finding.patrolPoint?.name}
+                          </p>
+                        </TableCell>
+
+                        <TableCell>
+                          <p className="font-medium">
+                            {finding.reportedBy?.fullName}
+                          </p>
+
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatDate(finding.createdAt)}
+                          </p>
+                        </TableCell>
+
+                        <TableCell>{getStatusBadge(finding.status)}</TableCell>
+
+                        <TableCell className="text-center">
+                          {finding.photos && finding.photos.length > 0 ? (
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => setViewingPhotoFinding(finding)}
+                              title="Lihat foto bukti"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              -
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </section>
         </div>
-      </section>
 
-      <section className="overflow-hidden rounded-md border bg-white">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <div>
-            <h2 className="text-sm font-semibold">Daftar Temuan Patroli</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Data inspeksi dan tindak lanjut anomali lapangan.
-            </p>
-          </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <section className="min-w-0 overflow-hidden rounded-md border bg-white">
+            <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold">
+                  Analitik Temuan Patroli
+                </h2>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={clearAllColumnFilters}
-            disabled={!isAnyColumnFilterActive}
-          >
-            <X className="mr-1.5 h-3.5 w-3.5" />
-            Reset Kolom
-          </Button>
-        </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Statistik temuan berdasarkan periode.
+                </p>
+              </div>
 
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-slate-50 hover:bg-slate-50">
-                <TableHead className="min-w-[230px] text-xs font-semibold">
-                  Judul & Deskripsi
-                </TableHead>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 shrink-0 text-xs"
+                onClick={() => setShowCharts((previous) => !previous)}
+              >
+                {showCharts ? "Sembunyikan" : "Tampilkan"}
 
-                <TableHead className="min-w-[175px] text-xs font-semibold">
-                  Pelapor & Waktu
-                </TableHead>
+                <ChevronDown
+                  className={`ml-2 h-4 w-4 transition-transform ${
+                    showCharts ? "rotate-180" : ""
+                  }`}
+                />
+              </Button>
+            </div>
 
-                <TableHead className="min-w-[145px] text-xs font-semibold">
-                  Ditugaskan Ke
-                </TableHead>
-
-                <TableHead className="min-w-[155px] text-xs font-semibold">
-                  Status
-                </TableHead>
-
-                <TableHead className="min-w-[85px] text-center text-xs font-semibold">
-                  Foto
-                </TableHead>
-
-                <TableHead className="min-w-[190px] text-right text-xs font-semibold">
-                  Aksi
-                </TableHead>
-              </TableRow>
-
-              <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                <TableHead>
-                  <Input
-                    placeholder="Cari anomali..."
-                    value={columnSearch.title}
-                    onChange={(e) =>
-                      updateColumnSearch("title", e.target.value)
-                    }
-                    className="h-8 min-w-[150px] bg-white text-xs"
-                  />
-                </TableHead>
-
-                <TableHead>
-                  <Input
-                    placeholder="Cari pelapor..."
-                    value={columnSearch.reportedBy}
-                    onChange={(e) =>
-                      updateColumnSearch("reportedBy", e.target.value)
-                    }
-                    className="h-8 min-w-[130px] bg-white text-xs"
-                  />
-                </TableHead>
-
-                <TableHead>
-                  <Input
-                    placeholder="Cari penugasan..."
-                    value={columnSearch.assignedTo}
-                    onChange={(e) =>
-                      updateColumnSearch("assignedTo", e.target.value)
-                    }
-                    className="h-8 min-w-[120px] bg-white text-xs"
-                  />
-                </TableHead>
-
-                <TableHead>
+            {showCharts && (
+              <div className="space-y-4 p-4">
+                <div className="flex flex-wrap items-center gap-2">
                   <Select
-                    value={columnSearch.status || "all"}
-                    onValueChange={(value) =>
-                      updateColumnSearch("status", value ?? "")
-                    }
+                    value={selectedMonth}
+                    onValueChange={(value) => setSelectedMonth(value ?? "")}
                   >
-                    <SelectTrigger className="h-8 min-w-[125px] bg-white text-xs">
-                      <SelectValue placeholder="Semua" />
+                    <SelectTrigger className="h-8 w-[125px] bg-white text-xs">
+                      <SelectValue>{selectedMonthLabel}</SelectValue>
                     </SelectTrigger>
 
                     <SelectContent>
-                      <SelectItem value="all">Semua</SelectItem>
-                      {STATUS_OPTIONS.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {status}
+                      {MONTH_OPTIONS.map((month) => (
+                        <SelectItem key={month.value} value={month.value}>
+                          {month.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                </TableHead>
 
-                <TableHead>
                   <Select
-                    value={columnSearch.hasPhoto || "all"}
-                    onValueChange={(value) =>
-                      updateColumnSearch("hasPhoto", value ?? "")
-                    }
+                    value={selectedYear}
+                    onValueChange={(value) => setSelectedYear(value ?? "")}
                   >
-                    <SelectTrigger className="h-8 min-w-[80px] bg-white text-xs">
-                      <SelectValue placeholder="Foto" />
+                    <SelectTrigger className="h-8 w-[90px] bg-white text-xs">
+                      <SelectValue>{selectedYear}</SelectValue>
                     </SelectTrigger>
 
                     <SelectContent>
-                      <SelectItem value="all">Semua</SelectItem>
-                      <SelectItem value="ada">Ada</SelectItem>
-                      <SelectItem value="tanpa">Tanpa</SelectItem>
+                      {YEAR_OPTIONS.map((year) => (
+                        <SelectItem key={year} value={year}>
+                          {year}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                </TableHead>
+                </div>
 
-                <TableHead />
-              </TableRow>
-            </TableHeader>
+                {isAnalyticsLoading ? (
+                  <div className="flex h-64 items-center justify-center rounded-md border bg-slate-50 text-sm text-muted-foreground">
+                    Memuat analitik temuan...
+                  </div>
+                ) : isAnalyticsError ? (
+                  <div className="flex h-64 items-center justify-center rounded-md border bg-slate-50 text-sm text-rose-600">
+                    Gagal memuat data analitik.
+                  </div>
+                ) : (
+                  <>
+                    <section className="space-y-3 rounded-md border p-3">
+                      <div>
+                        <h3 className="text-sm font-semibold">
+                          Tren Temuan Harian
+                        </h3>
 
-            <TableBody>
-              {filteredFindings.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="h-32 text-center">
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <Search className="h-6 w-6 opacity-40" />
-                      <p className="text-sm font-medium">
-                        Tidak ada temuan ditemukan
-                      </p>
-                      <p className="text-xs">
-                        Coba ubah kata kunci atau filter pencarian.
-                      </p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredFindings.map((finding) => (
-                  <TableRow key={finding.id} className="align-middle">
-                    <TableCell>
-                      <p className="font-medium text-slate-900">
-                        {finding.title}
-                      </p>
-
-                      <p className="mt-1 line-clamp-2 max-w-[280px] text-xs leading-relaxed text-muted-foreground">
-                        {finding.description}
-                      </p>
-
-                      {finding.notes && (
-                        <p className="mt-1 text-xs text-blue-600">
-                          Catatan: {finding.notes}
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Perbandingan temuan dilaporkan dan berstatus selesai.
                         </p>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      <p className="font-medium">{finding.reportedBy}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {finding.reportedAt}
-                      </p>
-                    </TableCell>
-
-                    <TableCell>
-                      <span className="text-xs">
-                        {finding.assignedTo || (
-                          <span className="text-muted-foreground">
-                            Belum ditugaskan
-                          </span>
-                        )}
-                      </span>
-                    </TableCell>
-
-                    <TableCell>{getStatusBadge(finding.status)}</TableCell>
-                    {/* PHOTO */}
-                    <TableCell className="text-center">
-                      {finding.photoUrl ? (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => setViewingPhotoFinding(finding)}
-                          title="Lihat foto bukti"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        {finding.status === "Open" && (
-                          <Button
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() =>
-                              handleUpdateStatus(finding.id, "Open")
-                            }
-                          >
-                            Proses
-                          </Button>
-                        )}
-
-                        {finding.status === "Close" && (
-                          <Button
-                            size="sm"
-                            className="h-7 bg-emerald-600 px-2 text-xs hover:bg-emerald-700"
-                            onClick={() =>
-                              handleUpdateStatus(finding.id, "Close")
-                            }
-                          >
-                            <Check className="mr-1 h-3 w-3" />
-                            Selesai
-                          </Button>
-                        )}
-
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-7 w-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                          title="Hapus temuan"
-                          onClick={() => setDeletingFinding(finding)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
 
-        <div className="flex flex-col gap-2 border-t bg-slate-50 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <span>Data temuan terintegrasi dengan audit log K3.</span>
+                      <div className="flex flex-wrap gap-3 text-xs">
+                        <span className="flex items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 rounded-sm bg-blue-600" />
+                          Dilaporkan
+                        </span>
 
-          <span>Prioritas Kritis dan Tinggi wajib dimitigasi.</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" />
+                          Selesai
+                        </span>
+                      </div>
+
+                      {chartFindings.length === 0 ? (
+                        <div className="flex h-48 items-center justify-center rounded-md bg-slate-50 text-xs text-muted-foreground">
+                          Tidak ada temuan pada periode ini.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-md bg-slate-50 p-3">
+                          <div className="flex h-48 min-w-[540px] items-end gap-1">
+                            {timelineData.map((point) => {
+                              const reportedHeight =
+                                (point.reportedCount / dailyChartMax) * 135;
+
+                              const resolvedHeight =
+                                (point.resolvedCount / dailyChartMax) * 135;
+
+                              return (
+                                <div
+                                  key={point.key}
+                                  className="flex h-full min-w-0 flex-1 flex-col justify-end"
+                                  title={`${point.label} ${selectedMonthLabel}: ${point.reportedCount} dilaporkan, ${point.resolvedCount} selesai`}
+                                >
+                                  <div className="flex h-[150px] items-end justify-center gap-[2px]">
+                                    <div
+                                      className="w-1/2 max-w-[10px] rounded-t-sm bg-blue-600 transition-all"
+                                      style={{
+                                        height: `${reportedHeight}px`,
+                                        minHeight:
+                                          point.reportedCount > 0 ? "3px" : "0",
+                                      }}
+                                    />
+
+                                    <div
+                                      className="w-1/2 max-w-[10px] rounded-t-sm bg-emerald-600 transition-all"
+                                      style={{
+                                        height: `${resolvedHeight}px`,
+                                        minHeight:
+                                          point.resolvedCount > 0 ? "3px" : "0",
+                                      }}
+                                    />
+                                  </div>
+
+                                  <span className="mt-2 text-center text-[9px] text-slate-500">
+                                    {Number(point.label) % 5 === 0 ||
+                                    point.label === "1" ||
+                                    point.label === String(timelineData.length)
+                                      ? point.label
+                                      : ""}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="space-y-3 rounded-md border p-3">
+                      <div>
+                        <h3 className="text-sm font-semibold">
+                          Distribusi Status Temuan
+                        </h3>
+
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Komposisi status temuan pada periode terpilih.
+                        </p>
+                      </div>
+
+                      {statusDistribution.total === 0 ? (
+                        <div className="flex h-48 items-center justify-center rounded-md bg-slate-50 text-xs text-muted-foreground">
+                          Tidak ada data status temuan.
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-5 py-2 sm:flex-row sm:justify-center">
+                          <div className="relative h-40 w-40 shrink-0">
+                            <svg
+                              viewBox="0 0 100 100"
+                              className="h-full w-full -rotate-90"
+                            >
+                              <circle
+                                cx="50"
+                                cy="50"
+                                r="42"
+                                fill="none"
+                                stroke="#e2e8f0"
+                                strokeWidth="12"
+                              />
+
+                              {donutSegments.map((segment) => (
+                                <circle
+                                  key={segment.value}
+                                  cx="50"
+                                  cy="50"
+                                  r="42"
+                                  fill="none"
+                                  stroke={segment.color}
+                                  strokeWidth="12"
+                                  strokeDasharray={`${segment.segmentLength} ${segment.circumference}`}
+                                  strokeDashoffset={-segment.offset}
+                                  strokeLinecap="butt"
+                                />
+                              ))}
+                            </svg>
+
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-2xl font-semibold text-slate-900">
+                                {statusDistribution.total}
+                              </span>
+
+                              <span className="text-[10px] text-muted-foreground">
+                                Total Temuan
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="w-full space-y-3">
+                            {statusDistribution.items.map((item) => (
+                              <div
+                                key={item.value}
+                                className="flex items-center justify-between gap-3"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="h-3 w-3 rounded-sm"
+                                    style={{
+                                      backgroundColor: item.color,
+                                    }}
+                                  />
+
+                                  <span className="text-xs text-slate-600">
+                                    {item.label}
+                                  </span>
+                                </div>
+
+                                <div className="text-right">
+                                  <span className="text-sm font-semibold text-slate-900">
+                                    {item.count}
+                                  </span>
+
+                                  <span className="ml-2 text-xs text-muted-foreground">
+                                    {item.percentage.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
         </div>
-      </section>
+      </div>
 
       <Dialog
         open={!!viewingPhotoFinding}
@@ -993,13 +1261,21 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
 
           {viewingPhotoFinding && (
             <div className="space-y-4">
-              {viewingPhotoFinding.photoUrl ? (
-                <div className="overflow-hidden rounded-md border bg-slate-100">
-                  <img
-                    src={viewingPhotoFinding.photoUrl}
-                    alt={viewingPhotoFinding.title}
-                    className="max-h-[420px] w-full object-contain"
-                  />
+              {viewingPhotoFinding.photos &&
+              viewingPhotoFinding.photos.length > 0 ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {viewingPhotoFinding.photos.map((photo) => (
+                    <div
+                      key={photo.id}
+                      className="overflow-hidden rounded-md border bg-slate-100"
+                    >
+                      <img
+                        src={getPhotoUrl(photo.fileUrl)}
+                        alt={viewingPhotoFinding.title}
+                        className="max-h-[300px] w-full object-contain"
+                      />
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="flex h-40 flex-col items-center justify-center rounded-md border bg-slate-50 text-muted-foreground">
@@ -1013,26 +1289,10 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
                   <p className="text-xs text-muted-foreground">
                     Deskripsi Temuan
                   </p>
+
                   <p className="mt-1 text-sm">
                     {viewingPhotoFinding.description}
                   </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 border-t pt-3 text-xs">
-                  <div>
-                    <p className="text-muted-foreground">Lokasi</p>
-                    <p className="mt-1 font-medium">
-                      {viewingPhotoFinding.siteName} -{" "}
-                      {viewingPhotoFinding.location}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-muted-foreground">Pelapor</p>
-                    <p className="mt-1 font-medium">
-                      {viewingPhotoFinding.reportedBy}
-                    </p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1046,185 +1306,6 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
               Tutup
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog
-        open={!!deletingFinding}
-        onOpenChange={(open) => {
-          if (!open) setDeletingFinding(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-rose-50">
-              <AlertTriangle className="h-5 w-5 text-rose-600" />
-            </div>
-
-            <AlertDialogTitle>Hapus Temuan Patroli?</AlertDialogTitle>
-
-            <AlertDialogDescription>
-              Apakah Anda yakin ingin menghapus temuan{" "}
-              <strong className="text-foreground">{deletingFinding?.id}</strong>{" "}
-              ({deletingFinding?.title})? Tindakan ini tidak dapat dibatalkan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-
-            <AlertDialogAction
-              onClick={handleDeleteFinding}
-              className="bg-rose-600 hover:bg-rose-700"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Ya, Hapus
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* ================================================== */}
-      {/* DIALOG: CREATE FINDING */}
-      {/* ================================================== */}
-
-      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Buat Temuan Patroli</DialogTitle>
-            <DialogDescription>
-              Masukkan informasi anomali atau kondisi berisiko yang ditemukan
-              selama patroli.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleCreateFinding} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Judul Temuan</label>
-              <Input
-                required
-                placeholder="Contoh: Kaca jendela ruang rapat retak"
-                value={newFinding.title}
-                onChange={(e) =>
-                  setNewFinding({
-                    ...newFinding,
-                    title: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Deskripsi Temuan</label>
-              <Textarea
-                required
-                rows={3}
-                placeholder="Jelaskan kondisi, lokasi, dan potensi risiko..."
-                value={newFinding.description}
-                onChange={(e) =>
-                  setNewFinding({
-                    ...newFinding,
-                    description: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Site</label>
-
-                <Select
-                  value={newFinding.siteId}
-                  onValueChange={(value) =>
-                    setNewFinding({
-                      ...newFinding,
-                      siteId: value as string,
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih site" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    {SITES.filter((site) => site.id !== "all").map((site) => (
-                      <SelectItem key={site.id} value={site.id}>
-                        {site.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Detail Lokasi</label>
-                <Input
-                  required
-                  placeholder="Contoh: Lantai 8 Sayap Selatan"
-                  value={newFinding.location}
-                  onChange={(e) =>
-                    setNewFinding({
-                      ...newFinding,
-                      location: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Tugaskan Ke</label>
-                <Input
-                  value={newFinding.assignedTo}
-                  onChange={(e) =>
-                    setNewFinding({
-                      ...newFinding,
-                      assignedTo: e.target.value,
-                    })
-                  }
-                  placeholder="Nama tim penanggung jawab"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">
-                URL Foto Bukti (Opsional)
-              </label>
-              <Input
-                type="url"
-                placeholder="https://..."
-                value={newFinding.photoUrl}
-                onChange={(e) =>
-                  setNewFinding({
-                    ...newFinding,
-                    photoUrl: e.target.value,
-                  })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Masukkan URL foto jika tersedia. Upload file lokal memerlukan
-                integrasi penyimpanan.
-              </p>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsAddModalOpen(false)}
-              >
-                Batal
-              </Button>
-
-              <Button type="submit">
-                <Plus className="mr-2 h-4 w-4" />
-                Simpan Temuan
-              </Button>
-            </DialogFooter>
-          </form>
         </DialogContent>
       </Dialog>
     </div>

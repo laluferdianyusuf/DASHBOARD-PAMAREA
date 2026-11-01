@@ -32,8 +32,8 @@ import {
 } from "../hooks/schedule/usePatrolSchedules";
 
 import {
-  useCreateScheduleAssigment,
-  useGetScheduleAssigments,
+  useCreateScheduleAssignment,
+  useGetScheduleAssignments,
 } from "../hooks/schedule/usePatrolScheduleAssignment";
 
 import { useAddNewPoint } from "../hooks/schedule/usePatrolSchedulePoint";
@@ -208,7 +208,7 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     isError: isPointsError,
   } = usePatrolPoints();
   const { data: scheduleAssignments, isLoading: isLoadingAssignments } =
-    useGetScheduleAssigments();
+    useGetScheduleAssignments();
   const { data: securityUsers, isLoading: isLoadingUsers } = useSecurityUsers();
 
   const { mutateAsync: createSchedule, isPending: isCreatingSchedule } =
@@ -216,7 +216,7 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
   const { mutateAsync: addSchedulePoint, isPending: isAddingPoint } =
     useAddNewPoint();
   const { mutateAsync: assignUser, isPending: isAssigningUser } =
-    useCreateScheduleAssigment();
+    useCreateScheduleAssignment();
   const { mutateAsync: updateShift, isPending: isUpdating } =
     useUpdatePatrolSchedule();
   const { mutate: activateSchedule, isPending: isActivating } =

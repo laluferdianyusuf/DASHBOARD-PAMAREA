@@ -1,7 +1,6 @@
 import {
   ArrowDown,
   ArrowUp,
-  CalendarDays,
   Check,
   ChevronDown,
   ChevronRight,
@@ -14,7 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -43,87 +46,192 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+import { format } from "date-fns";
+import { formatDate, formatTime } from "../helpers/dateTime";
+
 import {
-  MOCK_ASSIGNMENTS,
+  usePatrolRoundsGroupedByUser,
+  useReorderPatrolRoundCheckpoints,
+} from "../hooks/schedule/usePatrolRound";
+
+import { usePatrolSchedules } from "../hooks/schedule/usePatrolSchedules";
+import {
+  ApiGroupedResponse,
   PatrolAssignment,
   PatrolCheckpoint,
   PatrolRound,
-  RoundStatus,
-  ShiftType,
-} from "../data/mockData";
+  PatrolScheduleOption,
+  ScheduleGroup,
+} from "../services/schedule/rounds-grouped";
+import { PatrolRoundStatus } from "../types";
+import { DatePicker } from "./DatePicker";
 
-interface ManajemenRondeViewProps {
-  /**
-   * Isi callback ini dengan request API:
-   * PATCH /patrol-rounds/:roundId/checkpoints/order
-   *
-   * Body:
-   * {
-   *   checkpointIds: string[]
-   * }
-   */
-  onSaveRoundOrder?: (
-    roundId: string,
-    checkpointIds: string[],
-  ) => Promise<void>;
-}
-
-const SHIFT_OPTIONS = [
-  { value: "all", label: "Semua Shift" },
-  { value: "PAGI", label: "Shift Pagi" },
-  { value: "SIANG", label: "Shift Siang" },
-  { value: "MALAM", label: "Shift Malam" },
-];
-
-const STATUS_LABELS: Record<RoundStatus, string> = {
+const STATUS_LABELS: Record<PatrolRoundStatus, string> = {
   PENDING: "Belum Dimulai",
   IN_PROGRESS: "Sedang Berjalan",
   COMPLETED: "Selesai",
+  PARTIAL: "Selesai Sebagian",
+  MISSED: "Terlewat",
   CANCELLED: "Dibatalkan",
 };
 
-const STATUS_CLASSES: Record<RoundStatus, string> = {
+const STATUS_CLASSES: Record<PatrolRoundStatus, string> = {
   PENDING: "border-slate-200 bg-slate-50 text-slate-600",
   IN_PROGRESS: "border-blue-200 bg-blue-50 text-blue-700",
   COMPLETED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  PARTIAL: "border-amber-200 bg-amber-50 text-amber-700",
+  MISSED: "border-red-200 bg-red-50 text-red-700",
   CANCELLED: "border-red-200 bg-red-50 text-red-700",
 };
 
-const formatDate = (date: string) => {
-  if (!date) return "-";
+const getDateKey = (date: string) => date.slice(0, 10);
 
-  return new Date(`${date}T00:00:00`).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
+const mapGroupedRoundsToAssignments = (
+  response?: ApiGroupedResponse,
+): PatrolAssignment[] => {
+  if (!response?.data) return [];
+
+  const grouped = new Map<string, PatrolAssignment>();
+
+  response.data.forEach(({ user, rounds }) => {
+    rounds.forEach((round) => {
+      const date = getDateKey(round.scheduleDate.date);
+
+      const scheduleId = round.schedule.id;
+      const scheduleName = round.schedule.name;
+
+      const siteId = round.schedule.site?.id ?? "";
+      const siteName = round.schedule.site?.name ?? "-";
+
+      const assignmentId = [user.id, date, siteId, scheduleId].join("-");
+
+      const checkpoints: PatrolCheckpoint[] = round.checkpoints.map(
+        (checkpoint) => ({
+          id: checkpoint.id,
+          sequence: checkpoint.sequence,
+          name: checkpoint.pointNameSnapshot,
+          code: checkpoint.pointCodeSnapshot ?? "-",
+          required: checkpoint.required,
+        }),
+      );
+
+      const mappedRound: PatrolRound = {
+        id: round.id,
+        roundNumber: round.roundNumber,
+        status: round.status,
+        scheduledStartAt: round.scheduledStartAt,
+        scheduledEndAt: round.scheduledEndAt,
+        checkpoints,
+      };
+
+      const existing = grouped.get(assignmentId);
+
+      if (existing) {
+        existing.rounds.push(mappedRound);
+      } else {
+        grouped.set(assignmentId, {
+          id: assignmentId,
+          userId: user.id,
+          date,
+
+          scheduleId,
+          scheduleName,
+
+          fullName: user.fullName,
+          npp: user.employeeNumber ?? "-",
+          squadName: user.teamName ?? "-",
+
+          siteId,
+          siteName,
+
+          rounds: [mappedRound],
+        });
+      }
+    });
   });
+
+  return Array.from(grouped.values()).map((assignment) => ({
+    ...assignment,
+    rounds: [...assignment.rounds].sort(
+      (a, b) => a.roundNumber - b.roundNumber,
+    ),
+  }));
 };
 
-const getRoundStatusCounts = (assignments: PatrolAssignment[]) => {
-  const rounds = assignments.flatMap((assignment) => assignment.rounds);
-
-  return {
-    total: rounds.length,
-    pending: rounds.filter((round) => round.status === "PENDING").length,
-    progress: rounds.filter((round) => round.status === "IN_PROGRESS").length,
-    completed: rounds.filter((round) => round.status === "COMPLETED").length,
-  };
-};
-
-const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
-  onSaveRoundOrder,
-}) => {
-  const [assignments, setAssignments] =
-    useState<PatrolAssignment[]>(MOCK_ASSIGNMENTS);
-
-  const [selectedDate, setSelectedDate] = useState("2026-10-31");
-  const [selectedSite, setSelectedSite] = useState("all");
+const ManajemenRondeView: React.FC<{
+  selectedSite: string;
+}> = ({ selectedSite }) => {
+  const [selectedDate, setSelectedDate] = useState("");
   const [selectedShift, setSelectedShift] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const [expandedAssignments, setExpandedAssignments] = useState<string[]>([
-    "ASN-001",
-  ]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery]);
+
+  const {
+    data: schedulesResponse,
+    isLoading: isSchedulesLoading,
+    isError: isSchedulesError,
+  } = usePatrolSchedules();
+
+  const schedules: PatrolScheduleOption[] = useMemo(() => {
+    const responseData = schedulesResponse?.data ?? [];
+
+    return responseData.map((schedule: PatrolScheduleOption) => ({
+      id: schedule.id,
+      name: schedule.name,
+    }));
+  }, [schedulesResponse]);
+
+  const shiftOptions = useMemo(
+    () => [
+      {
+        value: "all",
+        label: "Semua Shift",
+      },
+      ...schedules.map((schedule) => ({
+        value: schedule.id,
+        label: schedule.name,
+      })),
+    ],
+    [schedules],
+  );
+
+  const {
+    data: roundsResponse,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = usePatrolRoundsGroupedByUser({
+    date: selectedDate || undefined,
+
+    siteId: selectedSite !== "all" ? selectedSite : undefined,
+
+    scheduleId: selectedShift !== "all" ? selectedShift : undefined,
+
+    search: debouncedSearch || undefined,
+  });
+
+  console.log(roundsResponse);
+
+  const assignments = useMemo(
+    () =>
+      mapGroupedRoundsToAssignments(
+        roundsResponse as unknown as ApiGroupedResponse | undefined,
+      ),
+    [roundsResponse],
+  );
+
+  const [expandedAssignments, setExpandedAssignments] = useState<string[]>([]);
 
   const [editingRound, setEditingRound] = useState<{
     assignmentId: string;
@@ -134,87 +242,46 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
     [],
   );
 
-  const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
-  const filteredAssignments = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+  const reorderMutation = useReorderPatrolRoundCheckpoints(
+    editingRound?.round.id ?? "",
+  );
 
-    return assignments.filter((assignment) => {
-      if (selectedDate && assignment.date !== selectedDate) {
-        return false;
-      }
-
-      if (selectedSite !== "all" && assignment.siteId !== selectedSite) {
-        return false;
-      }
-
-      if (selectedShift !== "all" && assignment.shift !== selectedShift) {
-        return false;
-      }
-
-      if (query) {
-        const matches = [
-          assignment.npp,
-          assignment.fullName,
-          assignment.squadName,
-          assignment.siteName,
-        ].some((value) => value.toLowerCase().includes(query));
-
-        if (!matches) return false;
-      }
-
-      return true;
-    });
-  }, [assignments, selectedDate, selectedSite, selectedShift, searchQuery]);
+  const isSaving = reorderMutation.isPending;
 
   const groupedAssignments = useMemo(() => {
-    const shifts: ShiftType[] = ["PAGI", "SIANG", "MALAM"];
+    const grouped = new Map<string, ScheduleGroup>();
 
-    return shifts
-      .map((shift) => ({
-        shift,
-        label:
-          SHIFT_OPTIONS.find((option) => option.value === shift)?.label ||
-          shift,
-        assignments: filteredAssignments.filter(
-          (assignment) => assignment.shift === shift,
-        ),
-      }))
-      .filter((group) => group.assignments.length > 0);
-  }, [filteredAssignments]);
+    assignments.forEach((assignment) => {
+      if (!grouped.has(assignment.scheduleId)) {
+        grouped.set(assignment.scheduleId, {
+          scheduleId: assignment.scheduleId,
+          scheduleName: assignment.scheduleName,
+          assignments: [],
+        });
+      }
 
-  const summary = useMemo(
-    () => getRoundStatusCounts(filteredAssignments),
-    [filteredAssignments],
+      grouped.get(assignment.scheduleId)!.assignments.push(assignment);
+    });
+
+    return Array.from(grouped.values()).sort((a, b) =>
+      a.scheduleName.localeCompare(b.scheduleName),
+    );
+  }, [assignments]);
+
+  const totalPersonnel = useMemo(
+    () => new Set(assignments.map((assignment) => assignment.userId)).size,
+    [assignments],
   );
-
-  const totalCheckpoints = useMemo(
-    () =>
-      filteredAssignments.reduce(
-        (total, assignment) =>
-          total +
-          assignment.rounds.reduce(
-            (roundTotal, round) => roundTotal + round.checkpoints.length,
-            0,
-          ),
-        0,
-      ),
-    [filteredAssignments],
-  );
-
-  // ----------------------------------------------------------
-  // TOAST
-  // ----------------------------------------------------------
 
   const showToast = (message: string) => {
     setToastMessage(message);
-    window.setTimeout(() => setToastMessage(""), 3000);
-  };
 
-  // ----------------------------------------------------------
-  // EXPAND ASSIGNMENT
-  // ----------------------------------------------------------
+    window.setTimeout(() => {
+      setToastMessage("");
+    }, 3000);
+  };
 
   const toggleAssignment = (assignmentId: string) => {
     setExpandedAssignments((previous) =>
@@ -223,10 +290,6 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
         : [...previous, assignmentId],
     );
   };
-
-  // ----------------------------------------------------------
-  // OPEN ROUND EDITOR
-  // ----------------------------------------------------------
 
   const openRoundEditor = (assignmentId: string, round: PatrolRound) => {
     if (round.status !== "PENDING") {
@@ -239,15 +302,12 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
     );
 
     setDraftCheckpoints(ordered);
+
     setEditingRound({
       assignmentId,
       round,
     });
   };
-
-  // ----------------------------------------------------------
-  // REORDER CHECKPOINT
-  // ----------------------------------------------------------
 
   const moveCheckpoint = (index: number, direction: "up" | "down") => {
     const targetIndex = direction === "up" ? index - 1 : index + 1;
@@ -274,7 +334,7 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
   const saveRoundOrder = async () => {
     if (!editingRound) return;
 
-    const { assignmentId, round } = editingRound;
+    const { round } = editingRound;
 
     const checkpointIds = draftCheckpoints.map((checkpoint) => checkpoint.id);
 
@@ -287,57 +347,33 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
     }
 
     try {
-      setIsSaving(true);
-
-      if (onSaveRoundOrder) {
-        await onSaveRoundOrder(round.id, checkpointIds);
-      }
-
-      setAssignments((previous) =>
-        previous.map((assignment) => {
-          if (assignment.id !== assignmentId) {
-            return assignment;
-          }
-
-          return {
-            ...assignment,
-            rounds: assignment.rounds.map((item) => {
-              if (item.id !== round.id) {
-                return item;
-              }
-
-              return {
-                ...item,
-                checkpoints: draftCheckpoints.map((checkpoint, index) => ({
-                  ...checkpoint,
-                  sequence: index + 1,
-                })),
-              };
-            }),
-          };
-        }),
-      );
+      await reorderMutation.mutateAsync(checkpointIds);
 
       setEditingRound(null);
       setDraftCheckpoints([]);
 
       showToast("Urutan checkpoint berhasil diperbarui.");
+
+      await refetch();
     } catch (error) {
       console.error("Gagal menyimpan urutan checkpoint:", error);
-      showToast("Gagal menyimpan urutan checkpoint.");
-    } finally {
-      setIsSaving(false);
+
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Gagal menyimpan urutan checkpoint.",
+      );
     }
   };
 
   const resetFilters = () => {
     setSelectedDate("");
-    setSelectedSite("all");
     setSelectedShift("all");
     setSearchQuery("");
+    setDebouncedSearch("");
   };
 
-  const renderRoundStatus = (status: RoundStatus) => (
+  const renderRoundStatus = (status: PatrolRoundStatus) => (
     <Badge
       variant="outline"
       className={`rounded text-[10px] font-medium ${STATUS_CLASSES[status]}`}
@@ -348,12 +384,12 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
 
   return (
     <div className="space-y-5">
-      {/* HEADER */}
       <div className="flex flex-col justify-between gap-3 border-b pb-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
             Manajemen Ronde Patroli
           </h1>
+
           <p className="mt-1 text-xs text-muted-foreground">
             Kelola ronde personel dan urutan checkpoint pada setiap ronde.
           </p>
@@ -362,18 +398,16 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
         <Button
           variant="outline"
           className="h-9 rounded text-xs"
-          onClick={() => {
-            setAssignments(MOCK_ASSIGNMENTS);
-            resetFilters();
-            showToast("Data ditampilkan ulang.");
-          }}
+          disabled={isFetching}
+          onClick={() => void refetch()}
         >
-          <RefreshCw className="mr-2 size-3.5" />
-          Reset Tampilan
+          <RefreshCw
+            className={`mr-2 size-3.5 ${isFetching ? "animate-spin" : ""}`}
+          />
+          Refresh
         </Button>
       </div>
 
-      {/* TOAST */}
       {toastMessage && (
         <div className="flex items-center justify-between border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
           <div className="flex items-center gap-2">
@@ -392,357 +426,437 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
         </div>
       )}
 
-      {/* FILTER */}
       <div className="space-y-3 border bg-white p-3">
-        <div className="flex items-center gap-2">
-          <Search className="size-4 text-muted-foreground" />
-          <p className="text-sm font-semibold">Filter Data</p>
-        </div>
-
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Pencarian Personel</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
+
+            <InputGroup className="w-full rounded">
+              <InputGroupAddon>
+                <Search className="size-4 text-slate-400" />
+              </InputGroupAddon>
+
+              <InputGroupInput
+                placeholder="Cari kode, nama, atau username..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="NPP, nama, atau regu..."
-                className="h-9 rounded pl-9 text-xs"
               />
-            </div>
+            </InputGroup>
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs">Tanggal Jadwal</Label>
-            <div className="relative">
-              <CalendarDays className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
-                className="h-9 rounded pl-9 text-xs"
-              />
+
+            <div className="flex gap-1">
+              <div className="min-w-0 flex-1">
+                <DatePicker
+                  value={
+                    selectedDate
+                      ? new Date(`${selectedDate}T00:00:00`)
+                      : undefined
+                  }
+                  onChange={(date) => {
+                    setSelectedDate(date ? format(date, "yyyy-MM-dd") : "");
+                  }}
+                  placeholder="Pilih tanggal"
+                  className="w-full rounded"
+                />
+              </div>
+
+              {selectedDate && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-9 shrink-0 rounded"
+                  onClick={() => setSelectedDate("")}
+                  title="Hapus tanggal"
+                >
+                  <X className="size-3.5" />
+                </Button>
+              )}
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Site</Label>
-            <Select
-              value={selectedSite}
-              onValueChange={(value) => setSelectedSite(value as string)}
-            >
-              <SelectTrigger className="h-9 rounded text-xs">
-                <SelectValue placeholder="Pilih site" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Site</SelectItem>
-                <SelectItem value="SITE-01">Site Utama</SelectItem>
-                <SelectItem value="SITE-02">Site Gudang</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            <Label className="text-xs">Pilih Shift</Label>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">Shift</Label>
             <Select
               value={selectedShift}
-              onValueChange={(value) => setSelectedShift(value as string)}
+              onValueChange={(value) => setSelectedShift(value ?? "all")}
+              disabled={isSchedulesLoading || isSchedulesError}
             >
-              <SelectTrigger className="h-9 rounded text-xs">
-                <SelectValue placeholder="Pilih shift" />
+              <SelectTrigger className="w-full rounded text-xs">
+                <SelectValue placeholder="Pilih shift">
+                  {shiftOptions.find((option) => option.value === selectedShift)
+                    ?.label ?? "Pilih shift"}
+                </SelectValue>
               </SelectTrigger>
+
               <SelectContent>
-                {SHIFT_OPTIONS.map((option) => (
+                {shiftOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+
+            {isSchedulesLoading && (
+              <p className="text-[10px] text-muted-foreground">
+                Memuat daftar shift...
+              </p>
+            )}
+
+            {isSchedulesError && (
+              <p className="text-[10px] text-red-600">
+                Gagal mengambil daftar shift.
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-end justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 rounded text-xs"
+              onClick={resetFilters}
+            >
+              <RefreshCw className="mr-2 size-3.5" />
+              Reset Filter
+            </Button>
           </div>
         </div>
+      </div>
 
-        <div className="flex justify-end">
+      {isLoading ? (
+        <div className="border bg-white py-12 text-center">
+          <RefreshCw className="mx-auto size-6 animate-spin text-slate-400" />
+
+          <p className="mt-3 text-sm font-medium">
+            Memuat data ronde patroli...
+          </p>
+        </div>
+      ) : isError ? (
+        <div className="border border-red-200 bg-red-50 py-8 text-center">
+          <p className="text-sm font-medium text-red-700">
+            Gagal mengambil data ronde patroli.
+          </p>
+
+          <p className="mt-1 text-xs text-red-600">
+            {error instanceof Error ? error.message : "Terjadi kesalahan."}
+          </p>
+
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="h-8 rounded text-xs"
-            onClick={resetFilters}
+            className="mt-3 rounded"
+            onClick={() => void refetch()}
           >
             <RefreshCw className="mr-2 size-3.5" />
-            Reset Filter
+            Coba Lagi
           </Button>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold">
+                  Daftar Personel dan Ronde
+                </h2>
 
-      {/* ASSIGNMENT LIST */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold">Daftar Personel dan Ronde</h2>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {selectedDate ? formatDate(selectedDate) : "Seluruh tanggal"}
-              {" · "}
-              {filteredAssignments.length} personel ditemukan
-            </p>
-          </div>
-        </div>
-
-        {groupedAssignments.length === 0 ? (
-          <div className="border bg-white py-12 text-center">
-            <Users className="mx-auto size-8 text-slate-300" />
-            <p className="mt-3 text-sm font-medium">
-              Tidak ada personel ditemukan
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Coba ubah filter atau kata kunci pencarian.
-            </p>
-          </div>
-        ) : (
-          groupedAssignments.map((group) => (
-            <section
-              key={group.shift}
-              className="overflow-hidden border bg-white"
-            >
-              {/* SHIFT HEADER */}
-              <div className="flex flex-col justify-between gap-2 border-b bg-slate-50 px-4 py-3 sm:flex-row sm:items-center">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-8 items-center justify-center rounded bg-white text-slate-600">
-                    <Clock3 className="size-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">{group.label}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {group.shift === "PAGI"
-                        ? "07:00 - 15:00"
-                        : group.shift === "SIANG"
-                          ? "15:00 - 23:00"
-                          : "23:00 - 07:00"}
-                    </p>
-                  </div>
-                </div>
-
-                <Badge variant="secondary" className="w-fit rounded">
-                  {group.assignments.length} Personel
-                </Badge>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {selectedDate ? formatDate(selectedDate) : "Seluruh tanggal"}
+                  {" · "}
+                  {totalPersonnel} personel
+                  {" · "}
+                  {roundsResponse?.totalRounds ?? 0} ronde
+                </p>
               </div>
+            </div>
 
-              {/* PERSONNEL TABLE */}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8"></TableHead>
-                    <TableHead>Personel</TableHead>
-                    <TableHead>Regu</TableHead>
-                    <TableHead>Site</TableHead>
-                    <TableHead className="text-center">Total Ronde</TableHead>
-                    <TableHead className="text-center">Selesai</TableHead>
-                    <TableHead className="text-right">Detail</TableHead>
-                  </TableRow>
-                </TableHeader>
+            {groupedAssignments.length === 0 ? (
+              <div className="border bg-white py-12 text-center">
+                <Users className="mx-auto size-8 text-slate-300" />
 
-                <TableBody>
-                  {group.assignments.map((assignment) => {
-                    const expanded = expandedAssignments.includes(
-                      assignment.id,
-                    );
+                <p className="mt-3 text-sm font-medium">
+                  Tidak ada personel ditemukan
+                </p>
 
-                    const completedRounds = assignment.rounds.filter(
-                      (round) => round.status === "COMPLETED",
-                    ).length;
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Coba ubah filter atau kata kunci pencarian.
+                </p>
+              </div>
+            ) : (
+              groupedAssignments.map((group) => (
+                <section
+                  key={group.scheduleId}
+                  className="overflow-hidden border bg-white"
+                >
+                  {/* SCHEDULE HEADER */}
 
-                    return (
-                      <React.Fragment key={assignment.id}>
-                        <TableRow>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-7 rounded"
-                              onClick={() => toggleAssignment(assignment.id)}
-                            >
-                              {expanded ? (
-                                <ChevronDown className="size-4" />
-                              ) : (
-                                <ChevronRight className="size-4" />
-                              )}
-                            </Button>
-                          </TableCell>
+                  <div className="flex flex-col justify-between gap-2 border-b bg-slate-50 px-4 py-3 sm:flex-row sm:items-center">
+                    <div className="flex items-center gap-2">
+                      <div className="flex size-8 items-center justify-center rounded bg-white text-slate-600">
+                        <Clock3 className="size-4" />
+                      </div>
 
-                          <TableCell>
-                            <div className="min-w-[150px]">
-                              <p className="text-xs font-semibold">
-                                {assignment.fullName}
-                              </p>
-                              <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                                {assignment.npp}
-                              </p>
-                            </div>
-                          </TableCell>
+                      <div>
+                        <p className="text-sm font-semibold">
+                          {group.scheduleName}
+                        </p>
 
-                          <TableCell className="text-xs">
-                            {assignment.squadName}
-                          </TableCell>
+                        <p className="text-[11px] text-muted-foreground">
+                          Jadwal patroli
+                        </p>
+                      </div>
+                    </div>
 
-                          <TableCell className="text-xs">
-                            {assignment.siteName}
-                          </TableCell>
+                    <Badge variant="secondary" className="w-fit rounded">
+                      {group.assignments.length} Personel
+                    </Badge>
+                  </div>
 
-                          <TableCell className="text-center text-xs font-medium">
-                            {assignment.rounds.length}
-                          </TableCell>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-8" />
+                        <TableHead>Personel</TableHead>
+                        <TableHead>Regu</TableHead>
+                        <TableHead>Shift</TableHead>
+                        <TableHead className="text-center">
+                          Total Ronde
+                        </TableHead>
+                        <TableHead className="text-center">Selesai</TableHead>
+                        <TableHead className="text-right">Detail</TableHead>
+                      </TableRow>
+                    </TableHeader>
 
-                          <TableCell className="text-center text-xs">
-                            {completedRounds}/{assignment.rounds.length}
-                          </TableCell>
+                    <TableBody>
+                      {group.assignments.map((assignment) => {
+                        console.log(group);
 
-                          <TableCell className="text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 rounded text-xs"
-                              onClick={() => toggleAssignment(assignment.id)}
-                            >
-                              {expanded ? "Tutup" : "Lihat Ronde"}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
+                        const expanded = expandedAssignments.includes(
+                          assignment.id,
+                        );
 
-                        {/* ROUND DETAIL */}
-                        {expanded && (
-                          <TableRow>
-                            <TableCell
-                              colSpan={7}
-                              className="bg-slate-50/70 p-3"
-                            >
-                              <div className="space-y-3">
-                                <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
-                                  <div>
-                                    <p className="text-xs font-semibold">
-                                      Ronde Patroli
-                                    </p>
-                                    <p className="text-[10px] text-muted-foreground">
-                                      {assignment.fullName}
-                                      {" · "}
-                                      {assignment.shiftLabel}
-                                    </p>
-                                  </div>
+                        const completedRounds = assignment.rounds.filter(
+                          (round) => round.status === "COMPLETED",
+                        ).length;
 
-                                  <p className="text-[10px] text-muted-foreground">
-                                    {assignment.rounds.length} ronde
+                        return (
+                          <React.Fragment key={assignment.id}>
+                            <TableRow>
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 rounded"
+                                  onClick={() =>
+                                    toggleAssignment(assignment.id)
+                                  }
+                                >
+                                  {expanded ? (
+                                    <ChevronDown className="size-4" />
+                                  ) : (
+                                    <ChevronRight className="size-4" />
+                                  )}
+                                </Button>
+                              </TableCell>
+
+                              <TableCell>
+                                <div className="min-w-[150px]">
+                                  <p className="text-xs font-semibold">
+                                    {assignment.fullName}
+                                  </p>
+
+                                  <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                                    {assignment.npp}
                                   </p>
                                 </div>
+                              </TableCell>
 
-                                <div className="overflow-hidden border bg-white">
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead className="w-20">
-                                          Ronde
-                                        </TableHead>
-                                        <TableHead>Waktu</TableHead>
-                                        <TableHead>Checkpoint</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead className="text-right">
-                                          Aksi
-                                        </TableHead>
-                                      </TableRow>
-                                    </TableHeader>
+                              <TableCell className="text-xs">
+                                {assignment.squadName}
+                              </TableCell>
 
-                                    <TableBody>
-                                      {assignment.rounds
-                                        .slice()
-                                        .sort(
-                                          (a, b) =>
-                                            a.roundNumber - b.roundNumber,
-                                        )
-                                        .map((round) => {
-                                          const orderedCheckpoints = [
-                                            ...round.checkpoints,
-                                          ].sort(
-                                            (a, b) => a.sequence - b.sequence,
-                                          );
+                              <TableCell className="text-xs">
+                                {assignment.scheduleName}
+                              </TableCell>
 
-                                          const canEdit =
-                                            round.status === "PENDING";
+                              <TableCell className="text-center text-xs font-medium">
+                                {assignment.rounds.length}
+                              </TableCell>
 
-                                          return (
-                                            <TableRow key={round.id}>
-                                              <TableCell>
-                                                <span className="text-xs font-semibold">
-                                                  Ronde {round.roundNumber}
-                                                </span>
-                                                <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                                                  {round.id}
-                                                </p>
-                                              </TableCell>
+                              <TableCell className="text-center text-xs">
+                                {completedRounds}/{assignment.rounds.length}
+                              </TableCell>
 
-                                              <TableCell className="whitespace-nowrap text-xs">
-                                                {round.scheduledStartAt}
-                                                {" - "}
-                                                {round.scheduledEndAt}
-                                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 rounded text-xs"
+                                  onClick={() =>
+                                    toggleAssignment(assignment.id)
+                                  }
+                                >
+                                  {expanded ? "Tutup" : "Lihat Ronde"}
+                                </Button>
+                              </TableCell>
+                            </TableRow>
 
-                                              <TableCell>
-                                                <div className="flex max-w-[480px] flex-wrap gap-1">
-                                                  {orderedCheckpoints.map(
-                                                    (checkpoint) => (
-                                                      <Badge
-                                                        key={checkpoint.id}
-                                                        variant="outline"
-                                                        className="rounded bg-white text-[10px] font-normal"
-                                                      >
-                                                        {checkpoint.sequence}.{" "}
-                                                        {checkpoint.name}
-                                                      </Badge>
-                                                    ),
-                                                  )}
-                                                </div>
-                                              </TableCell>
+                            {expanded && (
+                              <TableRow>
+                                <TableCell
+                                  colSpan={7}
+                                  className="bg-slate-50/70 p-3"
+                                >
+                                  <div className="space-y-3">
+                                    <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
+                                      <div>
+                                        <p className="text-xs font-semibold">
+                                          Ronde Patroli
+                                        </p>
 
-                                              <TableCell>
-                                                {renderRoundStatus(
-                                                  round.status,
-                                                )}
-                                              </TableCell>
+                                        <p className="text-[10px] text-muted-foreground">
+                                          {assignment.fullName}
+                                          {" · "}
+                                          {assignment.scheduleName}
+                                        </p>
+                                      </div>
 
-                                              <TableCell className="text-right">
-                                                <Button
-                                                  variant="outline"
-                                                  size="sm"
-                                                  disabled={!canEdit}
-                                                  className="h-8 rounded text-xs"
-                                                  onClick={() =>
-                                                    openRoundEditor(
-                                                      assignment.id,
-                                                      round,
-                                                    )
-                                                  }
-                                                >
-                                                  <Route className="mr-1.5 size-3.5" />
-                                                  Atur Urutan
-                                                </Button>
-                                              </TableCell>
-                                            </TableRow>
-                                          );
-                                        })}
-                                    </TableBody>
-                                  </Table>
-                                </div>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </section>
-          ))
-        )}
-      </div>
+                                      <p className="text-[10px] text-muted-foreground">
+                                        {assignment.rounds.length} ronde
+                                      </p>
+                                    </div>
+
+                                    <div className="overflow-hidden border bg-white">
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead className="w-20">
+                                              Ronde
+                                            </TableHead>
+
+                                            <TableHead>Waktu</TableHead>
+
+                                            <TableHead>Checkpoint</TableHead>
+
+                                            <TableHead>Status</TableHead>
+
+                                            <TableHead className="text-right">
+                                              Aksi
+                                            </TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+
+                                        <TableBody>
+                                          {assignment.rounds
+                                            .slice()
+                                            .sort(
+                                              (a, b) =>
+                                                a.roundNumber - b.roundNumber,
+                                            )
+                                            .map((round) => {
+                                              const orderedCheckpoints = [
+                                                ...round.checkpoints,
+                                              ].sort(
+                                                (a, b) =>
+                                                  a.sequence - b.sequence,
+                                              );
+
+                                              const canEdit =
+                                                round.status === "PENDING";
+
+                                              return (
+                                                <TableRow key={round.id}>
+                                                  <TableCell>
+                                                    <span className="text-xs font-semibold">
+                                                      Ronde {round.roundNumber}
+                                                    </span>
+
+                                                    <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                                                      {round.id
+                                                        .slice(0, 7)
+                                                        .toUpperCase()}
+                                                    </p>
+                                                  </TableCell>
+
+                                                  <TableCell className="whitespace-nowrap text-xs">
+                                                    {formatTime(
+                                                      round.scheduledStartAt,
+                                                    )}
+                                                    {" - "}
+                                                    {formatTime(
+                                                      round.scheduledEndAt,
+                                                    )}
+                                                  </TableCell>
+
+                                                  <TableCell>
+                                                    <div className="flex max-w-[480px] flex-wrap gap-1">
+                                                      {orderedCheckpoints.map(
+                                                        (checkpoint) => (
+                                                          <Badge
+                                                            key={checkpoint.id}
+                                                            variant="outline"
+                                                            className="rounded bg-white text-[10px] font-normal"
+                                                          >
+                                                            {
+                                                              checkpoint.sequence
+                                                            }
+                                                            . {checkpoint.name}
+                                                          </Badge>
+                                                        ),
+                                                      )}
+                                                    </div>
+                                                  </TableCell>
+
+                                                  <TableCell>
+                                                    {renderRoundStatus(
+                                                      round.status,
+                                                    )}
+                                                  </TableCell>
+
+                                                  <TableCell className="text-right">
+                                                    <Button
+                                                      variant="outline"
+                                                      size="sm"
+                                                      disabled={!canEdit}
+                                                      className="h-8 rounded text-xs"
+                                                      onClick={() =>
+                                                        openRoundEditor(
+                                                          assignment.id,
+                                                          round,
+                                                        )
+                                                      }
+                                                    >
+                                                      <Route className="mr-1.5 size-3.5" />
+                                                      Atur Urutan
+                                                    </Button>
+                                                  </TableCell>
+                                                </TableRow>
+                                              );
+                                            })}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </section>
+              ))
+            )}
+          </div>
+        </>
+      )}
 
       <Dialog
         open={!!editingRound}
@@ -753,11 +867,12 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
+        <DialogContent className="max-h-[90vh] max-w-xl sm:max-w-2xl overflow-y-auto rounded">
           <DialogHeader>
             <DialogTitle className="text-base">
               Atur Urutan Checkpoint
             </DialogTitle>
+
             <DialogDescription className="text-xs">
               Geser checkpoint menggunakan tombol naik dan turun untuk
               menentukan urutan patroli.
@@ -766,10 +881,10 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
 
           {editingRound && (
             <div className="space-y-4">
-              {/* ROUND INFORMATION */}
               <div className="grid grid-cols-2 gap-3 border bg-slate-50 p-3">
                 <div>
                   <p className="text-[10px] text-muted-foreground">Personel</p>
+
                   <p className="mt-1 text-xs font-semibold">
                     {
                       assignments.find(
@@ -781,6 +896,7 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
 
                 <div>
                   <p className="text-[10px] text-muted-foreground">Ronde</p>
+
                   <p className="mt-1 text-xs font-semibold">
                     Ronde {editingRound.round.roundNumber}
                   </p>
@@ -788,10 +904,11 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
 
                 <div>
                   <p className="text-[10px] text-muted-foreground">Waktu</p>
+
                   <p className="mt-1 text-xs font-semibold">
-                    {editingRound.round.scheduledStartAt}
+                    {formatTime(editingRound.round.scheduledStartAt)}
                     {" - "}
-                    {editingRound.round.scheduledEndAt}
+                    {formatTime(editingRound.round.scheduledEndAt)}
                   </p>
                 </div>
 
@@ -799,27 +916,28 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
                   <p className="text-[10px] text-muted-foreground">
                     Jumlah Checkpoint
                   </p>
+
                   <p className="mt-1 text-xs font-semibold">
                     {draftCheckpoints.length} checkpoint
                   </p>
                 </div>
               </div>
 
-              {/* INSTRUCTION */}
               <div className="flex items-start gap-2 border border-blue-200 bg-blue-50 p-3">
                 <ShieldCheck className="mt-0.5 size-4 shrink-0 text-blue-600" />
+
                 <p className="text-[11px] leading-relaxed text-blue-800">
                   Urutan yang disimpan hanya berlaku untuk ronde ini. Ronde lain
                   dan rute default tidak akan berubah.
                 </p>
               </div>
 
-              {/* CHECKPOINT LIST */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs font-semibold">
                     Urutan Checkpoint
                   </Label>
+
                   <span className="text-[10px] text-muted-foreground">
                     Gunakan tombol panah untuk mengubah urutan
                   </span>
@@ -845,10 +963,12 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
                         <p className="truncate text-xs font-semibold">
                           {checkpoint.name}
                         </p>
+
                         <div className="mt-0.5 flex items-center gap-2">
                           <span className="font-mono text-[10px] text-muted-foreground">
                             {checkpoint.code}
                           </span>
+
                           {checkpoint.required && (
                             <Badge
                               variant="outline"
@@ -865,7 +985,7 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
                           type="button"
                           variant="outline"
                           size="icon"
-                          disabled={index === 0}
+                          disabled={index === 0 || isSaving}
                           className="size-8 rounded"
                           title="Pindah ke atas"
                           onClick={() => moveCheckpoint(index, "up")}
@@ -877,7 +997,9 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
                           type="button"
                           variant="outline"
                           size="icon"
-                          disabled={index === draftCheckpoints.length - 1}
+                          disabled={
+                            index === draftCheckpoints.length - 1 || isSaving
+                          }
                           className="size-8 rounded"
                           title="Pindah ke bawah"
                           onClick={() => moveCheckpoint(index, "down")}
@@ -892,6 +1014,7 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
 
               <div className="border p-3">
                 <p className="mb-2 text-xs font-semibold">Preview Rute</p>
+
                 <div className="flex flex-wrap items-center gap-1.5">
                   {draftCheckpoints.map((checkpoint, index) => (
                     <React.Fragment key={checkpoint.id}>
@@ -901,6 +1024,7 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
                       >
                         {index + 1}. {checkpoint.name}
                       </Badge>
+
                       {index < draftCheckpoints.length - 1 && (
                         <ChevronRight className="size-3 text-slate-400" />
                       )}
@@ -927,7 +1051,7 @@ const ManajemenRondeView: React.FC<ManajemenRondeViewProps> = ({
 
             <Button
               type="button"
-              className="rounded"
+              className="rounded bg-amber-600 text-white hover:bg-amber-700"
               disabled={isSaving || draftCheckpoints.length === 0}
               onClick={saveRoundOrder}
             >

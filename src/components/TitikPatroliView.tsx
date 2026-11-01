@@ -1,4 +1,4 @@
-import { CheckCircle2, Edit, Link2, Search, Unlink, X } from "lucide-react";
+import { CheckCircle2, Edit, Link2, Search, Unlink } from "lucide-react";
 
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -54,15 +54,17 @@ import type { NfcTagResponse } from "../types/nfc/nfc";
 
 import AssignNfcDialog from "./patrolPoints/AssignNfcDialog";
 
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 import {
   getActiveAssignment,
   getStatusClass,
   getStatusLabel,
 } from "../utils/patrolPointUtils";
+import { PaginationComponent } from "./PaginationComponent";
 import PointFormDialog from "./patrolPoints/PointFormDialog";
 import { PointForm } from "./patrolPoints/TitikPatroliFormDialog";
 import { TitikPatroliHeader } from "./patrolPoints/TitikPatroliHeader";
-import { TitikPatroliPagination } from "./patrolPoints/TitikPatroliPagination";
 import UnassignNfcDialog from "./patrolPoints/UnassignNfcDialog";
 
 interface TitikPatroliViewProps {
@@ -143,28 +145,66 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
   const [actionError, setActionError] = useState("");
 
-  const [toastMessage, setToastMessage] = useState("");
+  const [columnFilters, setColumnFilters] = useState({
+    code: "",
+    name: "",
+    site: "",
+    coordinates: "",
+    radius: "",
+    nfc: "",
+    status: "",
+  });
+
+  const handleColumnFilterChange = (
+    key: keyof typeof columnFilters,
+    value: string,
+  ) => {
+    setColumnFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   const isNfcProcessing =
     assignNfcMutation.isPending || unassignNfcMutation.isPending;
 
-  const showToast = (message: string) => {
-    setToastMessage(message);
-
-    window.setTimeout(() => {
-      setToastMessage("");
-    }, 3500);
-  };
-
   const filteredCheckpoints = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
     return checkpoints.filter((point) => {
       const activeAssignment = getActiveAssignment(point);
-
+      const uid = activeAssignment?.nfcTag?.uid ?? "";
       const assigned = Boolean(activeAssignment);
+
+      const globalMatch =
+        !query ||
+        point.code.toLowerCase().includes(query) ||
+        point.name.toLowerCase().includes(query) ||
+        (point.description ?? "").toLowerCase().includes(query) ||
+        (point.site?.name ?? "").toLowerCase().includes(query) ||
+        uid.toLowerCase().includes(query);
+
+      const columnMatch =
+        point.code.toLowerCase().includes(columnFilters.code.toLowerCase()) &&
+        point.name.toLowerCase().includes(columnFilters.name.toLowerCase()) &&
+        (point.site?.name ?? point.siteId)
+          .toLowerCase()
+          .includes(columnFilters.site.toLowerCase()) &&
+        `${point.latitude}, ${point.longitude}`
+          .toLowerCase()
+          .includes(columnFilters.coordinates.toLowerCase()) &&
+        String(point.radiusMeters)
+          .toLowerCase()
+          .includes(columnFilters.radius.toLowerCase()) &&
+        (uid.toLowerCase().includes(columnFilters.nfc.toLowerCase()) ||
+          (columnFilters.nfc.toLowerCase().includes("belum") && !assigned) ||
+          (columnFilters.nfc.toLowerCase().includes("ditautkan") &&
+            assigned)) &&
+        getStatusLabel(point.status)
+          .toLowerCase()
+          .includes(columnFilters.status.toLowerCase());
 
       if (selectedStatus !== "all" && point.status !== selectedStatus) {
         return false;
@@ -178,22 +218,15 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         return false;
       }
 
-      if (!query) {
-        return true;
-      }
-
-      const uid = activeAssignment?.nfcTag?.uid ?? "";
-
-      return (
-        point.code.toLowerCase().includes(query) ||
-        point.name.toLowerCase().includes(query) ||
-        (point.description ?? "").toLowerCase().includes(query) ||
-        (point.site?.name ?? "").toLowerCase().includes(query) ||
-        uid.toLowerCase().includes(query)
-      );
+      return globalMatch && columnMatch;
     });
-  }, [checkpoints, searchQuery, selectedStatus, selectedNfcStatus]);
-
+  }, [
+    checkpoints,
+    searchQuery,
+    selectedStatus,
+    selectedNfcStatus,
+    columnFilters,
+  ]);
   const totalItems = filteredCheckpoints.length;
 
   const itemsPerPage = Number(pageSize);
@@ -225,7 +258,13 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedStatus, selectedNfcStatus, selectedSite]);
+  }, [
+    searchQuery,
+    selectedStatus,
+    selectedNfcStatus,
+    selectedSite,
+    columnFilters,
+  ]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -332,10 +371,6 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
     radiusMeters: Number(form.radiusMeters),
   });
 
-  // =====================================================
-  // CREATE PATROL POINT
-  // =====================================================
-
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -357,15 +392,13 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
       setForm(EMPTY_FORM);
 
-      showToast("Titik patroli berhasil ditambahkan.");
+      toast.success("Titik patroli berhasil ditambahkan.");
     } catch (err) {
-      setFormError(getErrorMessage(err));
+      toast.error("Gagal menambahkan titik patroli.", {
+        description: getErrorMessage(err),
+      });
     }
   };
-
-  // =====================================================
-  // UPDATE PATROL POINT
-  // =====================================================
 
   const handleUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -390,18 +423,15 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
       });
 
       setEditingCheckpoint(null);
-
       setForm(EMPTY_FORM);
 
-      showToast("Titik patroli berhasil diperbarui.");
+      toast.success("Titik patroli berhasil diperbarui.");
     } catch (err) {
-      setFormError(getErrorMessage(err));
+      toast.error("Gagal memperbarui titik patroli.", {
+        description: getErrorMessage(err),
+      });
     }
   };
-
-  // =====================================================
-  // ASSIGN NFC
-  // =====================================================
 
   const openAssignDialog = (point: PatrolPointResponse) => {
     setActionError("");
@@ -436,18 +466,15 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
       });
 
       setAssigningCheckpoint(null);
-
       setSelectedNfcId("");
 
-      showToast("NFC berhasil ditautkan ke titik patroli.");
+      toast.success("NFC berhasil ditautkan ke titik patroli.");
     } catch (err) {
-      setActionError(getErrorMessage(err));
+      toast.error("Gagal menautkan NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
-
-  // =====================================================
-  // UNASSIGN NFC
-  // =====================================================
 
   const openUnassignDialog = (point: PatrolPointResponse) => {
     setActionError("");
@@ -473,8 +500,6 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
       return;
     }
 
-    setActionError("");
-
     try {
       await unassignNfcMutation.mutateAsync({
         patrolPointId: unassigningCheckpoint.id,
@@ -483,34 +508,16 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
 
       setUnassigningCheckpoint(null);
 
-      showToast("NFC berhasil dilepas dari titik patroli.");
+      toast.success("NFC berhasil dilepas dari titik patroli.");
     } catch (err) {
-      setActionError(getErrorMessage(err));
+      toast.error("Gagal melepas NFC.", {
+        description: getErrorMessage(err),
+      });
     }
   };
 
   return (
-    <div className="space-y-5">
-      {/* TOAST */}
-      {toastMessage && (
-        <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-4" />
-            {toastMessage}
-          </div>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            onClick={() => setToastMessage("")}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      )}
-
-      {/* HEADER */}
+    <div className="space-y-3">
       <TitikPatroliHeader
         isFetching={isFetching}
         onAdd={openAddDialog}
@@ -575,7 +582,18 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
         </Select>
       </div>
 
-      {/* TABLE */}
+      <div className="">
+        <PaginationComponent
+          totalItems={totalItems}
+          startItem={startItem}
+          endItem={endItem}
+          pageSize={pageSize}
+          currentPage={currentPage}
+          totalPages={totalPages ?? 1}
+          onPageSizeChange={handlePageSizeChange}
+          onPageChange={handlePageChange}
+        />
+      </div>
       <div className="overflow-hidden rounded border border-slate-200 bg-white">
         <div className="overflow-x-auto">
           <Table>
@@ -590,8 +608,116 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
                 <TableHead className="text-center text-xs">Status</TableHead>
                 <TableHead className="text-center text-xs">Aksi</TableHead>
               </TableRow>
-            </TableHeader>
 
+              <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableHead>
+                  <Input
+                    value={columnFilters.code}
+                    onChange={(e) =>
+                      handleColumnFilterChange("code", e.target.value)
+                    }
+                    placeholder="Cari kode..."
+                    className="h-7 rounded text-[11px] font-normal"
+                  />
+                </TableHead>
+
+                <TableHead>
+                  <Input
+                    value={columnFilters.name}
+                    onChange={(e) =>
+                      handleColumnFilterChange("name", e.target.value)
+                    }
+                    placeholder="Cari nama titik..."
+                    className="h-7 rounded text-[11px] font-normal"
+                  />
+                </TableHead>
+
+                <TableHead>
+                  <Input
+                    value={columnFilters.site}
+                    onChange={(e) =>
+                      handleColumnFilterChange("site", e.target.value)
+                    }
+                    placeholder="Cari site..."
+                    className="h-7 rounded text-[11px] font-normal"
+                  />
+                </TableHead>
+
+                <TableHead>
+                  <Input
+                    value={columnFilters.coordinates}
+                    onChange={(e) =>
+                      handleColumnFilterChange("coordinates", e.target.value)
+                    }
+                    placeholder="Cari coordinates"
+                    className="h-7 min-w-0 rounded text-[11px] font-normal"
+                  />
+                </TableHead>
+
+                <TableHead>
+                  <Input
+                    value={columnFilters.radius}
+                    onChange={(e) =>
+                      handleColumnFilterChange("radius", e.target.value)
+                    }
+                    placeholder="Cari radius..."
+                    className="h-7 rounded text-[11px] font-normal"
+                  />
+                </TableHead>
+
+                <TableHead className="text-center">
+                  <Select
+                    value={selectedNfcStatus}
+                    onValueChange={(value) =>
+                      setSelectedNfcStatus(value ?? "all")
+                    }
+                  >
+                    <SelectTrigger className="h-7 rounded text-[11px]">
+                      <span>
+                        {{
+                          all: "Semua",
+                          assigned: "Ditautkan",
+                          unassigned: "Belum",
+                        }[selectedNfcStatus] ?? "Semua"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua NFC</SelectItem>
+                      <SelectItem value="assigned">Sudah Ditautkan</SelectItem>
+                      <SelectItem value="unassigned">
+                        Belum Ditautkan
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableHead>
+
+                <TableHead className="text-center">
+                  <Select
+                    value={selectedStatus}
+                    onValueChange={(value) => setSelectedStatus(value ?? "all")}
+                  >
+                    <SelectTrigger className="h-7 rounded text-[11px]">
+                      <span>
+                        {{
+                          all: "Semua",
+                          ACTIVE: "Aktif",
+                          INACTIVE: "Nonaktif",
+                          MAINTENANCE: "Pemeliharaan",
+                        }[selectedStatus] ?? "Semua"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Status</SelectItem>
+                      <SelectItem value="ACTIVE">Aktif</SelectItem>
+                      <SelectItem value="INACTIVE">Nonaktif</SelectItem>
+                      <SelectItem value="MAINTENANCE">Pemeliharaan</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableHead>
+
+                <TableHead />
+              </TableRow>
+            </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
@@ -748,18 +874,6 @@ export const TitikPatroliView: React.FC<TitikPatroliViewProps> = ({
           </Table>
         </div>
       </div>
-
-      {/* PAGINATION */}
-      <TitikPatroliPagination
-        currentPage={currentPage}
-        endItem={endItem}
-        onPageChange={handlePageChange}
-        onPageSizeChange={handlePageSizeChange}
-        pageSize={pageSize}
-        startItem={startItem}
-        totalItems={totalItems}
-        totalPages={totalPages}
-      />
 
       <PointFormDialog
         open={isAddModalOpen}

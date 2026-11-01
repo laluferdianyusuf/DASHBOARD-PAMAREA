@@ -1,19 +1,19 @@
 import { apiClient } from "../../lib/apiClient";
 
 import type {
-  PatrolSchedule,
+  AddScheduleAssignmentPayload,
   CreatePatrolSchedulePayload,
-  UpdatePatrolSchedulePayload,
-  ScheduleFilterQuery,
-  PatrolScheduleListResponse,
-  MonthlyRosterQuery,
-  MonthlyRosterItem,
+  DeleteScheduleResponse,
   ExtendScheduleDatesPayload,
   ExtendScheduleDatesResponse,
-  AddScheduleAssignmentPayload,
-  UpdateScheduleAssignmentPayload,
-  DeleteScheduleResponse,
+  MonthlyRosterQuery,
+  PatrolSchedule,
+  PatrolScheduleListResponse,
   PatrolScheduleMutationResponse,
+  RosterUser,
+  ScheduleFilterQuery,
+  UpdatePatrolSchedulePayload,
+  UpdateScheduleAssignmentPayload,
 } from "../../types/schedule/patrol-schedule";
 
 import type { PatrolScheduleAssignment } from "../../types/schedule/schedule-assignment";
@@ -131,8 +131,8 @@ export const deletePatrolSchedule = async (
 // Mengambil roster schedule bulanan
 export const getMonthlyRoster = async (
   params: MonthlyRosterQuery,
-): Promise<MonthlyRosterItem[]> => {
-  const response = await apiClient.get<MonthlyRosterItem[]>(
+): Promise<RosterUser[]> => {
+  const response = await apiClient.get<RosterUser[]>(
     "/patrol-schedules/roster",
     { params },
   );

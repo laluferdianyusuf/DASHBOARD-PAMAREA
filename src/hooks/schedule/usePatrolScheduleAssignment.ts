@@ -4,26 +4,27 @@ import {
   createScheduleAssignment,
   getScheduleAssignment,
   getScheduleAssignments,
+  removeScheduleAssignment,
 } from "../../services/schedule/schedule-assigments.service";
 import type {
   BulkAssignUserPayload,
   CreateScheduleAssignmentPayload,
 } from "../../types";
 
-export const useScheduleAssigments = (scheduleId: string) => {
+export const useScheduleAssignments = (scheduleId: string) => {
   return useQuery({
     queryKey: ["patrol-schedule-assignment", scheduleId],
     queryFn: () => getScheduleAssignment(scheduleId),
     // enabled: !!scheduleId,
   });
 };
-export const useGetScheduleAssigments = () => {
+export const useGetScheduleAssignments = () => {
   return useQuery({
     queryKey: ["patrol-schedule-assignment"],
     queryFn: () => getScheduleAssignments(),
   });
 };
-export const useCreateScheduleAssigment = () => {
+export const useCreateScheduleAssignment = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -38,6 +39,12 @@ export const useCreateScheduleAssigment = () => {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
+          queryKey: ["monthly-roster"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["shift-changes"],
+        }),
+        queryClient.invalidateQueries({
           queryKey: ["patrol-schedules"],
         }),
         queryClient.invalidateQueries({
@@ -50,6 +57,41 @@ export const useCreateScheduleAssigment = () => {
     },
   });
 };
+
+export const useUnassignScheduleAssignment = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      scheduleId,
+      assignmentId,
+    }: {
+      scheduleId: string;
+      assignmentId: string;
+    }) => removeScheduleAssignment(scheduleId, assignmentId),
+
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["shift-changes"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["monthly-roster"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedules"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedule-assignments"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-rounds"],
+        }),
+      ]);
+    },
+  });
+};
+
 export const useBulkAssignUser = () => {
   const queryClient = useQueryClient();
 

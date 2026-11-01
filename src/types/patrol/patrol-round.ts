@@ -76,6 +76,13 @@ export interface GetPatrolRoundsByUserParams {
   date?: string;
 }
 
+export interface GetAllRoundsGroupedByUserParams {
+  date?: string;
+  siteId?: string;
+  scheduleId?: string;
+  search?: string;
+}
+
 export interface PatrolRoundQuery {
   date?: string;
 }

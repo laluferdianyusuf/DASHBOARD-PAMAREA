@@ -260,7 +260,7 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
           </CardHeader>
 
           <CardContent className="p-0">
-            <div className="relative h-[450px] w-full">
+            <div className="relative z-0 isolate h-[450px] w-full">
               <MapContainer
                 center={center}
                 zoom={18}
@@ -372,8 +372,6 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
               />
             </div>
 
-            {/* FILTER */}
-
             <div className="flex items-center gap-2">
               <Select
                 value={filterStatus}
@@ -382,7 +380,13 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
                 }
               >
                 <SelectTrigger className="h-9 flex-1 text-xs">
-                  <SelectValue placeholder="Filter status" />
+                  <SelectValue placeholder="Filter status">
+                    {{
+                      ALL: "Semua Status",
+                      ACTIVE: "Aktif",
+                      INACTIVE: "Nonaktif",
+                    }[filterStatus] ?? "Filter status"}
+                  </SelectValue>
                 </SelectTrigger>
 
                 <SelectContent>
@@ -395,8 +399,7 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
               <Button
                 type="button"
                 variant="outline"
-                size="icon"
-                className="size-9 shrink-0"
+                className="shrink-0"
                 onClick={handleResetFilter}
                 title="Reset filter"
               >
