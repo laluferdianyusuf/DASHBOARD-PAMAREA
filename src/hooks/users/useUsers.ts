@@ -47,7 +47,7 @@ export const useSecurityUsers = () => {
 export const useActiveUsers = () => {
   return useQuery({
     queryKey: userKeys.active(),
-    queryFn: () => getActiveUsers,
+    queryFn: getActiveUsers,
   });
 };
 

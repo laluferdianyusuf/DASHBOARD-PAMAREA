@@ -1,10 +1,5 @@
-import React, { useState } from "react";
-import {
-  CHECKPOINTS,
-  PATROL_SCHEDULES,
-  PatrolScheduleItem,
-  SITES,
-} from "../data/mockData";
+import React, { useMemo, useState } from "react";
+import { PatrolScheduleItem } from "../data/mockData";
 import { ShiftOfficerAssignment } from "../utils/security-logic";
 import { NavTab } from "./Sidebar";
 
@@ -14,7 +9,6 @@ import {
   Check,
   Clock,
   CloudSun,
-  Download,
   MapPin,
   Moon,
   Plus,
@@ -57,6 +51,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useGetScheduleAssigments } from "../hooks/schedule/usePatrolScheduleAssignment";
+import {
+  useCreatePatrolSchedule,
+  usePatrolSchedules,
+} from "../hooks/schedule/usePatrolSchedules";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useAuthContext } from "../hooks/auth/useAuthContext";
+import { CreatePatrolSchedulePayload } from "../types";
+import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
 
 interface JadwalPatroliViewProps {
   selectedSite: string;
@@ -92,36 +95,25 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
   schedules: propSchedules,
   onUpdateSchedules,
 }) => {
-  const [internalSchedules, setInternalSchedules] =
-    useState<PatrolScheduleItem[]>(PATROL_SCHEDULES);
+  const { user } = useAuthContext();
+  const siteId = user?.siteId;
 
-  const schedules = propSchedules ?? internalSchedules;
+  const { data: shifts } = usePatrolSchedules();
+  const { data: assignment } = useGetScheduleAssigments();
+  const { data: patrolPoints, isLoading: isLoadingPoints } = usePatrolPoints();
 
-  const setSchedules = (
-    updater: React.SetStateAction<PatrolScheduleItem[]>,
-  ) => {
-    const next = typeof updater === "function" ? updater(schedules) : updater;
+  const { mutateAsync: createPS } = useCreatePatrolSchedule();
 
-    onUpdateSchedules?.(next);
-    setInternalSchedules(next);
-  };
+  const listShift = shifts?.data ?? [];
+  const scheduleAssignment = assignment ?? [];
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedShift, setSelectedShift] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState("all");
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [backupModalSchedule, setBackupModalSchedule] =
-    useState<PatrolScheduleItem | null>(null);
-
-  const [selectedBackupOfficer, setSelectedBackupOfficer] = useState(
-    "Hendra Kurniawan (Cadangan 1)",
-  );
-  const [backupReason, setBackupReason] = useState("Izin Sakit Terverifikasi");
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Form shift
-  const [shiftSiteId, setShiftSiteId] = useState("site-a");
   const [shiftName, setShiftName] = useState("Shift Pagi");
   const [shiftStartTime, setShiftStartTime] = useState("07:00");
   const [shiftEndTime, setShiftEndTime] = useState("15:00");
@@ -129,29 +121,22 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
   const [shiftGracePeriodMinutes, setShiftGracePeriodMinutes] = useState(30);
   const [shiftEnforceSequence, setShiftEnforceSequence] = useState(false);
 
-  const [shiftLocationIds, setShiftLocationIds] = useState<string[]>([
-    "CP-SDR-001",
-    "CP-SDR-002",
-    "CP-SDR-003",
-  ]);
+  const [shiftLocationIds, setShiftLocationIds] = useState<string[]>([]);
 
   const [modalLocationSearch, setModalLocationSearch] = useState("");
-  const [modalSquad, setModalSquad] = useState("Regu Alpha");
-  const [modalDanru, setModalDanru] = useState("Ahmad Fauzi");
-  const [copiedModalJson, setCopiedModalJson] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  const filteredSchedules = schedules.filter((schedule) => {
-    if (selectedSite !== "all" && schedule.siteId !== selectedSite) {
-      return false;
-    }
+  const activePoint = useMemo(() => {
+    return patrolPoints?.filter((item) => item.status === "ACTIVE");
+  }, [patrolPoints]);
 
-    if (selectedShift !== "all" && !schedule.shift.includes(selectedShift)) {
-      return false;
-    }
+  const filteredSchedules = scheduleAssignment.filter((schedule) => {
+    if (selectedShift !== "all") {
+      const scheduleName = schedule.schedule?.name?.toLowerCase() ?? "";
 
-    if (selectedStatus !== "all" && schedule.status !== selectedStatus) {
-      return false;
+      if (!scheduleName.includes(selectedShift.toLowerCase())) {
+        return false;
+      }
     }
 
     if (searchQuery.trim()) {
@@ -159,11 +144,10 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
 
       const match = [
         schedule.id,
-        schedule.sector,
-        schedule.squad,
-        schedule.danru,
-        schedule.siteName,
-      ].some((value) => value.toLowerCase().includes(query));
+        schedule.schedule?.name,
+        schedule.user?.fullName,
+        schedule.schedule?.site?.name,
+      ].some((value) => value?.toLowerCase().includes(query));
 
       if (!match) return false;
     }
@@ -176,134 +160,70 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
     setTimeout(() => setSuccessToast(null), 3500);
   };
 
-  const handlePlotBackup = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!backupModalSchedule) return;
-
-    setSchedules((prev) =>
-      prev.map((schedule) => {
-        if (schedule.id !== backupModalSchedule.id) return schedule;
-
-        return {
-          ...schedule,
-          assignedCount: schedule.requiredCount,
-          guardRatio: `${schedule.requiredCount}/${schedule.requiredCount} Petugas Lengkap (Plot: ${selectedBackupOfficer})`,
-          status: "Berjalan Aktif",
-        };
-      }),
-    );
-
-    setBackupModalSchedule(null);
-
-    showToast(
-      `Personel ${selectedBackupOfficer} berhasil diplot. Alasan: ${backupReason}`,
-    );
-  };
-
-  const handleCreateSchedule = (e: React.FormEvent) => {
+  const handleCreateSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
 
+    // Validasi Site
+    if (!siteId) {
+      setModalError("Site ID tidak ditemukan.");
+      return;
+    }
+
+    // Validasi nama shift
     if (!shiftName.trim()) {
       setModalError("Nama shift wajib diisi.");
       return;
     }
 
+    // Validasi titik patroli
     if (shiftLocationIds.length === 0) {
       setModalError("Pilih minimal satu titik patroli.");
       return;
     }
 
-    const siteObj = SITES.find((site) => site.id === shiftSiteId);
+    // Ambil titik patroli yang dipilih sesuai urutan pilihan
+    const selectedPoints = shiftLocationIds
+      .map((id) => activePoint?.find((checkpoint) => checkpoint.id === id))
+      .filter((checkpoint) => checkpoint !== undefined);
 
-    if (!siteObj) {
-      setModalError("Site yang dipilih tidak ditemukan.");
+    if (selectedPoints.length !== shiftLocationIds.length) {
+      setModalError("Terdapat titik patroli yang tidak ditemukan.");
       return;
     }
 
-    const newId = `SCH-2025-0524-${String(schedules.length + 1).padStart(
-      2,
-      "0",
-    )}`;
+    // Mapping titik patroli ke payload BE
+    const points = shiftLocationIds.map((patrolPointId) => ({
+      patrolPointId,
+      required: true,
+    }));
 
-    const selectedPoints = CHECKPOINTS.filter((checkpoint) =>
-      shiftLocationIds.includes(checkpoint.id),
-    );
-
-    const locationNames = selectedPoints.map((checkpoint) => checkpoint.name);
-
-    const created: PatrolScheduleItem = {
-      id: newId,
-      siteId: shiftSiteId,
-      siteName: siteObj.name.replace(/^Site [A-D] - /, ""),
-      sector: `${selectedPoints.length} Titik (${locationNames
-        .slice(0, 2)
-        .join(", ")}${locationNames.length > 2 ? "..." : ""})`,
-      squad: modalSquad,
-      danru: modalDanru,
-      shift: `${shiftName} (${shiftStartTime} - ${shiftEndTime})` as any,
-      routeName: `Rute ${shiftName} (${
-        shiftEnforceSequence ? "Wajib Urut" : "Fleksibel"
-      })`,
-      checkpointCount: selectedPoints.length,
-      frequency: `Setiap ${shiftIntervalMinutes} Menit (Toleransi ${shiftGracePeriodMinutes}m)`,
-      guardRatio: "4/4 Petugas",
-      assignedCount: 4,
-      requiredCount: 4,
-      status: "Terjadwal",
-      date: "2025-05-24",
+    // Payload create schedule
+    const payload: CreatePatrolSchedulePayload = {
+      siteId,
+      name: shiftName.trim(),
+      startTime: shiftStartTime,
+      endTime: shiftEndTime,
+      intervalMinutes: shiftIntervalMinutes,
+      gracePeriodMinutes: shiftGracePeriodMinutes,
+      enforceSequence: shiftEnforceSequence,
+      points,
     };
 
-    setSchedules([created, ...schedules]);
-    setIsAddModalOpen(false);
+    try {
+      await createPS(payload);
 
-    showToast(
-      `Shift "${shiftName}" berhasil dibuat dengan ${shiftLocationIds.length} titik lokasi.`,
-    );
+      setIsAddModalOpen(false);
+
+      showToast(
+        `Shift "${shiftName.trim()}" berhasil dibuat dengan ${points.length} titik lokasi.`,
+      );
+    } catch (error) {
+      setModalError("Gagal menambah shift");
+    }
   };
 
-  const handleExportCSV = () => {
-    const headers = [
-      "ID",
-      "Site",
-      "Sector",
-      "Squad",
-      "Danru",
-      "Shift",
-      "Status",
-    ];
-
-    const rows = schedules.map((schedule) =>
-      [
-        schedule.id,
-        schedule.siteName,
-        schedule.sector,
-        schedule.squad,
-        schedule.danru,
-        schedule.shift,
-        schedule.status,
-      ]
-        .map((value) => `"${String(value).replace(/"/g, '""')}"`)
-        .join(","),
-    );
-
-    const csvContent = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = "Jadwal_Patroli_PAMAREA.csv";
-    link.click();
-
-    URL.revokeObjectURL(url);
-  };
-
-  const filteredCheckpoints = CHECKPOINTS.filter((checkpoint) => {
+  const filteredCheckpoints = activePoint?.filter((checkpoint) => {
     if (!modalLocationSearch.trim()) return true;
 
     const query = modalLocationSearch.toLowerCase();
@@ -311,14 +231,14 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
     return [
       checkpoint.name,
       checkpoint.id,
-      checkpoint.zoneFloor,
-      checkpoint.siteName,
-    ].some((value) => value.toLowerCase().includes(query));
+      checkpoint.site.code,
+      checkpoint.description,
+    ].some((value) => value?.toLowerCase().includes(query));
   });
 
-  const getShiftIcon = (shift: string) => {
-    if (shift.includes("Pagi")) return Sun;
-    if (shift.includes("Siang")) return CloudSun;
+  const getShiftIcon = (shift: string | undefined) => {
+    if (shift?.includes("Pagi")) return Sun;
+    if (shift?.includes("Sore")) return CloudSun;
     return Moon;
   };
 
@@ -372,18 +292,8 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
           </div>
 
           <Button
-            variant="outline"
             size="sm"
-            className="rounded"
-            onClick={handleExportCSV}
-          >
-            <Download className="mr-2 size-4" />
-            Ekspor CSV
-          </Button>
-
-          <Button
-            size="sm"
-            className="rounded"
+            className="rounded bg-[#FED400] hover:bg-yellow-400 text-black"
             onClick={() => setIsAddModalOpen(true)}
           >
             <Plus className="mr-2 size-4" />
@@ -410,30 +320,14 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
             value={selectedShift}
             onValueChange={(value) => setSelectedShift(value as string)}
           >
-            <SelectTrigger className="w-full rounded sm:w-[190px]">
+            <SelectTrigger className="w-full rounded sm:w-47.5">
               <SelectValue placeholder="Semua Shift" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Semua Shift</SelectItem>
               <SelectItem value="Pagi">Shift Pagi</SelectItem>
-              <SelectItem value="Siang">Shift Siang</SelectItem>
+              <SelectItem value="Sore">Shift Sore</SelectItem>
               <SelectItem value="Malam">Shift Malam</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={selectedStatus}
-            onValueChange={(value) => setSelectedStatus(value as string)}
-          >
-            <SelectTrigger className="w-full rounded sm:w-[190px]">
-              <SelectValue placeholder="Semua Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="Berjalan Aktif">Berjalan Aktif</SelectItem>
-              <SelectItem value="Perlu Pengganti">Perlu Pengganti</SelectItem>
-              <SelectItem value="Selesai Tuntas">Selesai Tuntas</SelectItem>
-              <SelectItem value="Terjadwal">Terjadwal</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -443,7 +337,7 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
           <span className="font-semibold text-foreground">
             {filteredSchedules.length}
           </span>{" "}
-          dari {schedules.length} jadwal
+          dari {listShift.length} jadwal
         </p>
       </div>
 
@@ -453,9 +347,9 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
-                <TableHead className="whitespace-nowrap">Kode Jadwal</TableHead>
                 <TableHead>Petugas</TableHead>
-                <TableHead>Shift</TableHead>
+                <TableHead className="whitespace-nowrap">Shift</TableHead>
+                <TableHead>Jam Operasional</TableHead>
                 <TableHead>Titik Patrol</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -473,47 +367,78 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                 </TableRow>
               ) : (
                 filteredSchedules.map((schedule) => {
-                  const ShiftIcon = getShiftIcon(schedule.shift);
+                  const ShiftIcon = getShiftIcon(schedule.schedule?.name);
+
+                  const currentShift = listShift.find(
+                    (item) => item.id === schedule.schedule?.id,
+                  );
+
+                  // Ambil jumlah titik dari jadwal tersebut
+                  const countPoint = currentShift?._count.points ?? 0;
 
                   return (
                     <TableRow key={schedule.id}>
                       <TableCell>
-                        <div className="flex items-center gap-2 whitespace-nowrap">
-                          <span
-                            className={`size-2 shrink-0 rounded ${
-                              schedule.status === "Berjalan Aktif"
-                                ? "bg-emerald-500"
-                                : schedule.status === "Perlu Pengganti"
-                                  ? "bg-rose-500"
-                                  : "bg-slate-400"
-                            }`}
-                          />
-                          <span className="font-mono text-xs font-semibold text-primary">
-                            {schedule.id}
-                          </span>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8 rounded-full">
+                            <AvatarFallback className="rounded-full bg-[#003B73] text-xs font-semibold text-white">
+                              {schedule.user?.fullName
+                                ?.split(" ")
+                                .map((name) => name.charAt(0))
+                                .slice(0, 2)
+                                .join("")
+                                .toUpperCase() || "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="">
+                            <p className="text-xs font-medium">
+                              {schedule.user?.fullName || "-"}
+                            </p>
+                            <p className="text-[10px] text-gray-500 font-semibold">
+                              {schedule.user?.employeeNumber || "-"}
+                            </p>
+                          </div>
                         </div>
-                      </TableCell>
-
-                      <TableCell>
-                        <p className="font-medium">{schedule.danru}</p>
                       </TableCell>
 
                       <TableCell>
                         <div className="flex items-center gap-2 whitespace-nowrap">
                           <ShiftIcon className="size-4 text-muted-foreground" />
-                          <span className="text-xs">{schedule.shift}</span>
+                          <div className="">
+                            <p className="font-mono text-xs font-semibold text-primary">
+                              {schedule.schedule?.name}
+                            </p>
+                            <p className="text-[10px]">
+                              {schedule.schedule?.site?.code}
+                            </p>
+                          </div>
                         </div>
                       </TableCell>
 
                       <TableCell>
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          <span className="text-xs font-semibold">
+                            {schedule.schedule?.startTime}
+                          </span>{" "}
+                          -
+                          <span className="text-xs font-semibold">
+                            {schedule.schedule?.endTime}
+                          </span>
+                        </div>
+                        <p className="pl-7 text-[10px] font-semibold text-gray-500">
+                          WITA
+                        </p>
+                      </TableCell>
+
+                      <TableCell>
                         <span
-                          className={`whitespace-nowrap text-xs font-medium ${
-                            schedule.status === "Perlu Pengganti"
+                          className={`whitespace-nowrap text-xs font-semibold ${
+                            schedule.status === "INACTIVE"
                               ? "text-rose-600"
                               : "text-foreground"
                           }`}
                         >
-                          {schedule.guardRatio}
+                          {countPoint} Titik
                         </span>
                       </TableCell>
 
@@ -544,86 +469,6 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
           </span>
         </div>
       </div>
-
-      {/* Dialog Plot Cadangan */}
-      <Dialog
-        open={Boolean(backupModalSchedule)}
-        onOpenChange={(open) => {
-          if (!open) setBackupModalSchedule(null);
-        }}
-      >
-        <DialogContent className="rounded sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Plot Personel Cadangan</DialogTitle>
-            <DialogDescription>
-              Tetapkan personel pengganti untuk melengkapi kebutuhan petugas
-              shift.
-            </DialogDescription>
-          </DialogHeader>
-
-          {backupModalSchedule && (
-            <form onSubmit={handlePlotBackup} className="space-y-4">
-              <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-                <p className="font-semibold">
-                  {backupModalSchedule.id} - {backupModalSchedule.siteName}
-                </p>
-                <p className="mt-1 text-xs">
-                  {backupModalSchedule.shift} · Kekurangan personel
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Personel Cadangan</Label>
-                <Select
-                  value={selectedBackupOfficer}
-                  onValueChange={(value) =>
-                    setSelectedBackupOfficer(value as string)
-                  }
-                >
-                  <SelectTrigger className="rounded">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Hendra Kurniawan (Cadangan 1)">
-                      Hendra Kurniawan (Cadangan 1)
-                    </SelectItem>
-                    <SelectItem value="Fajar Ramadhan (Cadangan 2)">
-                      Fajar Ramadhan (Cadangan 2)
-                    </SelectItem>
-                    <SelectItem value="Teguh Santoso (Cadangan 3)">
-                      Teguh Santoso (Cadangan 3)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Alasan Penugasan</Label>
-                <Input
-                  className="rounded"
-                  value={backupReason}
-                  onChange={(e) => setBackupReason(e.target.value)}
-                  placeholder="Alasan penugasan cadangan"
-                />
-              </div>
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded"
-                  onClick={() => setBackupModalSchedule(null)}
-                >
-                  Batal
-                </Button>
-                <Button type="submit" className="rounded">
-                  Konfirmasi Penugasan
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Dialog Tambah Shift */}
       <Dialog
@@ -663,25 +508,6 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Lokasi Fasilitas</Label>
-                  <Select
-                    value={shiftSiteId}
-                    onValueChange={(value) => setShiftSiteId(value as string)}
-                  >
-                    <SelectTrigger className="rounded">
-                      <SelectValue placeholder="Pilih site" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SITES.filter((site) => site.id !== "all").map((site) => (
-                        <SelectItem key={site.id} value={site.id}>
-                          {site.id} — {site.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
                   <Label>Nama Shift</Label>
                   <Input
                     className="rounded"
@@ -692,26 +518,28 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Jam Mulai</Label>
-                  <Input
-                    type="time"
-                    className="rounded"
-                    value={shiftStartTime}
-                    onChange={(e) => setShiftStartTime(e.target.value)}
-                    required
-                  />
-                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Jam Mulai</Label>
+                    <Input
+                      type="time"
+                      className="rounded"
+                      value={shiftStartTime}
+                      onChange={(e) => setShiftStartTime(e.target.value)}
+                      required
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label>Jam Selesai</Label>
-                  <Input
-                    type="time"
-                    className="rounded"
-                    value={shiftEndTime}
-                    onChange={(e) => setShiftEndTime(e.target.value)}
-                    required
-                  />
+                  <div className="space-y-2">
+                    <Label>Jam Selesai</Label>
+                    <Input
+                      type="time"
+                      className="rounded"
+                      value={shiftEndTime}
+                      onChange={(e) => setShiftEndTime(e.target.value)}
+                      required
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -740,7 +568,7 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                             ? "default"
                             : "outline"
                         }
-                        className="h-7 rounded px-2 text-xs"
+                        className={`h-7 rounded px-2 text-xs hover:bg-yellow-400 ${shiftIntervalMinutes === minutes ? "bg-[#FED400] text-black" : ""}`}
                         onClick={() => setShiftIntervalMinutes(minutes)}
                       >
                         {minutes}m
@@ -775,33 +603,13 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                             ? "default"
                             : "outline"
                         }
-                        className="h-7 rounded px-2 text-xs"
+                        className={`h-7 rounded px-2 text-xs hover:bg-yellow-400 ${shiftGracePeriodMinutes === minutes ? "bg-[#FED400] text-black" : ""}`}
                         onClick={() => setShiftGracePeriodMinutes(minutes)}
                       >
                         {minutes}m
                       </Button>
                     ))}
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Regu</Label>
-                  <Input
-                    className="rounded"
-                    value={modalSquad}
-                    onChange={(e) => setModalSquad(e.target.value)}
-                    placeholder="Nama regu"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Danru</Label>
-                  <Input
-                    className="rounded"
-                    value={modalDanru}
-                    onChange={(e) => setModalDanru(e.target.value)}
-                    placeholder="Nama komandan regu"
-                  />
                 </div>
               </div>
 
@@ -837,6 +645,7 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                       Titik Lokasi Patroli
                     </h3>
                   </div>
+
                   <p className="mt-1 text-xs text-muted-foreground">
                     {shiftLocationIds.length} titik dipilih. Urutan mengikuti
                     urutan pemilihan.
@@ -849,9 +658,14 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                     size="sm"
                     variant="outline"
                     className="rounded"
+                    disabled={
+                      isLoadingPoints ||
+                      !activePoint ||
+                      activePoint.length === 0
+                    }
                     onClick={() =>
                       setShiftLocationIds(
-                        CHECKPOINTS.map((checkpoint) => checkpoint.id),
+                        activePoint?.map((checkpoint) => checkpoint.id) ?? [],
                       )
                     }
                   >
@@ -863,6 +677,7 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                     size="sm"
                     variant="outline"
                     className="rounded"
+                    disabled={shiftLocationIds.length === 0}
                     onClick={() => setShiftLocationIds([])}
                   >
                     Kosongkan
@@ -870,25 +685,33 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                 </div>
               </div>
 
+              {/* Search Checkpoint */}
               <InputGroup className="rounded">
                 <InputGroupAddon>
                   <Search className="size-4" />
                 </InputGroupAddon>
+
                 <InputGroupInput
-                  placeholder="Cari nama, kode checkpoint, lantai..."
+                  placeholder="Cari nama, kode checkpoint, site..."
                   value={modalLocationSearch}
                   onChange={(e) => setModalLocationSearch(e.target.value)}
                 />
               </InputGroup>
 
+              {/* Checkpoint List */}
               <div className="max-h-56 space-y-1 overflow-y-auto rounded border p-2">
-                {filteredCheckpoints.length === 0 ? (
+                {isLoadingPoints ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    Memuat titik patroli...
+                  </p>
+                ) : filteredCheckpoints?.length === 0 ? (
                   <p className="py-6 text-center text-sm text-muted-foreground">
                     Tidak ada checkpoint yang ditemukan.
                   </p>
                 ) : (
-                  filteredCheckpoints.map((checkpoint) => {
+                  filteredCheckpoints?.map((checkpoint) => {
                     const isSelected = shiftLocationIds.includes(checkpoint.id);
+
                     const orderIndex = shiftLocationIds.indexOf(checkpoint.id);
 
                     return (
@@ -906,7 +729,9 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                             onCheckedChange={(checked) => {
                               setShiftLocationIds((prev) =>
                                 checked
-                                  ? [...prev, checkpoint.id]
+                                  ? prev.includes(checkpoint.id)
+                                    ? prev
+                                    : [...prev, checkpoint.id]
                                   : prev.filter((id) => id !== checkpoint.id),
                               );
                             }}
@@ -917,8 +742,10 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                             <p className="truncate text-sm font-medium">
                               {checkpoint.name}
                             </p>
+
                             <p className="truncate text-xs text-muted-foreground">
-                              {checkpoint.zoneFloor} · {checkpoint.siteName}
+                              {checkpoint.site?.name ?? "-"} ·{" "}
+                              {checkpoint.description ?? "-"}
                             </p>
                           </div>
                         </div>
@@ -941,7 +768,7 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
               </div>
             </section>
 
-            <DialogFooter className="flex justify-end gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <DialogFooter className="flex justify-end gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
               <div className="flex gap-2">
                 <Button
                   type="button"
@@ -952,7 +779,10 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
                   Batal
                 </Button>
 
-                <Button type="submit" className="rounded">
+                <Button
+                  type="submit"
+                  className="rounded bg-[#FED400] hover:bg-yellow-400 text-black"
+                >
                   <Save className="mr-2 size-4" />
                   Simpan Shift
                 </Button>

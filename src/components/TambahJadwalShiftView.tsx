@@ -1,31 +1,14 @@
 import React, { useMemo, useState } from "react";
 
-import { INITIAL_OFFICERS_POOL } from "../data/calendarMockData";
-import {
-  CheckpointItem,
-  CHECKPOINTS,
-  EMPTY_SHIFT,
-  INITIAL_SHIFTS,
-  PatrolScheduleItem,
-  ShiftConfig,
-  SITES,
-} from "../data/mockData";
-import {
-  DateRangeShiftPayload,
-  ShiftOfficerAssignment,
-} from "../utils/security-logic";
-import { NavTab } from "./Sidebar";
+import axios from "axios";
 
 import {
   AlertCircle,
   CalendarDays,
   Check,
-  ChevronDown,
-  ChevronUp,
   Clock,
   MapPin,
   MoreHorizontal,
-  Pencil,
   Plus,
   RotateCcw,
   Save,
@@ -34,6 +17,34 @@ import {
   Users,
   X,
 } from "lucide-react";
+
+import { NavTab } from "./Sidebar";
+
+import { useAuthContext } from "../hooks/auth/useAuthContext";
+import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
+
+import {
+  useCreatePatrolSchedule,
+  useDeletePatrolSchedule,
+  usePatrolScheduleActivate,
+  usePatrolSchedules,
+  useUpdatePatrolSchedule,
+} from "../hooks/schedule/usePatrolSchedules";
+
+import {
+  useCreateScheduleAssigment,
+  useGetScheduleAssigments,
+} from "../hooks/schedule/usePatrolScheduleAssignment";
+
+import { useAddNewPoint } from "../hooks/schedule/usePatrolSchedulePoint";
+import { useSecurityUsers } from "../hooks/users/useUsers";
+
+import {
+  AddSchedulePointPayload,
+  CreatePatrolSchedulePayload,
+  CreateScheduleAssignmentPayload,
+  PatrolScheduleListItem,
+} from "../types";
 
 import {
   Dialog,
@@ -91,41 +102,34 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAuthContext } from "../hooks/auth/useAuthContext";
-import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
-import { usePatrolSchedules } from "../hooks/schedule/usePatrolSchedules";
-
+import { Switch } from "@/components/ui/switch";
 interface TambahJadwalShiftViewProps {
   onNavigate: (tab: NavTab) => void;
   onAddDateRangeScheduleAndSyncCalendar: (
-    newSchedules: PatrolScheduleItem[],
-    dateRangePayload: DateRangeShiftPayload,
+    newSchedules: any[],
+    dateRangePayload: any,
   ) => void;
-  calendarDays?: any[];
 }
 
-type DialogMode =
-  | "create"
-  | "edit"
-  | "locations"
-  | "officers"
-  | "schedule"
-  | null;
+type DialogMode = "create" | "locations" | "officers" | "edit" | null;
 
-const POST_OPTIONS = [
-  "Pos Utama Gerbang Depan",
-  "Pintu Masuk Lobi & Metal Detector",
-  "Patroli Koridor & Lift VIP",
-  "Pintu Evakuasi Barat & Loading Bay",
-  "Pos Timbangan & Dermaga Kontainer",
-  "Ruang Server & Genset B2",
-  "Patroli Perimeter Selatan & Pagar",
-  "Gerbang Timur & Pemeriksaan X-Ray",
-  "Pos Pantau CCTV & Pusat Kendali",
-  "Cadangan Siaga / Mobile Patrol",
-];
+interface ScheduleForm {
+  name: string;
+  startTime: string;
+  endTime: string;
+  intervalMinutes: number;
+  gracePeriodMinutes: number;
+  enforceSequence: boolean;
+}
 
-const SQUAD_OPTIONS = ["Alpha", "Bravo", "Charlie", "Delta"];
+const INITIAL_FORM: ScheduleForm = {
+  name: "",
+  startTime: "07:00",
+  endTime: "15:00",
+  intervalMinutes: 120,
+  gracePeriodMinutes: 30,
+  enforceSequence: false,
+};
 
 const getTodayString = () => {
   const today = new Date();
@@ -137,137 +141,291 @@ const getTodayString = () => {
   ].join("-");
 };
 
+const formatStatus = (status: string) => {
+  const statusMap: Record<string, string> = {
+    DRAFT: "Draft",
+    ACTIVE: "Aktif",
+    INACTIVE: "Nonaktif",
+    ARCHIVED: "Diarsipkan",
+  };
+
+  return statusMap[status] ?? status;
+};
+
+const getStatusVariant = (
+  status: string,
+): "default" | "secondary" | "destructive" | "outline" => {
+  switch (status) {
+    case "ACTIVE":
+      return "default";
+    case "DRAFT":
+      return "secondary";
+    case "INACTIVE":
+      return "outline";
+    case "ARCHIVED":
+      return "destructive";
+    default:
+      return "outline";
+  }
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.message;
+
+    if (Array.isArray(message)) {
+      return message.join(", ");
+    }
+
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+
+  return fallback;
+};
+
 export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
   onNavigate,
-  onAddDateRangeScheduleAndSyncCalendar,
 }) => {
+  // ====================================================
+  // AUTH
+  // ====================================================
+
   const { user } = useAuthContext();
+
   const siteId = user?.siteId;
 
-  const { data: patrolPoint, isError: isPatrolPointsError } = usePatrolPoints();
-  const { data: patrolSchedules } = usePatrolSchedules();
+  const {
+    data: patrolSchedules,
+    isLoading: isLoadingSchedules,
+    isError: isSchedulesError,
+    refetch: refetchSchedules,
+  } = usePatrolSchedules();
+  const {
+    data: patrolPoints,
+    isLoading: isLoadingPoints,
+    isError: isPointsError,
+  } = usePatrolPoints();
+  const { data: scheduleAssignments, isLoading: isLoadingAssignments } =
+    useGetScheduleAssigments();
+  const { data: securityUsers, isLoading: isLoadingUsers } = useSecurityUsers();
 
-  const [shifts, setShifts] = useState<ShiftConfig[]>(INITIAL_SHIFTS);
+  const { mutateAsync: createSchedule, isPending: isCreatingSchedule } =
+    useCreatePatrolSchedule();
+  const { mutateAsync: addSchedulePoint, isPending: isAddingPoint } =
+    useAddNewPoint();
+  const { mutateAsync: assignUser, isPending: isAssigningUser } =
+    useCreateScheduleAssigment();
+  const { mutateAsync: updateShift, isPending: isUpdating } =
+    useUpdatePatrolSchedule();
+  const { mutate: activateSchedule, isPending: isActivating } =
+    usePatrolScheduleActivate();
+  const { mutateAsync: deleteSchedule, isPending: isDeleting } =
+    useDeletePatrolSchedule();
+
+  const schedules = patrolSchedules?.data ?? [];
+
+  const assignments = scheduleAssignments ?? [];
+
+  const points = patrolPoints ?? [];
+
+  const users = securityUsers?.data ?? [];
 
   const [search, setSearch] = useState("");
-  const [siteFilter, setSiteFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
-  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
 
-  const [form, setForm] = useState<ShiftConfig>(EMPTY_SHIFT);
-
-  const [locationSearch, setLocationSearch] = useState("");
-  const [locationSiteFilter, setLocationSiteFilter] = useState("all");
-
-  const [officerSearch, setOfficerSearch] = useState("");
-
-  const [startDate, setStartDate] = useState(getTodayString);
-  const [endDate, setEndDate] = useState(getTodayString);
-
-  const [shiftSiteId, setShiftSiteId] = useState("site-a");
-  const [shiftName, setShiftName] = useState("Shift Pagi");
-  const [shiftStartTime, setShiftStartTime] = useState("07:00");
-  const [shiftEndTime, setShiftEndTime] = useState("15:00");
-  const [shiftIntervalMinutes, setShiftIntervalMinutes] = useState(120);
-  const [shiftGracePeriodMinutes, setShiftGracePeriodMinutes] = useState(30);
-  const [shiftEnforceSequence, setShiftEnforceSequence] = useState(false);
-
-  const [shiftLocationIds, setShiftLocationIds] = useState<string[]>([
-    "CP-SDR-001",
-    "CP-SDR-002",
-    "CP-SDR-003",
-  ]);
-
-  const [modalLocationSearch, setModalLocationSearch] = useState("");
-  const [modalError, setModalError] = useState<string | null>(null);
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(
+    null,
+  );
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  const [error, setError] = useState("");
+  const [form, setForm] = useState<ScheduleForm>(INITIAL_FORM);
+
+  // CREATE SCHEDULE CHECKPOINTS
+  const [selectedPointIds, setSelectedPointIds] = useState<string[]>([]);
+
+  const [modalLocationSearch, setModalLocationSearch] = useState("");
+
+  // ADD CHECKPOINT
+  const [patrolPointId, setPatrolPointId] = useState("");
+
+  const [insertAtSequence, setInsertAtSequence] = useState(1);
+
+  const [required, setRequired] = useState(true);
+
+  // ASSIGN USER
+  const [selectedUserId, setSelectedUserId] = useState("");
+
+  const [startDate, setStartDate] = useState(getTodayString());
+
+  const [endDate, setEndDate] = useState("");
+
+  const [officerSearch, setOfficerSearch] = useState("");
+
+  // UPDATE SHIFT
+  const [updateName, setUpdateName] = useState("");
+  const [updateStartTime, setUpdateStartTime] = useState("");
+  const [updateEndTime, setUpdateEndTime] = useState("");
+  const [updateIntervalMinutes, setUpdateIntervalMinutes] = useState(120);
+  const [updateGracePeriodMinutes, setUpdateGracePeriodMinutes] = useState(30);
+  const [updateEnforceSequence, setUpdateEnforceSequence] = useState(true);
+
+  // FEEDBACK
+  const [modalError, setModalError] = useState("");
+
   const [success, setSuccess] = useState("");
 
-  const selectedShift = shifts.find((shift) => shift.id === selectedShiftId);
+  const [error, setError] = useState("");
 
-  const availableOfficers = INITIAL_OFFICERS_POOL as ShiftOfficerAssignment[];
+  const activePoints = useMemo(() => {
+    return points.filter((point) => {
+      return point.status === "ACTIVE" && (!siteId || point.siteId === siteId);
+    });
+  }, [points, siteId]);
 
-  const filteredShifts = useMemo(() => {
-    return shifts.filter((shift) => {
-      const query = search.toLowerCase();
+  const activeUsers = useMemo(() => {
+    return users.filter((item) => {
+      const allowedRoles = ["SECURITY", "DANRU_SECURITY", "CHIEF_SECURITY"];
 
+      return (
+        item.status === "ACTIVE" &&
+        allowedRoles.includes(item.role?.name ?? "") &&
+        (!siteId || item.siteId === siteId)
+      );
+    });
+  }, [users, siteId]);
+
+  const selectedSchedule = useMemo(() => {
+    return schedules.find((schedule) => schedule.id === selectedScheduleId);
+  }, [schedules, selectedScheduleId]);
+
+  const filteredSchedules = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return schedules.filter((schedule) => {
       const matchesSearch =
-        shift.name.toLowerCase().includes(query) ||
-        shift.id.toLowerCase().includes(query) ||
-        shift.squad.toLowerCase().includes(query) ||
-        shift.danru.toLowerCase().includes(query);
-
-      const matchesSite = siteFilter === "all" || shift.siteId === siteFilter;
+        schedule.name.toLowerCase().includes(query) ||
+        schedule.id.toLowerCase().includes(query);
 
       const matchesStatus =
-        statusFilter === "all" || shift.status === statusFilter;
+        statusFilter === "all" || schedule.status === statusFilter;
 
-      return matchesSearch && matchesSite && matchesStatus;
+      return matchesSearch && matchesStatus;
     });
-  }, [shifts, search, siteFilter, statusFilter]);
+  }, [schedules, search, statusFilter]);
 
-  const activeCount = shifts.filter((shift) => shift.status === "Aktif").length;
+  const activeCount = schedules.filter(
+    (schedule) => schedule.status === "ACTIVE",
+  ).length;
 
-  const inactiveCount = shifts.length - activeCount;
+  const draftCount = schedules.filter(
+    (schedule) => schedule.status === "DRAFT",
+  ).length;
 
-  const openCreate = () => {
-    setForm({
-      ...EMPTY_SHIFT,
-      id: "",
+  const inactiveCount = schedules.filter(
+    (schedule) =>
+      schedule.status === "INACTIVE" || schedule.status === "ARCHIVED",
+  ).length;
+
+  const filteredPoints = useMemo(() => {
+    const query = modalLocationSearch.trim().toLowerCase();
+
+    return activePoints.filter((point) => {
+      return (
+        point.name.toLowerCase().includes(query) ||
+        point.id.toLowerCase().includes(query) ||
+        (point.description ?? "").toLowerCase().includes(query) ||
+        (point.site?.name ?? "").toLowerCase().includes(query)
+      );
     });
+  }, [activePoints, modalLocationSearch]);
 
-    setSelectedShiftId(null);
-    setError("");
-    setDialogMode("schedule");
+  const filteredUsers = useMemo(() => {
+    const query = officerSearch.trim().toLowerCase();
+
+    return activeUsers.filter((item) => {
+      return (
+        item.fullName.toLowerCase().includes(query) ||
+        (item.employeeNumber ?? "").toLowerCase().includes(query) ||
+        (item.team?.name ?? "").toLowerCase().includes(query) ||
+        (item.role?.name ?? "").toLowerCase().includes(query)
+      );
+    });
+  }, [activeUsers, officerSearch]);
+
+  // ====================================================
+  // ASSIGNMENT HELPERS
+  // ====================================================
+
+  const getScheduleAssignments = (scheduleId: string) => {
+    return assignments.filter((item) => item.scheduleId === scheduleId);
   };
 
-  const openEdit = (shift: ShiftConfig) => {
-    setForm({
-      ...shift,
-      locationIds: [...shift.locationIds],
-      officers: [...shift.officers],
-    });
+  const getAssignedUsers = (scheduleId: string) => {
+    const scheduleAssignment = getScheduleAssignments(scheduleId);
 
-    setSelectedShiftId(shift.id);
-    setError("");
-    setDialogMode("edit");
+    return Array.from(
+      new Map(
+        scheduleAssignment
+          .filter((item) => item.user != null)
+          .map((item) => [item.user!.id, item.user!]),
+      ).values(),
+    );
   };
 
-  const openAssignment = (
-    shift: ShiftConfig,
-    mode: "locations" | "officers" | "schedule",
-  ) => {
-    setForm({
-      ...shift,
-      locationIds: [...shift.locationIds],
-      officers: [...shift.officers],
-    });
+  // ====================================================
+  // DIALOG HANDLERS
+  // ====================================================
 
-    setSelectedShiftId(shift.id);
-    setError("");
-
-    setLocationSearch("");
-    setOfficerSearch("");
-
-    // Filter checkpoint mengikuti site shift.
-    setLocationSiteFilter(shift.siteId);
-
-    setDialogMode(mode);
+  const resetCreateForm = () => {
+    setForm(INITIAL_FORM);
+    setSelectedPointIds([]);
+    setModalLocationSearch("");
+    setModalError("");
   };
 
   const closeDialog = () => {
     setDialogMode(null);
-    setError("");
+    setModalError("");
+    setOfficerSearch("");
   };
 
-  const updateForm = <K extends keyof ShiftConfig>(
+  const openCreate = () => {
+    resetCreateForm();
+    setSelectedScheduleId(null);
+    setDialogMode("create");
+  };
+
+  const openAddPoint = (scheduleId: string) => {
+    setSelectedScheduleId(scheduleId);
+    setPatrolPointId("");
+    setInsertAtSequence(1);
+    setRequired(true);
+    setModalError("");
+    setDialogMode("locations");
+  };
+
+  const openAssignUser = (scheduleId: string) => {
+    setSelectedScheduleId(scheduleId);
+    setSelectedUserId("");
+    setStartDate(getTodayString());
+    setEndDate("");
+    setOfficerSearch("");
+    setModalError("");
+    setDialogMode("officers");
+  };
+
+  // ====================================================
+  // FORM HANDLERS
+  // ====================================================
+
+  const updateForm = <K extends keyof ScheduleForm>(
     key: K,
-    value: ShiftConfig[K],
+    value: ScheduleForm[K],
   ) => {
     setForm((prev) => ({
       ...prev,
@@ -275,316 +433,403 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     }));
   };
 
-  const handleSaveShift = () => {
-    if (!form.siteId || !form.name.trim()) {
-      setError("Site dan nama shift wajib diisi.");
-      return;
-    }
+  const openEditSchedule = (schedule: PatrolScheduleListItem) => {
+    setSelectedScheduleId(schedule.id);
 
-    if (!form.startTime || !form.endTime || form.startTime === form.endTime) {
-      setError("Jam mulai dan selesai tidak valid.");
-      return;
-    }
+    setUpdateName(schedule.name);
+    setUpdateStartTime(schedule.startTime);
+    setUpdateEndTime(schedule.endTime);
+    setUpdateIntervalMinutes(schedule.intervalMinutes);
+    setUpdateGracePeriodMinutes(schedule.gracePeriodMinutes);
+    setUpdateEnforceSequence(schedule.enforceSequence);
 
-    if (form.intervalMinutes < 15 || form.intervalMinutes > 480) {
-      setError("Interval patroli harus 15-480 menit.");
-      return;
-    }
-
-    if (form.gracePeriodMinutes < 0 || form.gracePeriodMinutes > 120) {
-      setError("Grace period harus 0-120 menit.");
-      return;
-    }
-
-    if (form.requiredCount < 1) {
-      setError("Minimal kebutuhan personel adalah 1.");
-      return;
-    }
-
-    if (dialogMode === "create") {
-      const newShift: ShiftConfig = {
-        ...form,
-        id: `SHF-${String(Date.now()).slice(-6)}`,
-      };
-
-      setShifts((prev) => [...prev, newShift]);
-      setSuccess("Shift berhasil ditambahkan.");
-    } else {
-      setShifts((prev) =>
-        prev.map((shift) => (shift.id === form.id ? form : shift)),
-      );
-
-      setSuccess("Konfigurasi shift berhasil diperbarui.");
-    }
-
-    closeDialog();
+    setDialogMode("edit");
   };
 
-  const filteredLocations = useMemo(() => {
-    return CHECKPOINTS.filter((checkpoint) => {
-      const query = locationSearch.toLowerCase();
+  const togglePoint = (pointId: string, checked: boolean) => {
+    setSelectedPointIds((prev) => {
+      if (checked) {
+        if (prev.includes(pointId)) return prev;
 
-      const matchesSearch =
-        checkpoint.name.toLowerCase().includes(query) ||
-        checkpoint.id.toLowerCase().includes(query) ||
-        checkpoint.tagUid.toLowerCase().includes(query) ||
-        checkpoint.zoneFloor.toLowerCase().includes(query);
-
-      const matchesSite =
-        locationSiteFilter === "all" ||
-        checkpoint.siteId === locationSiteFilter;
-
-      return matchesSearch && matchesSite;
-    });
-  }, [locationSearch, locationSiteFilter]);
-
-  const toggleLocation = (id: string) => {
-    setForm((prev) => ({
-      ...prev,
-      locationIds: prev.locationIds.includes(id)
-        ? prev.locationIds.filter((item) => item !== id)
-        : [...prev.locationIds, id],
-    }));
-  };
-
-  const moveLocation = (index: number, direction: "up" | "down") => {
-    setForm((prev) => {
-      const locations = [...prev.locationIds];
-
-      const target = direction === "up" ? index - 1 : index + 1;
-
-      if (target < 0 || target >= locations.length) {
-        return prev;
+        return [...prev, pointId];
       }
 
-      [locations[index], locations[target]] = [
-        locations[target],
-        locations[index],
-      ];
-
-      return {
-        ...prev,
-        locationIds: locations,
-      };
+      return prev.filter((id) => id !== pointId);
     });
   };
 
-  const saveLocations = () => {
-    setShifts((prev) =>
-      prev.map((shift) =>
-        shift.id === form.id
-          ? {
-              ...shift,
-              locationIds: [...form.locationIds],
-            }
-          : shift,
-      ),
-    );
-
-    setSuccess("Titik patroli berhasil diperbarui.");
-    closeDialog();
+  const selectAllPoints = () => {
+    setSelectedPointIds(activePoints.map((point) => point.id));
   };
 
-  const filteredOfficers = useMemo(() => {
-    const query = officerSearch.toLowerCase();
+  const clearAllPoints = () => {
+    setSelectedPointIds([]);
+  };
 
-    return availableOfficers.filter((officer) => {
-      return (
-        officer.officerName.toLowerCase().includes(query) ||
-        officer.role.toLowerCase().includes(query) ||
-        (officer.npp || "").toLowerCase().includes(query) ||
-        (officer.callSign || "").toLowerCase().includes(query)
+  // ====================================================
+  // CREATE SCHEDULE
+  // ====================================================
+
+  const handleCreateSchedule = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+
+    setModalError("");
+
+    if (!siteId) {
+      setModalError("Site pengguna tidak ditemukan. Silakan login kembali.");
+      return;
+    }
+
+    if (!form.name.trim()) {
+      setModalError("Nama shift wajib diisi.");
+      return;
+    }
+
+    if (!form.startTime || !form.endTime) {
+      setModalError("Jam mulai dan jam selesai wajib diisi.");
+      return;
+    }
+
+    if (form.startTime === form.endTime) {
+      setModalError("Jam mulai dan selesai tidak boleh sama.");
+      return;
+    }
+
+    if (
+      !Number.isInteger(form.intervalMinutes) ||
+      form.intervalMinutes < 15 ||
+      form.intervalMinutes > 480
+    ) {
+      setModalError("Interval patroli harus antara 15 sampai 480 menit.");
+      return;
+    }
+
+    if (
+      !Number.isInteger(form.gracePeriodMinutes) ||
+      form.gracePeriodMinutes < 0 ||
+      form.gracePeriodMinutes > 120
+    ) {
+      setModalError("Grace period harus antara 0 sampai 120 menit.");
+      return;
+    }
+
+    if (selectedPointIds.length === 0) {
+      setModalError("Pilih minimal satu titik patroli.");
+      return;
+    }
+
+    const validPointIds = new Set(activePoints.map((point) => point.id));
+
+    const invalidPoint = selectedPointIds.some((id) => !validPointIds.has(id));
+
+    if (invalidPoint) {
+      setModalError(
+        "Terdapat checkpoint yang tidak aktif atau tidak ditemukan.",
       );
-    });
-  }, [availableOfficers, officerSearch]);
-
-  const toggleOfficer = (officer: ShiftOfficerAssignment) => {
-    setForm((prev) => {
-      const exists = prev.officers.some(
-        (item) => item.officerId === officer.officerId,
-      );
-
-      return {
-        ...prev,
-        officers: exists
-          ? prev.officers.filter((item) => item.officerId !== officer.officerId)
-          : [
-              ...prev.officers,
-              {
-                ...officer,
-                post:
-                  officer.post ||
-                  POST_OPTIONS[prev.officers.length % POST_OPTIONS.length],
-              },
-            ],
-      };
-    });
-  };
-
-  const updateOfficerPost = (officerId: string, post: string) => {
-    setForm((prev) => ({
-      ...prev,
-      officers: prev.officers.map((officer) =>
-        officer.officerId === officerId ? { ...officer, post } : officer,
-      ),
-    }));
-  };
-
-  const updateOfficerRole = (officerId: string, role: string) => {
-    setForm((prev) => ({
-      ...prev,
-      officers: prev.officers.map((officer) =>
-        officer.officerId === officerId ? { ...officer, role } : officer,
-      ),
-    }));
-  };
-
-  const saveOfficers = () => {
-    setShifts((prev) =>
-      prev.map((shift) =>
-        shift.id === form.id
-          ? {
-              ...shift,
-              officers: [...form.officers],
-              danru:
-                form.officers.find((officer) =>
-                  officer.role.toLowerCase().includes("komandan"),
-                )?.officerName || form.danru,
-              squad: form.squad,
-              requiredCount: form.requiredCount,
-            }
-          : shift,
-      ),
-    );
-
-    setSuccess("Personel shift berhasil diperbarui.");
-    closeDialog();
-  };
-
-  const handleCreateSchedule = () => {
-    if (!selectedShift) return;
-
-    if (!startDate || !endDate || startDate > endDate) {
-      setError("Rentang tanggal tidak valid.");
       return;
     }
 
-    if (selectedShift.locationIds.length === 0) {
-      setError("Shift belum memiliki titik patroli.");
-      return;
-    }
-
-    if (selectedShift.officers.length === 0) {
-      setError("Shift belum memiliki personel security.");
-      return;
-    }
-
-    const site = SITES.find((item) => item.id === selectedShift.siteId);
-
-    const checkpoints = selectedShift.locationIds
-      .map((id) => CHECKPOINTS.find((cp) => cp.id === id))
-      .filter(Boolean) as CheckpointItem[];
-
-    const locationNames = checkpoints.map((checkpoint) => checkpoint.name);
-
-    const shiftType: "Pagi" | "Siang" | "Malam" =
-      selectedShift.name.toLowerCase().includes("malam") ||
-      selectedShift.startTime >= "22:00"
-        ? "Malam"
-        : selectedShift.name.toLowerCase().includes("siang") ||
-            selectedShift.startTime >= "14:00"
-          ? "Siang"
-          : "Pagi";
-
-    const siteName = (site?.name || "").replace(/^Site [A-D] - /, "");
-
-    const payload: DateRangeShiftPayload = {
-      shiftName: selectedShift.name,
-      shiftType,
-      startTime: selectedShift.startTime,
-      endTime: selectedShift.endTime,
-      squad: selectedShift.squad,
-      danru: selectedShift.danru,
-      locations: [
-        {
-          siteId: selectedShift.siteId,
-          siteName,
-          sector: `${checkpoints.length} Titik`,
-          selectedPosts: locationNames,
-        },
-      ],
-      startDate,
-      endDate,
-      requiredCount: selectedShift.requiredCount,
-      officers: selectedShift.officers,
+    const payload: CreatePatrolSchedulePayload = {
+      siteId,
+      name: form.name.trim(),
+      startTime: form.startTime,
+      endTime: form.endTime,
+      intervalMinutes: form.intervalMinutes,
+      gracePeriodMinutes: form.gracePeriodMinutes,
+      enforceSequence: form.enforceSequence,
+      points: selectedPointIds.map((id) => ({
+        patrolPointId: id,
+        required: true,
+      })),
     };
 
-    const schedules: PatrolScheduleItem[] = [
-      {
-        id: `SCH-${Date.now()}`,
-        siteId: selectedShift.siteId,
-        siteName,
-        sector: `${checkpoints.length} Titik (${locationNames
-          .slice(0, 2)
-          .join(", ")})`,
-        squad: selectedShift.squad,
-        danru: selectedShift.danru,
-        shift:
-          `${selectedShift.name} (${selectedShift.startTime} - ${selectedShift.endTime})` as any,
-        routeName: `Rute Patroli ${selectedShift.name}`,
-        checkpointCount: checkpoints.length,
-        frequency: `Setiap ${selectedShift.intervalMinutes} Menit`,
-        guardRatio: `${selectedShift.officers.length}/${selectedShift.requiredCount} Petugas`,
-        assignedCount: selectedShift.officers.length,
-        requiredCount: selectedShift.requiredCount,
-        status:
-          selectedShift.officers.length >= selectedShift.requiredCount
-            ? "Berjalan Aktif"
-            : "Terjadwal",
-        date: `${startDate} s/d ${endDate}`,
-      },
-    ];
+    try {
+      await createSchedule(payload);
 
-    onAddDateRangeScheduleAndSyncCalendar(schedules, payload);
+      setSuccess(
+        `Shift ${form.name.trim()} berhasil dibuat dengan ${selectedPointIds.length} checkpoint.`,
+      );
 
-    setSuccess("Jadwal berhasil dibuat dan dikirim ke kalender.");
+      closeDialog();
+      resetCreateForm();
+    } catch (err) {
+      console.error("Gagal membuat schedule:", err);
 
-    closeDialog();
-    onNavigate("kalender");
+      setModalError(getErrorMessage(err, "Gagal membuat jadwal patroli."));
+    }
   };
 
-  const handleDelete = () => {
-    if (!deleteTarget) return;
+  const handleEditSchedule = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedSchedule) {
+      return;
+    }
 
-    setShifts((prev) => prev.filter((shift) => shift.id !== deleteTarget));
+    if (!updateName.trim()) {
+      setModalError("Nama jadwal wajib diisi.");
+      return;
+    }
 
-    setDeleteTarget(null);
-    setSuccess("Shift berhasil dihapus.");
+    if (!updateStartTime || !updateEndTime) {
+      setModalError("Waktu mulai dan selesai wajib diisi.");
+      return;
+    }
+
+    if (updateStartTime === updateEndTime) {
+      setModalError("Waktu mulai dan selesai tidak boleh sama.");
+      return;
+    }
+
+    if (updateIntervalMinutes <= 0 || updateGracePeriodMinutes < 0) {
+      setModalError("Interval atau grace period tidak valid.");
+      return;
+    }
+
+    const payload = {
+      name: updateName.trim(),
+      startTime: updateStartTime,
+      endTime: updateEndTime,
+      intervalMinutes: updateIntervalMinutes,
+      gracePeriodMinutes: updateGracePeriodMinutes,
+      enforceSequence: updateEnforceSequence,
+    };
+
+    try {
+      await updateShift({ id: selectedSchedule.id, payload });
+
+      setSuccess("Berhasil update shift");
+      closeDialog();
+    } catch (error) {
+      setModalError("Gagal saat update schedule");
+    }
   };
 
-  const toggleStatus = (shift: ShiftConfig) => {
-    setShifts((prev) =>
-      prev.map((item) =>
-        item.id === shift.id
-          ? {
-              ...item,
-              status: item.status === "Aktif" ? "Nonaktif" : "Aktif",
-            }
-          : item,
-      ),
+  // ====================================================
+  // ADD SCHEDULE POINT
+  // ====================================================
+
+  const handleAddPoint = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    setModalError("");
+
+    if (!selectedScheduleId) {
+      setModalError("Jadwal patroli tidak ditemukan.");
+      return;
+    }
+
+    if (!patrolPointId) {
+      setModalError("Pilih checkpoint terlebih dahulu.");
+      return;
+    }
+
+    if (!Number.isInteger(insertAtSequence) || insertAtSequence < 1) {
+      setModalError("Urutan checkpoint minimal 1.");
+      return;
+    }
+
+    const selectedPoint = activePoints.find(
+      (point) => point.id === patrolPointId,
     );
+
+    if (!selectedPoint) {
+      setModalError("Checkpoint tidak aktif atau tidak ditemukan.");
+      return;
+    }
+
+    const payload: AddSchedulePointPayload = {
+      patrolPointId,
+      insertAtSequence,
+      required,
+    };
+
+    try {
+      await addSchedulePoint({
+        scheduleId: selectedScheduleId,
+        payload,
+      });
+
+      setSuccess(`Checkpoint ${selectedPoint.name} berhasil ditambahkan.`);
+
+      closeDialog();
+    } catch (err) {
+      console.error("Gagal menambahkan checkpoint:", err);
+
+      setModalError(
+        getErrorMessage(err, "Gagal menambahkan checkpoint ke jadwal."),
+      );
+    }
   };
+
+  // ====================================================
+  // ASSIGN USER
+  // ====================================================
+
+  const handleAssignUser = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    setModalError("");
+
+    if (!selectedScheduleId) {
+      setModalError("Jadwal tidak ditemukan.");
+      return;
+    }
+
+    if (!selectedUserId) {
+      setModalError("Pilih personel terlebih dahulu.");
+      return;
+    }
+
+    if (!startDate) {
+      setModalError("Tanggal mulai wajib diisi.");
+      return;
+    }
+
+    if (endDate && endDate < startDate) {
+      setModalError("Tanggal akhir tidak boleh lebih awal dari tanggal mulai.");
+      return;
+    }
+
+    const selectedUser = activeUsers.find((item) => item.id === selectedUserId);
+
+    if (!selectedUser) {
+      setModalError("Personel tidak aktif atau tidak ditemukan.");
+      return;
+    }
+
+    const alreadyAssigned = getScheduleAssignments(selectedScheduleId).some(
+      (item) => item.userId === selectedUserId && item.status === "ACTIVE",
+    );
+
+    if (alreadyAssigned) {
+      setModalError(
+        "Personel tersebut sudah memiliki assignment aktif pada shift ini.",
+      );
+      return;
+    }
+
+    const payload: CreateScheduleAssignmentPayload = {
+      userId: selectedUserId,
+      startDate,
+      endDate: endDate || null,
+    };
+
+    try {
+      await assignUser({
+        scheduleId: selectedScheduleId,
+        payload,
+      });
+
+      setSuccess(`${selectedUser.fullName} berhasil ditugaskan ke shift.`);
+
+      closeDialog();
+    } catch (err) {
+      console.error("Gagal assign personel:", err);
+
+      setModalError(
+        getErrorMessage(err, "Gagal menugaskan personel ke shift."),
+      );
+    }
+  };
+
+  // ====================================================
+  // ACTIVATE SCHEDULE
+  // ====================================================
+
+  const handleActivateSchedule = (scheduleId: string) => {
+    setError("");
+
+    activateSchedule(scheduleId, {
+      onSuccess: () => {
+        setSuccess("Jadwal patroli berhasil diaktifkan.");
+      },
+      onError: (err) => {
+        console.error("Gagal mengaktifkan jadwal:", err);
+
+        setError(getErrorMessage(err, "Gagal mengaktifkan jadwal patroli."));
+      },
+    });
+  };
+
+  // ====================================================
+  // DELETE SCHEDULE
+  // ====================================================
+
+  const handleDeleteSchedule = async () => {
+    if (!deleteTarget || isDeleting) return;
+
+    try {
+      await deleteSchedule(deleteTarget);
+
+      setSuccess("Jadwal patroli berhasil dihapus.");
+
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error("Gagal menghapus jadwal:", err);
+
+      setError(getErrorMessage(err, "Gagal menghapus jadwal patroli."));
+
+      setDeleteTarget(null);
+    }
+  };
+
+  // ====================================================
+  // LOADING
+  // ====================================================
+
+  const isLoading =
+    isLoadingSchedules ||
+    isLoadingPoints ||
+    isLoadingAssignments ||
+    isLoadingUsers;
+
+  // ====================================================
+  // RENDER
+  // ====================================================
+
+  const registeredPatrolPoints = useMemo(() => {
+    if (!selectedSchedule) return [];
+
+    return activePoints
+      .flatMap((point) =>
+        (point.schedulePoints ?? [])
+          .filter(
+            (schedulePoint) => schedulePoint.scheduleId === selectedSchedule.id,
+          )
+          .map((schedulePoint) => ({
+            id: schedulePoint.id,
+            patrolPointId: point.id,
+            code: point.code,
+            name: point.name,
+            sequence: schedulePoint.sequence,
+            required: schedulePoint.required,
+          })),
+      )
+      .sort((a, b) => a.sequence - b.sequence);
+  }, [activePoints, selectedSchedule]);
+
+  const availablePatrolPoints = useMemo(() => {
+    const registeredIds = new Set(
+      registeredPatrolPoints.map((point) => point.patrolPointId),
+    );
+
+    return activePoints.filter((point) => !registeredIds.has(point.id));
+  }, [activePoints, registeredPatrolPoints]);
 
   return (
     <div className="space-y-5">
+      {/* HEADER */}
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight">
             Manajemen Shift
           </h1>
 
           <p className="mt-1 text-xs text-muted-foreground">
-            Kelola konfigurasi shift, checkpoint, personel, dan penjadwalan.
+            Kelola konfigurasi shift, checkpoint, dan personel patroli.
           </p>
         </div>
 
@@ -608,12 +853,44 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
             Kalender
           </Button>
 
-          <Button size="sm" className="rounded" onClick={openCreate}>
+          <Button
+            size="sm"
+            className="rounded bg-[#FED400] hover:bg-yello-400 text-black"
+            onClick={openCreate}
+          >
             <Plus className="mr-2 size-4" />
             Tambah Shift
           </Button>
         </div>
       </div>
+
+      {/* SUMMARY */}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded border bg-background p-4">
+          <p className="text-xs text-muted-foreground">Shift Aktif</p>
+
+          <p className="mt-1 text-2xl font-semibold text-emerald-600">
+            {activeCount}
+          </p>
+        </div>
+
+        <div className="rounded border bg-background p-4">
+          <p className="text-xs text-muted-foreground">Shift Draft</p>
+
+          <p className="mt-1 text-2xl font-semibold">{draftCount}</p>
+        </div>
+
+        <div className="rounded border bg-background p-4">
+          <p className="text-xs text-muted-foreground">Nonaktif / Arsip</p>
+
+          <p className="mt-1 text-2xl font-semibold text-muted-foreground">
+            {inactiveCount}
+          </p>
+        </div>
+      </div>
+
+      {/* MAIN TABLE */}
 
       <div className="overflow-hidden rounded border bg-background">
         <div className="space-y-3 border-b p-4">
@@ -624,16 +901,16 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
               </h2>
 
               <p className="mt-1 text-xs text-muted-foreground">
-                Kelola seluruh konfigurasi shift pengamanan.
+                Data konfigurasi shift berdasarkan database patroli.
               </p>
             </div>
 
             <p className="text-xs text-muted-foreground">
-              {filteredShifts.length} dari {shifts.length} shift
+              {filteredSchedules.length} dari {schedules.length} shift
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_250px]">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_220px]">
             <InputGroup className="rounded">
               <InputGroupAddon>
                 <Search className="size-4 text-muted-foreground" />
@@ -641,23 +918,29 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
 
               <InputGroupInput
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Cari nama shift, ID, regu, atau Danru..."
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Cari nama shift atau ID..."
               />
             </InputGroup>
 
             <Select
               value={statusFilter}
-              onValueChange={(value) => setStatusFilter(value as string)}
+              onValueChange={(value) => setStatusFilter(value ?? "")}
             >
-              <SelectTrigger className="rounded w-full">
+              <SelectTrigger className="w-full rounded">
                 <SelectValue placeholder="Semua Status" />
               </SelectTrigger>
 
-              <SelectContent className={`w-full`}>
+              <SelectContent>
                 <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="Aktif">Aktif</SelectItem>
-                <SelectItem value="Draft">Draft</SelectItem>
+
+                <SelectItem value="DRAFT">Draft</SelectItem>
+
+                <SelectItem value="ACTIVE">Aktif</SelectItem>
+
+                <SelectItem value="INACTIVE">Nonaktif</SelectItem>
+
+                <SelectItem value="ARCHIVED">Diarsipkan</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -667,161 +950,213 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-4">Nama Shift</TableHead>
-                <TableHead>Jam Operasional</TableHead>
-                <TableHead>Interval</TableHead>
-                <TableHead>Checkpoint</TableHead>
-                <TableHead>Personel</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className="whitespace-nowrap pl-4">
+                  Nama Shift
+                </TableHead>
+
+                <TableHead className="whitespace-nowrap">
+                  Jam Operasional
+                </TableHead>
+
+                <TableHead className="whitespace-nowrap">Interval</TableHead>
+
+                <TableHead className="whitespace-nowrap">Checkpoint</TableHead>
+
+                <TableHead className="whitespace-nowrap">Personel</TableHead>
+
+                <TableHead className="whitespace-nowrap">Status</TableHead>
+
                 <TableHead className="pr-4 text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
 
             <TableBody>
-              {filteredShifts.map((shift) => {
-                const site = SITES.find((item) => item.id === shift.siteId);
-
-                return (
-                  <TableRow key={shift.id}>
-                    <TableCell className="pl-4">
-                      <div className="text-xs font-medium">{shift.name}</div>
-
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {shift.id} · {shift.squad}
-                      </div>
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="flex items-center gap-1.5 text-xs font-medium">
-                        <Clock className="size-3.5 text-muted-foreground" />
-                        {shift.startTime} - {shift.endTime}
-                      </div>
-
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        Grace {shift.gracePeriodMinutes} menit
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="text-xs">
-                      {shift.intervalMinutes} menit
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="text- font-medium">
-                        {shift.locationIds.length} titik
-                      </div>
-
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="h-auto rounded p-0 text-xs"
-                        onClick={() => openAssignment(shift, "locations")}
-                      >
-                        Kelola titik
-                      </Button>
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="text-xs font-medium">
-                        {shift.officers.length}/{shift.requiredCount}
-                      </div>
-
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="h-auto rounded p-0 text-xs"
-                        onClick={() => openAssignment(shift, "officers")}
-                      >
-                        Kelola personel
-                      </Button>
-                    </TableCell>
-
-                    <TableCell>
-                      <Badge
-                        variant={
-                          shift.status === "Aktif" ? "default" : "secondary"
-                        }
-                        className="rounded"
-                      >
-                        {shift.status}
-                      </Badge>
-                    </TableCell>
-
-                    <TableCell className="pr-4 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 rounded"
-                          >
-                            <MoreHorizontal className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(shift)}>
-                            <Pencil className="mr-2 size-4" />
-                            Edit Konfigurasi
-                          </DropdownMenuItem>
-
-                          <DropdownMenuItem
-                            onClick={() => openAssignment(shift, "locations")}
-                          >
-                            <MapPin className="mr-2 size-4" />
-                            Assign Titik Patroli
-                          </DropdownMenuItem>
-
-                          <DropdownMenuItem
-                            onClick={() => openAssignment(shift, "officers")}
-                          >
-                            <Users className="mr-2 size-4" />
-                            Assign Personel
-                          </DropdownMenuItem>
-
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setStartDate(getTodayString());
-                              setEndDate(getTodayString());
-                              openAssignment(shift, "schedule");
-                            }}
-                          >
-                            <CalendarDays className="mr-2 size-4" />
-                            Buat Jadwal
-                          </DropdownMenuItem>
-
-                          <DropdownMenuItem onClick={() => toggleStatus(shift)}>
-                            <RotateCcw className="mr-2 size-4" />
-                            {shift.status === "Aktif"
-                              ? "Nonaktifkan"
-                              : "Aktifkan"}
-                          </DropdownMenuItem>
-
-                          <DropdownMenuSeparator />
-
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => setDeleteTarget(shift.id)}
-                          >
-                            <Trash2 className="mr-2 size-4" />
-                            Hapus Shift
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-
-              {filteredShifts.length === 0 && (
+              {isLoadingSchedules ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={7}
                     className="h-32 text-center text-xs text-muted-foreground"
                   >
-                    Tidak ada shift yang ditemukan.
+                    Memuat data konfigurasi shift...
                   </TableCell>
                 </TableRow>
+              ) : isSchedulesError ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-32 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <AlertCircle className="size-5 text-destructive" />
+
+                      <p className="text-xs text-destructive">
+                        Gagal mengambil data jadwal patroli.
+                      </p>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded"
+                        onClick={() => refetchSchedules()}
+                      >
+                        Coba Lagi
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filteredSchedules.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="h-32 text-center text-xs text-muted-foreground"
+                  >
+                    Tidak ada konfigurasi shift yang ditemukan.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredSchedules.map((schedule) => {
+                  const assignedUsers = getAssignedUsers(schedule.id);
+
+                  const pointCount = schedule._count?.points ?? 0;
+
+                  return (
+                    <TableRow key={schedule.id}>
+                      {/* NAMA SHIFT */}
+
+                      <TableCell className="pl-4">
+                        <div className="text-xs font-medium">
+                          {schedule.name}
+                        </div>
+
+                        <div className="mt-1 text-[10px] text-muted-foreground">
+                          {schedule.site?.code ?? "-"}
+                        </div>
+                      </TableCell>
+
+                      {/* JAM OPERASIONAL */}
+
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 text-xs font-medium">
+                          <Clock className="size-3.5 text-muted-foreground" />
+                          {schedule.startTime} - {schedule.endTime}
+                        </div>
+
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Grace {schedule.gracePeriodMinutes} menit
+                        </div>
+                      </TableCell>
+
+                      {/* INTERVAL */}
+
+                      <TableCell className="text-xs">
+                        {schedule.intervalMinutes} menit
+                      </TableCell>
+
+                      {/* CHECKPOINT */}
+
+                      <TableCell>
+                        <div className="text-xs font-medium">
+                          {pointCount} Titik
+                        </div>
+
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="h-auto rounded p-0 text-xs"
+                          onClick={() => openAddPoint(schedule.id)}
+                        >
+                          Kelola titik
+                        </Button>
+                      </TableCell>
+
+                      {/* PERSONEL */}
+
+                      <TableCell>
+                        <div className="text-xs font-medium">
+                          {assignedUsers.length} Personel
+                        </div>
+
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="h-auto rounded p-0 text-xs"
+                          onClick={() => openAssignUser(schedule.id)}
+                        >
+                          Kelola personel
+                        </Button>
+                      </TableCell>
+
+                      {/* STATUS */}
+
+                      <TableCell>
+                        <Badge
+                          variant={getStatusVariant(schedule.status)}
+                          className="rounded"
+                        >
+                          {formatStatus(schedule.status)}
+                        </Badge>
+                      </TableCell>
+
+                      {/* ACTION */}
+
+                      <TableCell className="pr-4 text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 rounded"
+                            >
+                              <MoreHorizontal className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => openEditSchedule(schedule)}
+                            >
+                              <RotateCcw className="mr-2 size-4" />
+                              Edit Konfigurasi
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem
+                              onClick={() => openAddPoint(schedule.id)}
+                            >
+                              <MapPin className="mr-2 size-4" />
+                              Assign Titik Patroli
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem
+                              onClick={() => openAssignUser(schedule.id)}
+                            >
+                              <Users className="mr-2 size-4" />
+                              Assign Personel
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSeparator />
+
+                            {schedule.status === "DRAFT" && (
+                              <DropdownMenuItem
+                                disabled={isActivating}
+                                onClick={() =>
+                                  handleActivateSchedule(schedule.id)
+                                }
+                              >
+                                <Check className="mr-2 size-4" />
+                                Aktifkan Shift
+                              </DropdownMenuItem>
+                            )}
+
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteTarget(schedule.id)}
+                            >
+                              <Trash2 className="mr-2 size-4" />
+                              Hapus Shift
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -829,544 +1164,102 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
 
         <div className="flex flex-col gap-1 border-t px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <span>
-            Menampilkan {filteredShifts.length} dari {shifts.length} shift
+            Menampilkan {filteredSchedules.length} dari {schedules.length} shift
           </span>
 
           <span>
-            {activeCount} aktif · {inactiveCount} nonaktif
+            {activeCount} aktif · {draftCount} draft · {inactiveCount} lainnya
           </span>
         </div>
       </div>
 
+      {/* DIALOG CREATE SCHEDULE */}
       <Dialog
-        open={dialogMode === "locations"}
-        onOpenChange={(open) => !open && closeDialog()}
-      >
-        <DialogContent className="max-h-full overflow-y-auto rounded sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Assign Titik Patroli</DialogTitle>
-
-            <DialogDescription>
-              {form.name} · Pilih checkpoint dan tentukan urutan patroli.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto py-2 lg:grid-cols-5">
-            <div className="flex min-h-0 flex-col space-y-3 lg:col-span-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_150px]">
-                <InputGroup className="rounded">
-                  <InputGroupAddon>
-                    <Search className="size-4 text-muted-foreground" />
-                  </InputGroupAddon>
-
-                  <InputGroupInput
-                    placeholder="Cari checkpoint..."
-                    value={locationSearch}
-                    onChange={(e) => setLocationSearch(e.target.value)}
-                  />
-                </InputGroup>
-
-                <Select
-                  value={locationSiteFilter}
-                  onValueChange={(value) =>
-                    setLocationSiteFilter(value as string)
-                  }
-                >
-                  <SelectTrigger className="rounded w-full">
-                    <SelectValue placeholder="Semua Site" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    <SelectItem value="all">Semua Site</SelectItem>
-
-                    {SITES.filter((site) => site.id !== "all").map((site) => (
-                      <SelectItem key={site.id} value={site.id}>
-                        {site.code}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="min-h-0 overflow-auto rounded border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10"></TableHead>
-                      <TableHead>Checkpoint</TableHead>
-                      <TableHead>NFC UID</TableHead>
-                    </TableRow>
-                  </TableHeader>
-
-                  <TableBody>
-                    {filteredLocations.map((checkpoint) => {
-                      const checked = form.locationIds.includes(checkpoint.id);
-
-                      return (
-                        <TableRow key={checkpoint.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={() =>
-                                toggleLocation(checkpoint.id)
-                              }
-                            />
-                          </TableCell>
-
-                          <TableCell>
-                            <p className="text-xs font-medium">
-                              {checkpoint.name}
-                            </p>
-
-                            <p className="text-xs text-muted-foreground">
-                              {checkpoint.id}
-                            </p>
-                          </TableCell>
-
-                          <TableCell className="font-mono text-xs">
-                            {checkpoint.tagUid}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-
-                    {filteredLocations.length === 0 && (
-                      <TableRow>
-                        <TableCell
-                          colSpan={4}
-                          className="h-24 text-center text-xs text-muted-foreground"
-                        >
-                          Checkpoint tidak ditemukan.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            <div className="flex min-h-0 flex-col rounded border p-3 lg:col-span-2">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold">Urutan Patroli</p>
-
-                  <p className="text-xs text-muted-foreground">
-                    {form.locationIds.length} checkpoint dipilih
-                  </p>
-                </div>
-
-                <Badge variant="secondary" className="rounded">
-                  {form.enforceSequence ? "Wajib urut" : "Fleksibel"}
-                </Badge>
-              </div>
-
-              <div className="flex-1 space-y-2 overflow-y-auto">
-                {form.locationIds.map((id, index) => {
-                  const checkpoint = CHECKPOINTS.find((item) => item.id === id);
-
-                  return (
-                    <div
-                      key={id}
-                      className="flex items-center gap-2 rounded border p-2"
-                    >
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-primary text-xs text-primary-foreground">
-                        {index + 1}
-                      </span>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium">
-                          {checkpoint?.name || id}
-                        </p>
-
-                        <p className="text-[10px] text-muted-foreground">
-                          {id}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-col">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-6 rounded"
-                          disabled={index === 0}
-                          onClick={() => moveLocation(index, "up")}
-                        >
-                          <ChevronUp className="size-3.5" />
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-6 rounded"
-                          disabled={index === form.locationIds.length - 1}
-                          onClick={() => moveLocation(index, "down")}
-                        >
-                          <ChevronDown className="size-3.5" />
-                        </Button>
-                      </div>
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 rounded text-destructive"
-                        onClick={() => toggleLocation(id)}
-                      >
-                        <X className="size-3.5" />
-                      </Button>
-                    </div>
-                  );
-                })}
-
-                {form.locationIds.length === 0 && (
-                  <p className="py-10 text-center text-xs text-muted-foreground">
-                    Belum ada checkpoint dipilih.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {error && <p className="text-xs text-destructive">{error}</p>}
-
-          <DialogFooter>
-            <Button variant="outline" className="rounded" onClick={closeDialog}>
-              Batal
-            </Button>
-
-            <Button className="rounded" onClick={saveLocations}>
-              <Save className="mr-2 size-4" />
-              Simpan Titik Patroli
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={dialogMode === "officers"}
-        onOpenChange={(open) => !open && closeDialog()}
-      >
-        <DialogContent className="max-h-[90vh] overflow-y-auto rounded sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Assign Personel Security</DialogTitle>
-
-            <DialogDescription>
-              Pilih personel yang akan bertugas pada {form.name}.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-1 gap-4 py-2 lg:grid-cols-2">
-            <div className="flex min-h-0 flex-col space-y-3">
-              <InputGroup className="h-9 rounded">
-                <InputGroupAddon>
-                  <Search className="size-4 text-muted-foreground" />
-                </InputGroupAddon>
-
-                <InputGroupInput
-                  value={officerSearch}
-                  onChange={(e) => setOfficerSearch(e.target.value)}
-                  placeholder="Cari nama, NPP, callsign..."
-                />
-              </InputGroup>
-
-              <div className="max-h-[420px] overflow-auto rounded border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10"></TableHead>
-                      <TableHead>Personel</TableHead>
-                      <TableHead>NPP</TableHead>
-                    </TableRow>
-                  </TableHeader>
-
-                  <TableBody>
-                    {filteredOfficers.map((officer) => {
-                      const checked = form.officers.some(
-                        (item) => item.officerId === officer.officerId,
-                      );
-
-                      return (
-                        <TableRow key={officer.officerId}>
-                          <TableCell>
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={() => toggleOfficer(officer)}
-                            />
-                          </TableCell>
-
-                          <TableCell>
-                            <p className="text-xs font-medium">
-                              {officer.officerName}
-                            </p>
-
-                            <p className="text-xs text-muted-foreground">
-                              {officer.callSign || officer.role}
-                            </p>
-                          </TableCell>
-
-                          <TableCell className="font-mono text-xs">
-                            {officer.npp}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-
-                    {filteredOfficers.length === 0 && (
-                      <TableRow>
-                        <TableCell
-                          colSpan={3}
-                          className="h-24 text-center text-xs text-muted-foreground"
-                        >
-                          Personel tidak ditemukan.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold">Personel Terpilih</p>
-
-                  <p className="text-xs text-muted-foreground">
-                    {form.officers.length}/{form.requiredCount} personel
-                  </p>
-                </div>
-
-                <Badge
-                  variant={
-                    form.officers.length >= form.requiredCount
-                      ? "default"
-                      : "secondary"
-                  }
-                  className="rounded"
-                >
-                  {form.officers.length >= form.requiredCount
-                    ? "Kuota terpenuhi"
-                    : "Belum terpenuhi"}
-                </Badge>
-              </div>
-
-              <div className="space-y-3 rounded border p-3">
-                <div className="space-y-1.5">
-                  <Label>Regu</Label>
-
-                  <Select
-                    value={form.squad}
-                    onValueChange={(value) =>
-                      updateForm("squad", value as string)
-                    }
-                  >
-                    <SelectTrigger className="h-9 rounded">
-                      <SelectValue />
-                    </SelectTrigger>
-
-                    <SelectContent>
-                      {SQUAD_OPTIONS.map((name) => (
-                        <SelectItem key={name} value={`Regu ${name}`}>
-                          Regu {name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Target Personel</Label>
-
-                  <Input
-                    className="h-9 rounded"
-                    type="number"
-                    min={1}
-                    value={form.requiredCount}
-                    onChange={(e) =>
-                      updateForm("requiredCount", Number(e.target.value))
-                    }
-                  />
-                </div>
-
-                <div className="max-h-[300px] space-y-2 overflow-y-auto">
-                  {form.officers.map((officer, index) => (
-                    <div
-                      key={officer.officerId}
-                      className="space-y-2 rounded border p-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-semibold">
-                            {index + 1}. {officer.officerName}
-                          </p>
-
-                          <p className="text-[10px] text-muted-foreground">
-                            {officer.npp}
-                          </p>
-                        </div>
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 rounded text-destructive"
-                          onClick={() => toggleOfficer(officer)}
-                        >
-                          <X className="size-4" />
-                        </Button>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Jabatan</Label>
-
-                        <Select
-                          value={officer.role}
-                          onValueChange={(value) =>
-                            updateOfficerRole(
-                              officer.officerId,
-                              value as string,
-                            )
-                          }
-                        >
-                          <SelectTrigger className="h-9 rounded text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-
-                          <SelectContent>
-                            <SelectItem value="Komandan Regu (Danru)">
-                              Komandan Regu (Danru)
-                            </SelectItem>
-
-                            <SelectItem value="Petugas Lapangan">
-                              Petugas Lapangan
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Penempatan Pos</Label>
-
-                        <Select
-                          value={officer.post}
-                          onValueChange={(value) =>
-                            updateOfficerPost(
-                              officer.officerId,
-                              value as string,
-                            )
-                          }
-                        >
-                          <SelectTrigger className="h-9 rounded text-xs">
-                            <SelectValue placeholder="Pilih pos" />
-                          </SelectTrigger>
-
-                          <SelectContent>
-                            {POST_OPTIONS.map((post) => (
-                              <SelectItem key={post} value={post}>
-                                {post}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  ))}
-
-                  {form.officers.length === 0 && (
-                    <p className="py-8 text-center text-xs text-muted-foreground">
-                      Belum ada personel dipilih.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {error && <p className="text-xs text-destructive">{error}</p>}
-
-          <DialogFooter>
-            <Button variant="outline" className="rounded" onClick={closeDialog}>
-              Batal
-            </Button>
-
-            <Button className="rounded" onClick={saveOfficers}>
-              <Save className="mr-2 size-4" />
-              Simpan Personel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={dialogMode === "schedule"}
-        onOpenChange={(open) => !open && closeDialog()}
+        open={dialogMode === "create"}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto rounded sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Tambah Shift Patroli</DialogTitle>
+
             <DialogDescription>
-              Atur parameter shift, regu, dan checkpoint yang akan dimasukkan ke
-              dalam jadwal patroli.
+              Atur konfigurasi shift dan checkpoint patroli yang akan digunakan.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleCreateSchedule} className="space-y-5">
             {modalError && (
-              <div className="flex items-center gap-2 rounded border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">
-                <AlertCircle className="size-4 shrink-0" />
-                {modalError}
+              <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-700">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+
+                <span>{modalError}</span>
               </div>
             )}
 
-            {/* Informasi Shift */}
+            {/* INFORMASI SHIFT */}
+
             <section className="space-y-3">
               <div className="flex items-center gap-2 border-b pb-2">
                 <Clock className="size-4 text-primary" />
+
                 <h3 className="text-sm font-semibold">Informasi Shift</h3>
               </div>
-
+              <div></div>
               <div className="space-y-2">
                 <Label>Nama Shift</Label>
+
                 <Input
                   className="rounded"
-                  value={shiftName}
-                  onChange={(e) => setShiftName(e.target.value)}
+                  value={form.name}
+                  onChange={(event) => updateForm("name", event.target.value)}
                   placeholder="Contoh: Shift Pagi"
                   required
                 />
               </div>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Jam Mulai</Label>
+
                   <Input
                     type="time"
                     className="rounded"
-                    value={shiftStartTime}
-                    onChange={(e) => setShiftStartTime(e.target.value)}
+                    value={form.startTime}
+                    onChange={(event) =>
+                      updateForm("startTime", event.target.value)
+                    }
                     required
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Jam Selesai</Label>
+
                   <Input
                     type="time"
                     className="rounded"
-                    value={shiftEndTime}
-                    onChange={(e) => setShiftEndTime(e.target.value)}
+                    value={form.endTime}
+                    onChange={(event) =>
+                      updateForm("endTime", event.target.value)
+                    }
                     required
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Interval Putaran (Menit)</Label>
+
                   <Input
                     type="number"
                     min={15}
                     max={480}
                     step={15}
                     className="rounded"
-                    value={shiftIntervalMinutes}
-                    onChange={(e) =>
-                      setShiftIntervalMinutes(Number(e.target.value))
+                    value={form.intervalMinutes}
+                    onChange={(event) =>
+                      updateForm("intervalMinutes", Number(event.target.value))
                     }
                     required
                   />
@@ -1378,12 +1271,16 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                         type="button"
                         size="sm"
                         variant={
-                          shiftIntervalMinutes === minutes
+                          form.intervalMinutes === minutes
                             ? "default"
                             : "outline"
                         }
-                        className="h-7 rounded px-2 text-xs"
-                        onClick={() => setShiftIntervalMinutes(minutes)}
+                        className={`h-7 rounded px-2 text-xs hover:bg-yellow-300 ${
+                          form.intervalMinutes === minutes
+                            ? "bg-[#FED400] text-black"
+                            : ""
+                        }`}
+                        onClick={() => updateForm("intervalMinutes", minutes)}
                       >
                         {minutes}m
                       </Button>
@@ -1393,15 +1290,19 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
 
                 <div className="space-y-2">
                   <Label>Batas Toleransi (Menit)</Label>
+
                   <Input
                     type="number"
                     min={0}
                     max={120}
                     step={5}
                     className="rounded"
-                    value={shiftGracePeriodMinutes}
-                    onChange={(e) =>
-                      setShiftGracePeriodMinutes(Number(e.target.value))
+                    value={form.gracePeriodMinutes}
+                    onChange={(event) =>
+                      updateForm(
+                        "gracePeriodMinutes",
+                        Number(event.target.value),
+                      )
                     }
                     required
                   />
@@ -1413,12 +1314,18 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                         type="button"
                         size="sm"
                         variant={
-                          shiftGracePeriodMinutes === minutes
+                          form.gracePeriodMinutes === minutes
                             ? "default"
                             : "outline"
                         }
-                        className="h-7 rounded px-2 text-xs"
-                        onClick={() => setShiftGracePeriodMinutes(minutes)}
+                        className={`h-7 rounded px-2 text-xs hover:bg-yellow-300 ${
+                          form.gracePeriodMinutes === minutes
+                            ? "bg-[#FED400] text-black"
+                            : ""
+                        }`}
+                        onClick={() =>
+                          updateForm("gracePeriodMinutes", minutes)
+                        }
                       >
                         {minutes}m
                       </Button>
@@ -1430,38 +1337,43 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
               <div className="flex items-start justify-between gap-4 rounded border p-3">
                 <div className="space-y-1">
                   <Label>Wajib Urut Checkpoint</Label>
+
                   <p className="text-xs text-muted-foreground">
                     Petugas harus melakukan tap checkpoint sesuai urutan yang
                     ditentukan.
                   </p>
-                  <Badge variant="outline" className="rounded text-xs">
-                    {shiftEnforceSequence ? "Urutan wajib" : "Urutan fleksibel"}
+
+                  <Badge variant="outline" className="rounded">
+                    {form.enforceSequence ? "Urutan wajib" : "Urutan fleksibel"}
                   </Badge>
                 </div>
 
                 <Checkbox
-                  checked={shiftEnforceSequence}
+                  checked={form.enforceSequence}
                   onCheckedChange={(checked) =>
-                    setShiftEnforceSequence(checked === true)
+                    updateForm("enforceSequence", checked === true)
                   }
                   className="mt-1 rounded"
                 />
               </div>
             </section>
 
-            {/* Checkpoint */}
+            {/* CHECKPOINT */}
+
             <section className="space-y-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
                     <MapPin className="size-4 text-primary" />
+
                     <h3 className="text-sm font-semibold">
                       Titik Lokasi Patroli
                     </h3>
                   </div>
+
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {shiftLocationIds.length} titik dipilih. Urutan mengikuti
-                    urutan pemilihan.
+                    {selectedPointIds.length} checkpoint dipilih. Urutan
+                    mengikuti urutan pemilihan.
                   </p>
                 </div>
 
@@ -1471,11 +1383,8 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                     size="sm"
                     variant="outline"
                     className="rounded"
-                    onClick={() =>
-                      setShiftLocationIds(
-                        CHECKPOINTS.map((checkpoint) => checkpoint.id),
-                      )
-                    }
+                    disabled={activePoints.length === 0}
+                    onClick={selectAllPoints}
                   >
                     Pilih Semua
                   </Button>
@@ -1485,7 +1394,7 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                     size="sm"
                     variant="outline"
                     className="rounded"
-                    onClick={() => setShiftLocationIds([])}
+                    onClick={clearAllPoints}
                   >
                     Kosongkan
                   </Button>
@@ -1496,26 +1405,38 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                 <InputGroupAddon>
                   <Search className="size-4" />
                 </InputGroupAddon>
+
                 <InputGroupInput
-                  placeholder="Cari nama, kode checkpoint, lantai..."
+                  placeholder="Cari nama atau checkpoint..."
                   value={modalLocationSearch}
-                  onChange={(e) => setModalLocationSearch(e.target.value)}
+                  onChange={(event) =>
+                    setModalLocationSearch(event.target.value)
+                  }
                 />
               </InputGroup>
 
-              <div className="max-h-56 space-y-1 overflow-y-auto rounded border p-2">
-                {filteredLocations.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    Tidak ada checkpoint yang ditemukan.
+              <div className="max-h-60 space-y-1 overflow-y-auto rounded border p-2">
+                {isLoadingPoints ? (
+                  <p className="py-6 text-center text-xs text-muted-foreground">
+                    Memuat checkpoint...
+                  </p>
+                ) : isPointsError ? (
+                  <p className="py-6 text-center text-xs text-destructive">
+                    Gagal mengambil data checkpoint.
+                  </p>
+                ) : filteredPoints.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-muted-foreground">
+                    Tidak ada checkpoint aktif yang ditemukan.
                   </p>
                 ) : (
-                  filteredLocations.map((checkpoint) => {
-                    const isSelected = shiftLocationIds.includes(checkpoint.id);
-                    const orderIndex = shiftLocationIds.indexOf(checkpoint.id);
+                  filteredPoints.map((point) => {
+                    const isSelected = selectedPointIds.includes(point.id);
+
+                    const orderIndex = selectedPointIds.indexOf(point.id);
 
                     return (
                       <label
-                        key={checkpoint.id}
+                        key={point.id}
                         className={`flex cursor-pointer items-center justify-between gap-3 rounded border p-2.5 transition-colors ${
                           isSelected
                             ? "border-primary/40 bg-primary/5"
@@ -1525,22 +1446,20 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                         <div className="flex min-w-0 items-center gap-3">
                           <Checkbox
                             checked={isSelected}
-                            onCheckedChange={(checked) => {
-                              setShiftLocationIds((prev) =>
-                                checked
-                                  ? [...prev, checkpoint.id]
-                                  : prev.filter((id) => id !== checkpoint.id),
-                              );
-                            }}
+                            onCheckedChange={(checked) =>
+                              togglePoint(point.id, checked === true)
+                            }
                             className="rounded"
                           />
 
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">
-                              {checkpoint.name}
+                            <p className="truncate text-xs font-medium">
+                              {point.name}
                             </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {checkpoint.zoneFloor} · {checkpoint.siteName}
+
+                            <p className="truncate text-[10px] text-muted-foreground">
+                              {point.site?.name ?? "-"} ·{" "}
+                              {point.description ?? "-"}
                             </p>
                           </div>
                         </div>
@@ -1553,7 +1472,7 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                           )}
 
                           <span className="font-mono text-[10px] text-muted-foreground">
-                            {checkpoint.id}
+                            {point.code ?? point.id}
                           </span>
                         </div>
                       </label>
@@ -1563,53 +1482,467 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
               </div>
             </section>
 
-            <DialogFooter className="flex-col justify-end gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded"
-                  onClick={closeDialog}
-                >
-                  Batal
-                </Button>
+            {/* FOOTER */}
 
-                <Button type="submit" className="rounded">
-                  <Save className="mr-2 size-4" />
-                  Simpan Shift
-                </Button>
-              </div>
+            <DialogFooter className="border-t pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded"
+                onClick={closeDialog}
+                disabled={isCreatingSchedule}
+              >
+                Batal
+              </Button>
+
+              <Button
+                type="submit"
+                className="rounded bg-[#FED400] hover:bg-yellow-400 text-black"
+                disabled={isCreatingSchedule}
+              >
+                {isCreatingSchedule ? (
+                  <>
+                    <RotateCcw className="mr-2 size-4 animate-spin" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 size-4" />
+                    Simpan Shift
+                  </>
+                )}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
+      {/* DIALOG UPDATE CHECKPOINT */}
+      <Dialog
+        open={dialogMode === "edit"}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDialog();
+            setSelectedScheduleId(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Jadwal Patroli</DialogTitle>
+            <DialogDescription>
+              Perbarui konfigurasi jadwal patroli yang dipilih.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditSchedule} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nama Jadwal</Label>
+              <Input
+                value={updateName}
+                onChange={(e) => setUpdateName(e.target.value)}
+                placeholder="Contoh: Shift Pagi"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Jam Mulai</Label>
+                <Input
+                  type="time"
+                  value={updateStartTime}
+                  onChange={(e) => setUpdateStartTime(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Jam Selesai</Label>
+                <Input
+                  type="time"
+                  value={updateEndTime}
+                  onChange={(e) => setUpdateEndTime(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Interval (Menit)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={updateIntervalMinutes}
+                  onChange={(e) =>
+                    setUpdateIntervalMinutes(Number(e.target.value))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Grace Period (Menit)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={updateGracePeriodMinutes}
+                  onChange={(e) =>
+                    setUpdateGracePeriodMinutes(Number(e.target.value))
+                  }
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded border p-3">
+              <div>
+                <Label>Urutan Checkpoint</Label>
+                <p className="text-xs text-muted-foreground">
+                  Petugas harus mengikuti urutan checkpoint.
+                </p>
+              </div>
+
+              <Switch
+                checked={updateEnforceSequence}
+                onCheckedChange={setUpdateEnforceSequence}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded"
+                onClick={() => closeDialog()}
+                disabled={isUpdating}
+              >
+                Batal
+              </Button>
+
+              <Button type="submit" className="rounded" disabled={isUpdating}>
+                {isUpdating ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG ADD CHECKPOINT */}
+      <Dialog
+        open={dialogMode === "locations"}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+      >
+        <DialogContent className="rounded sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Assign Titik Patroli</DialogTitle>
+
+            <DialogDescription>
+              {selectedSchedule?.name ?? "Jadwal patroli"}. Tambahkan checkpoint
+              ke konfigurasi shift.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAddPoint} className="space-y-4">
+            {modalError && (
+              <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                {modalError}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Checkpoint</Label>
+
+              <Select
+                value={patrolPointId}
+                onValueChange={(value) => setPatrolPointId(value ?? "")}
+              >
+                <SelectTrigger className="w-full rounded">
+                  <SelectValue placeholder="Pilih checkpoint" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {availablePatrolPoints.map((point) => (
+                    <SelectItem key={point.id} value={point.id}>
+                      {point.name} ({point.code ?? point.id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Masukkan pada urutan ke-</Label>
+
+              <Input
+                type="number"
+                min={1}
+                className="rounded"
+                value={insertAtSequence}
+                onChange={(event) =>
+                  setInsertAtSequence(Number(event.target.value))
+                }
+                required
+              />
+
+              <p className="text-[11px] text-muted-foreground">
+                Urutan checkpoint ditentukan berdasarkan posisi yang dimasukkan.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between rounded border p-3">
+              <div>
+                <Label>Checkpoint Wajib</Label>
+
+                <p className="text-xs text-muted-foreground">
+                  Checkpoint wajib diselesaikan petugas.
+                </p>
+              </div>
+
+              <Checkbox
+                checked={required}
+                onCheckedChange={(checked) => setRequired(checked === true)}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded"
+                onClick={closeDialog}
+                disabled={isAddingPoint}
+              >
+                Batal
+              </Button>
+
+              <Button
+                type="submit"
+                className="rounded"
+                disabled={isAddingPoint}
+              >
+                {isAddingPoint ? (
+                  "Menyimpan..."
+                ) : (
+                  <>
+                    <Save className="mr-2 size-4" />
+                    Simpan Checkpoint
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG ASSIGN PERSONEL */}
+
+      <Dialog
+        open={dialogMode === "officers"}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Assign Personel Security</DialogTitle>
+
+            <DialogDescription>
+              Pilih personel yang akan ditugaskan pada{" "}
+              {selectedSchedule?.name ?? "shift"}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAssignUser} className="space-y-4">
+            {modalError && (
+              <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                {modalError}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Cari Personel</Label>
+
+              <InputGroup className="rounded">
+                <InputGroupAddon>
+                  <Search className="size-4" />
+                </InputGroupAddon>
+
+                <InputGroupInput
+                  placeholder="Cari nama, NPP, atau regu..."
+                  value={officerSearch}
+                  onChange={(event) => setOfficerSearch(event.target.value)}
+                />
+              </InputGroup>
+            </div>
+
+            <div className="max-h-60 space-y-1 overflow-y-auto rounded border p-2">
+              {isLoadingUsers ? (
+                <p className="py-6 text-center text-xs text-muted-foreground">
+                  Memuat personel...
+                </p>
+              ) : filteredUsers.length === 0 ? (
+                <p className="py-6 text-center text-xs text-muted-foreground">
+                  Tidak ada personel aktif ditemukan.
+                </p>
+              ) : (
+                filteredUsers.map((officer) => {
+                  const selected = selectedUserId === officer.id;
+
+                  return (
+                    <button
+                      key={officer.id}
+                      type="button"
+                      onClick={() => setSelectedUserId(officer.id)}
+                      className={`flex w-full items-center justify-between gap-3 rounded border p-3 text-left transition-colors ${
+                        selected
+                          ? "border-primary bg-primary/5"
+                          : "border-transparent hover:bg-muted/50"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium">
+                          {officer.fullName}
+                        </p>
+
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          {officer.employeeNumber ?? "-"} ·{" "}
+                          {officer.team?.name ?? "Tanpa Regu"}
+                        </p>
+
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          {officer.role?.name ?? "-"}
+                        </p>
+                      </div>
+
+                      {selected && (
+                        <Check className="size-4 shrink-0 text-primary" />
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tanggal Mulai Bertugas</Label>
+
+              <Input
+                type="date"
+                className="rounded"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tanggal Selesai</Label>
+
+              <Input
+                type="date"
+                className="rounded"
+                min={startDate}
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+              />
+
+              <p className="text-[10px] text-muted-foreground">
+                Kosongkan jika penugasan tidak memiliki tanggal akhir.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded"
+                onClick={closeDialog}
+                disabled={isAssigningUser}
+              >
+                Batal
+              </Button>
+
+              <Button
+                type="submit"
+                className="rounded"
+                disabled={isAssigningUser || isLoadingUsers}
+              >
+                {isAssigningUser ? (
+                  "Menyimpan..."
+                ) : (
+                  <>
+                    <Users className="mr-2 size-4" />
+                    Assign Personel
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DELETE CONFIRMATION */}
+
       <AlertDialog
         open={Boolean(deleteTarget)}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
       >
         <AlertDialogContent className="rounded">
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus konfigurasi shift?</AlertDialogTitle>
 
             <AlertDialogDescription>
-              Shift yang dihapus tidak lagi muncul dalam daftar konfigurasi.
-              Pastikan shift tersebut tidak sedang digunakan oleh jadwal aktif.
+              Data shift akan dihapus melalui API backend. Pastikan jadwal
+              tersebut tidak sedang digunakan oleh penugasan atau aktivitas
+              patroli.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded">Batal</AlertDialogCancel>
+            <AlertDialogCancel className="rounded" disabled={isDeleting}>
+              Batal
+            </AlertDialogCancel>
 
             <AlertDialogAction
-              onClick={handleDelete}
-              className="rounded text-white bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDeleteSchedule();
+              }}
+              disabled={isDeleting}
+              className="rounded bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Hapus Shift
+              {isDeleting ? "Menghapus..." : "Hapus Shift"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ERROR NOTIFICATION */}
+
+      {error && (
+        <div className="fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-3 rounded border border-destructive/30 bg-background px-4 py-3 shadow-lg">
+          <AlertCircle className="size-4 shrink-0 text-destructive" />
+
+          <span className="flex-1 text-xs font-medium">{error}</span>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6 rounded"
+            onClick={() => setError("")}
+          >
+            <X className="size-3" />
+          </Button>
+        </div>
+      )}
+
+      {/* SUCCESS NOTIFICATION */}
 
       {success && (
         <div className="fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-3 rounded border bg-background px-4 py-3 shadow-lg">
@@ -1630,3 +1963,5 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     </div>
   );
 };
+
+export default TambahJadwalShiftView;

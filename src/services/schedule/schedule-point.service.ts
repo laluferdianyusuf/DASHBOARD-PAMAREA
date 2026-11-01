@@ -11,13 +11,15 @@ import type {
   DeleteSchedulePointResponse,
 } from "../../types/schedule/schedule-point";
 
+const BASE_URL = "/patrol-schedules-points";
+
 // Menambahkan satu point ke schedule
 export const createSchedulePoint = async (
   scheduleId: string,
   payload: CreateSchedulePointPayload,
 ): Promise<PatrolSchedulePoint> => {
   const response = await apiClient.post<PatrolSchedulePoint>(
-    `/patrol-schedules/${scheduleId}/points`,
+    `${BASE_URL}/${scheduleId}/points`,
     payload,
   );
 
@@ -30,7 +32,7 @@ export const createManySchedulePoints = async (
   payload: CreateManySchedulePointsPayload,
 ): Promise<CreateManySchedulePointsResponse> => {
   const response = await apiClient.post<CreateManySchedulePointsResponse>(
-    `/patrol-schedules/${scheduleId}/points/many`,
+    `${BASE_URL}/${scheduleId}/points/many`,
     payload,
   );
 
@@ -42,7 +44,7 @@ export const getSchedulePoints = async (
   scheduleId: string,
 ): Promise<PatrolSchedulePoint[]> => {
   const response = await apiClient.get<PatrolSchedulePoint[]>(
-    `/patrol-schedules/${scheduleId}/points`,
+    `${BASE_URL}/${scheduleId}`,
   );
 
   return response.data;
@@ -55,7 +57,7 @@ export const updateSchedulePoint = async (
   payload: UpdateSchedulePointPayload,
 ): Promise<UpdateSchedulePointResponse> => {
   const response = await apiClient.patch<UpdateSchedulePointResponse>(
-    `/patrol-schedules/${scheduleId}/points/${pointId}`,
+    `${BASE_URL}/${scheduleId}/points/${pointId}`,
     payload,
   );
 
@@ -68,7 +70,7 @@ export const deleteSchedulePoint = async (
   pointId: string,
 ): Promise<DeleteSchedulePointResponse> => {
   const response = await apiClient.delete<DeleteSchedulePointResponse>(
-    `/patrol-schedules/${scheduleId}/points/${pointId}`,
+    `${BASE_URL}/${scheduleId}/points/${pointId}`,
   );
 
   return response.data;

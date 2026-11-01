@@ -767,7 +767,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
         </div>
 
         <Button
-          className="rounded gap-2 bg-[#FED400] text-black hover:bg-yellow-400"
+          className="rounded gap-2 bg-[#F06B2F] text-white hover:bg-orange-500"
           onClick={() => {
             if (activeSubTab === "personel") {
               setNewUser(initialUserForm);
@@ -893,7 +893,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
 
                       return (
                         <TableRow key={user.id}>
-                          <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-primary">
+                          <TableCell className="whitespace-nowrap text-blue-600 font-mono text-xs font-medium">
                             {user.employeeNumber}
                           </TableCell>
 
@@ -982,12 +982,6 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                                 size="icon"
                                 className="size-8 rounded"
                                 title="Edit akun"
-                                // onClick={() => {
-                                //   setEditingUsernameSameAsNpp(
-                                //     user.username === user.id,
-                                //   );
-                                //   setEditingUser({ ...user });
-                                // }}
                                 onClick={() => {
                                   handleOpenEditUser(user);
                                 }}
@@ -1058,7 +1052,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ID Regu</TableHead>
+                    <TableHead>Code Regu</TableHead>
                     <TableHead>Nama Regu</TableHead>
                     <TableHead>Deskripsi</TableHead>
                     <TableHead>Site</TableHead>
@@ -1079,7 +1073,7 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                   ) : (
                     filteredSquads.map((squad) => (
                       <TableRow key={squad.id}>
-                        <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-primary">
+                        <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-blue-600">
                           {squad.code}
                         </TableCell>
 

@@ -106,13 +106,13 @@ export const useUpdatePatrolSchedule = () => {
       payload: UpdatePatrolSchedulePayload;
     }) => updatePatrolSchedule(id, payload),
 
-    onSuccess: async (_data, id) => {
+    onSuccess: async (_data, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["patrol-schedules"],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["patrol-schedule", id],
+          queryKey: ["patrol-schedule", variables.id],
         }),
       ]);
     },

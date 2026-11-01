@@ -1,6 +1,18 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { addSchedulePoint } from "../../services/schedule/schedule-point.service";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  addSchedulePoint,
+  getSchedulePoints,
+} from "../../services/schedule/schedule-point.service";
 import type { AddSchedulePointPayload } from "../../types";
+
+export const patrolSchedulePointKeys = {
+  all: ["patrol-schedules-points"] as const,
+
+  lists: () => [...patrolSchedulePointKeys.all, "list"] as const,
+
+  list: (scheduleId: string) =>
+    [...patrolSchedulePointKeys.lists(), scheduleId] as const,
+};
 
 export const useAddNewPoint = () => {
   const queryClient = useQueryClient();
@@ -24,5 +36,14 @@ export const useAddNewPoint = () => {
         }),
       ]);
     },
+  });
+};
+
+export const useSchedulePoints = (scheduleId: string, enabled = true) => {
+  return useQuery({
+    queryKey: ["patrol-schedules-point", scheduleId],
+    queryFn: () => getSchedulePoints(scheduleId),
+    enabled: enabled && !!scheduleId,
+    staleTime: 1000 * 60,
   });
 };
