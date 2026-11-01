@@ -17,6 +17,9 @@ export const useChangeShift = () => {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
+          queryKey: ["monthly-roster"],
+        }),
+        queryClient.invalidateQueries({
           queryKey: ["shift-changes"],
         }),
         queryClient.invalidateQueries({

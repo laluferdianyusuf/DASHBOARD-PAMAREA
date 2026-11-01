@@ -7,6 +7,7 @@ import {
   Clock,
   History,
   Info,
+  RefreshCw,
   UserMinus,
   X,
 } from "lucide-react";
@@ -144,7 +145,8 @@ export const TukarShiftView: React.FC<TukarShiftViewProps> = ({
     isLoading: isHistoryLoading,
     isError: isHistoryError,
     refetch: refetchHistory,
-  } = useShiftChanges({ effectiveDate: selectedDate });
+    isFetching,
+  } = useShiftChanges();
 
   const changeShiftMutation = useChangeShift();
 
@@ -152,8 +154,6 @@ export const TukarShiftView: React.FC<TukarShiftViewProps> = ({
     () => unwrapArray<UserResponse>(usersData),
     [usersData],
   );
-  console.log(users);
-
   const schedules = useMemo(
     () => unwrapArray<PatrolSchedule>(schedulesData),
     [schedulesData],
@@ -176,23 +176,24 @@ export const TukarShiftView: React.FC<TukarShiftViewProps> = ({
     [schedules],
   );
 
-  const availableAssignments = useMemo(
-    () =>
-      assignments.filter(
-        (assignment) =>
-          isAssignmentActiveOnDate(assignment, selectedDate) &&
-          Boolean(
-            (assignment.userId && usersById.has(assignment.userId)) ||
-            assignment.user,
-          ) &&
-          Boolean(
-            (assignment.scheduleId &&
-              schedulesById.has(assignment.scheduleId)) ||
-            assignment.schedule,
-          ),
-      ),
-    [assignments, selectedDate, usersById, schedulesById],
-  );
+  const availableAssignments = useMemo(() => {
+    if (!selectedDate) return [];
+
+    return assignments.filter((assignment) => {
+      const isActive = isAssignmentActiveOnDate(assignment, selectedDate);
+
+      const hasUser =
+        Boolean(assignment.userId && usersById.has(assignment.userId)) ||
+        Boolean(assignment.user);
+
+      const hasSchedule =
+        Boolean(
+          assignment.scheduleId && schedulesById.has(assignment.scheduleId),
+        ) || Boolean(assignment.schedule);
+
+      return isActive && hasUser && hasSchedule;
+    });
+  }, [assignments, selectedDate, usersById, schedulesById]);
 
   const firstAssignment = availableAssignments.find(
     (assignment) => assignment.id === firstAssignmentId,
@@ -364,6 +365,18 @@ export const TukarShiftView: React.FC<TukarShiftViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size={"sm"}
+            variant="outline"
+            className=" rounded text-xs"
+            disabled={isFetching}
+            onClick={() => void refetchHistory()}
+          >
+            <RefreshCw
+              className={`mr-2 size-3.5 ${isFetching ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -882,7 +895,7 @@ export const TukarShiftView: React.FC<TukarShiftViewProps> = ({
                   return (
                     <TableRow key={record.id}>
                       <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-primary">
-                        {record.id}
+                        {record.id.slice(0, 7).toUpperCase()}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs font-medium">
                         {formatDate(record.effectiveDate)}

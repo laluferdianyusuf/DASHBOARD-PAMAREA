@@ -26,7 +26,7 @@ export const removeScheduleAssignment = async (
   scheduleId: string,
   assignmentId: string,
 ): Promise<PatrolScheduleAssignment> => {
-  const response = await apiClient.post<PatrolScheduleAssignment>(
+  const response = await apiClient.delete<PatrolScheduleAssignment>(
     `/patrol-schedule-assignments/schedules/${scheduleId}/${assignmentId}`,
   );
   return response.data;

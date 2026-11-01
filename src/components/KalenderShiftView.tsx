@@ -9,6 +9,7 @@ import {
   ChevronRight,
   MapPin,
   PersonStanding,
+  RefreshCw,
   UserMinus,
   UserPlus,
   X,
@@ -266,6 +267,8 @@ export const KalenderShiftView: React.FC<KalenderShiftViewProps> = ({
     isLoading: rosterLoading,
     isError: rosterError,
     error: rosterErrorObject,
+    refetch,
+    isFetching,
   } = useMonthlyRoster({
     siteId,
     month,
@@ -609,6 +612,17 @@ export const KalenderShiftView: React.FC<KalenderShiftViewProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            className=" rounded text-xs"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            <RefreshCw
+              className={`mr-2 size-3.5 ${isFetching ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
           <Button
             variant="link"
             size="sm"

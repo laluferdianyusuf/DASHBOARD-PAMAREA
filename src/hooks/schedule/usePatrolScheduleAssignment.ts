@@ -4,6 +4,7 @@ import {
   createScheduleAssignment,
   getScheduleAssignment,
   getScheduleAssignments,
+  removeScheduleAssignment,
 } from "../../services/schedule/schedule-assigments.service";
 import type {
   BulkAssignUserPayload,
@@ -38,7 +39,10 @@ export const useCreateScheduleAssignment = () => {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["patrol-schedule-roster"],
+          queryKey: ["monthly-roster"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["shift-changes"],
         }),
         queryClient.invalidateQueries({
           queryKey: ["patrol-schedules"],
@@ -64,12 +68,15 @@ export const useUnassignScheduleAssignment = () => {
     }: {
       scheduleId: string;
       assignmentId: string;
-    }) => unassignScheduleAssignment(scheduleId, assignmentId),
+    }) => removeScheduleAssignment(scheduleId, assignmentId),
 
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["patrol-schedule-roster"],
+          queryKey: ["shift-changes"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["monthly-roster"],
         }),
         queryClient.invalidateQueries({
           queryKey: ["patrol-schedules"],
