@@ -149,16 +149,16 @@ export function Sidebar({ currentTab, onSelectTab, user }: SidebarProps) {
           label: "Manajemen Ronde",
           icon: Route,
         },
-        {
-          id: "temuan",
-          label: "Temuan",
-          icon: TriangleAlert,
-        },
       ],
     },
     {
       label: "Manajemen Sistem",
       items: [
+        {
+          id: "temuan",
+          label: "Temuan Patroli",
+          icon: TriangleAlert,
+        },
         {
           id: "riwayat",
           label: "Riwayat Patroli",

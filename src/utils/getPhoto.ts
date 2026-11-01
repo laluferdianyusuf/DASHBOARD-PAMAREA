@@ -1,5 +1,4 @@
-const API_URL =
-  import.meta.env.VITE_API_URL || "https://api.pamarea.com/api/v1";
+const API_URL = import.meta.env.VITE_IMAGE_URL || "http://192.168.1.14:2026";
 
 const API_ORIGIN = new URL(API_URL).origin;
 

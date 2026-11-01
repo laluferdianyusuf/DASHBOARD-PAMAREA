@@ -4,6 +4,7 @@ import { filterItemsByColumnCriteria } from "../utils/security-logic";
 
 import {
   Activity,
+  Download,
   Eye,
   RefreshCw,
   RotateCcw,
@@ -70,6 +71,7 @@ import {
   PatrolUserGroup,
   ScheduleAssignment,
 } from "../types/monitoring/monitoring";
+import { exportSecurityLeaderboardExcel } from "../utils/secityLeaderboardExcel";
 import { PaginationComponent } from "./PaginationComponent";
 
 const INITIAL_COLUMN_SEARCH: ColumnSearch = {
@@ -288,7 +290,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
   const [selectedOfficer, setSelectedOfficer] =
     useState<SecurityLeaderboardItem | null>(null);
   const [selectedMonth, setSelectedMonth] = useState("");
-
+  const [isExporting, setIsExporting] = useState(false);
   const isLoading =
     isRoundsLoading || isAssignmentsLoading || isSchedulesLoading;
 
@@ -602,6 +604,24 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
     );
   }, [chartRounds]);
 
+  const handleExportExcel = async () => {
+    if (filteredLeaderboard.length === 0) {
+      alert("Tidak ada data security untuk diekspor.");
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+
+      await exportSecurityLeaderboardExcel(filteredLeaderboard);
+    } catch (error) {
+      console.error("Gagal export monitoring:", error);
+      alert("Gagal mengunduh laporan monitoring.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const donutChartData = useMemo(() => {
     const statusCounts = new Map<string, number>();
 
@@ -723,6 +743,20 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="rounded text-xs"
+            onClick={handleExportExcel}
+            disabled={isExporting || filteredLeaderboard.length === 0}
+          >
+            <Download
+              className={`mr-2 size-3.5 ${isExporting ? "animate-pulse" : ""}`}
+            />
+            {isExporting ? "Mengunduh..." : "Export Excel"}
+          </Button>
+
           <Button
             size="sm"
             variant="outline"

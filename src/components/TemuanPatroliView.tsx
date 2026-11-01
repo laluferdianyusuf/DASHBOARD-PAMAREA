@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 
 import { formatDate } from "../helpers/dateTime";
+import { exportFindingExcel } from "../utils/exportFindingExcel";
 import { getPhotoUrl } from "../utils/getPhoto";
 import { PaginationComponent } from "./PaginationComponent";
 
@@ -220,7 +221,7 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
 
   const [viewingPhotoFinding, setViewingPhotoFinding] =
     useState<Finding | null>(null);
-
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const tableQuery = useMemo<FindingQuery>(
     () => ({
       page: currentPage,
@@ -591,6 +592,46 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
     MONTH_OPTIONS.find((month) => month.value === selectedMonth)?.label ??
     "Pilih Bulan";
 
+  const handleExportExcel = async () => {
+    if (filteredFindings.length === 0 || isExportingExcel) return;
+
+    try {
+      setIsExportingExcel(true);
+
+      await exportFindingExcel(
+        filteredFindings.map((finding) => ({
+          id: finding.id,
+          title: finding.title,
+          description: finding.description,
+          createdAt: finding.createdAt,
+          reportedBy: finding.reportedBy
+            ? {
+                fullName: finding.reportedBy.fullName,
+                employeeNumber: finding.reportedBy.employeeNumber,
+                username: finding.reportedBy.username,
+              }
+            : null,
+          patrolPoint: finding.patrolPoint
+            ? {
+                name: finding.patrolPoint.name,
+              }
+            : null,
+          photos:
+            finding.photos?.map((photo) => ({
+              id: photo.id,
+              fileUrl: photo.fileUrl,
+            })) ?? [],
+        })),
+      );
+    } catch (error) {
+      console.error("Gagal mengekspor Excel temuan:", error);
+
+      alert("Gagal mengekspor laporan temuan. Silakan coba kembali.");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -609,13 +650,25 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={handleExportCSV}
+            onClick={handleExportExcel}
             disabled={
-              isFindingsLoading || isFindingsError || !filteredFindings.length
+              isFindingsLoading ||
+              isFindingsError ||
+              !filteredFindings.length ||
+              isExportingExcel
             }
           >
-            <Download className="mr-2 h-4 w-4" />
-            Ekspor CSV
+            {isExportingExcel ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Memproses...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Ekspor Excel
+              </>
+            )}
           </Button>
 
           <Button

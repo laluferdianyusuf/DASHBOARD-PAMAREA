@@ -3,7 +3,9 @@ import React, { useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  Download,
   History,
+  Loader2,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -40,6 +42,7 @@ import {
 import { usePatrolHistoryGroupedByUser } from "../hooks/schedule/usePatrolHistory";
 import { getPatrolHistoryGroupedByUser } from "../services/patrol/patrol-history.service";
 import { getPhotoUrl } from "../utils/getPhoto";
+import { exportPatrolHistoryExcel } from "../utils/patrolHistoryExcel";
 import { PaginationComponent } from "./PaginationComponent";
 interface RiwayatPatroliViewProps {
   selectedSite: string;
@@ -54,8 +57,6 @@ type PatrolGroup = PatrolHistoryResponse["data"][number];
 type PatrolRecord = PatrolGroup["patrols"][number] & {
   user: PatrolGroup["user"];
 };
-
-const PAGE_SIZE_OPTIONS = ["10", "20", "50", "100"];
 
 const formatDateTime = (value?: string | Date | null) => {
   if (!value) return "-";
@@ -221,6 +222,8 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
   const [selectedDetailLog, setSelectedDetailLog] =
     useState<PatrolRecord | null>(null);
 
+  const [isExporting, setIsExporting] = useState(false);
+
   const queryParams = useMemo(
     () => ({
       page: currentPage,
@@ -321,6 +324,21 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
     return <Badge variant="outline">{status ?? "-"}</Badge>;
   };
 
+  const handleExportExcel = async () => {
+    if (isExporting) return;
+
+    setIsExporting(true);
+
+    try {
+      await exportPatrolHistoryExcel(queryParams, selectedSite);
+    } catch (error) {
+      console.error("Gagal export Excel:", error);
+      alert("Gagal membuat laporan Excel. Silakan coba kembali.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
@@ -333,17 +351,35 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching}
-        >
-          <RotateCcw
-            className={`mr-2 size-4 ${isFetching ? "animate-spin" : ""}`}
-          />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportExcel}
+            disabled={isExporting || isLoading || totalItems === 0}
+            className="h-9 gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            {isExporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            {isExporting ? "Menyiapkan Excel..." : "Download Excel"}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="h-9 gap-2"
+          >
+            <RotateCcw
+              className={`size-4 ${isFetching ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="overflow-hidden">
