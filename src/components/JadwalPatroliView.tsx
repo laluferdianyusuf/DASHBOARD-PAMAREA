@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -51,15 +52,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useAuthContext } from "../hooks/auth/useAuthContext";
+import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
 import { useGetScheduleAssignments } from "../hooks/schedule/usePatrolScheduleAssignment";
 import {
   useCreatePatrolSchedule,
   usePatrolSchedules,
 } from "../hooks/schedule/usePatrolSchedules";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useAuthContext } from "../hooks/auth/useAuthContext";
 import { CreatePatrolSchedulePayload } from "../types";
-import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
 import { PaginationComponent } from "./PaginationComponent";
 
 interface JadwalPatroliViewProps {
@@ -335,9 +335,19 @@ export const JadwalPatroliView: React.FC<JadwalPatroliViewProps> = ({
             onValueChange={(value) => setSelectedShift(value as string)}
           >
             <SelectTrigger className="w-full rounded sm:w-47.5">
-              <SelectValue placeholder="Semua Shift" />
+              <SelectValue placeholder="Semua Shift">
+                {
+                  {
+                    all: "Semua Shift",
+                    Pagi: "Shift Pagi",
+                    Sore: "Shift Sore",
+                    Malam: "Shift Malam",
+                  }[selectedShift]
+                }
+              </SelectValue>
             </SelectTrigger>
-            <SelectContent>
+
+            <SelectContent className={`w-full`}>
               <SelectItem value="all">Semua Shift</SelectItem>
               <SelectItem value="Pagi">Shift Pagi</SelectItem>
               <SelectItem value="Sore">Shift Sore</SelectItem>

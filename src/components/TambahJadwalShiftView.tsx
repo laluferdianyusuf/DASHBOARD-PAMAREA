@@ -113,6 +113,14 @@ interface TambahJadwalShiftViewProps {
 
 type DialogMode = "create" | "locations" | "officers" | "edit" | null;
 
+const statusLabels: Record<string, string> = {
+  all: "Semua Status",
+  DRAFT: "Draft",
+  ACTIVE: "Aktif",
+  INACTIVE: "Nonaktif",
+  ARCHIVED: "Diarsipkan",
+};
+
 interface ScheduleForm {
   name: string;
   startTime: string;
@@ -928,18 +936,24 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
               onValueChange={(value) => setStatusFilter(value ?? "")}
             >
               <SelectTrigger className="w-full rounded">
-                <SelectValue placeholder="Semua Status" />
+                <SelectValue placeholder="Semua Status">
+                  {
+                    {
+                      all: "Semua Status",
+                      DRAFT: "Draft",
+                      ACTIVE: "Aktif",
+                      INACTIVE: "Nonaktif",
+                      ARCHIVED: "Diarsipkan",
+                    }[statusFilter as keyof typeof statusLabels]
+                  }
+                </SelectValue>
               </SelectTrigger>
 
               <SelectContent>
                 <SelectItem value="all">Semua Status</SelectItem>
-
                 <SelectItem value="DRAFT">Draft</SelectItem>
-
                 <SelectItem value="ACTIVE">Aktif</SelectItem>
-
                 <SelectItem value="INACTIVE">Nonaktif</SelectItem>
-
                 <SelectItem value="ARCHIVED">Diarsipkan</SelectItem>
               </SelectContent>
             </Select>
