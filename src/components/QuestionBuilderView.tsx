@@ -1404,11 +1404,25 @@ export const QuestionBuilderView: React.FC = () => {
                 onValueChange={(value) => handleSelectPatrolPoint(value ?? "")}
                 disabled={isAssignmentSaving}
               >
-                <SelectTrigger className="rounded">
-                  <SelectValue placeholder="Pilih Patrol Point..." />
+                <SelectTrigger className="rounded w-full">
+                  <SelectValue placeholder="Pilih Patrol Point...">
+                    {activePatrolPoints.find(
+                      (point) => point.id === selectedPatrolPointId,
+                    )
+                      ? `${
+                          activePatrolPoints.find(
+                            (point) => point.id === selectedPatrolPointId,
+                          )?.code
+                        } - ${
+                          activePatrolPoints.find(
+                            (point) => point.id === selectedPatrolPointId,
+                          )?.name
+                        }`
+                      : undefined}
+                  </SelectValue>
                 </SelectTrigger>
 
-                <SelectContent>
+                <SelectContent className={`w-full`}>
                   {activePatrolPoints.map((point) => (
                     <SelectItem key={point.id} value={point.id}>
                       {point.code} - {point.name}
