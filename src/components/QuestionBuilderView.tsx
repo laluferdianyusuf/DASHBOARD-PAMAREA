@@ -272,11 +272,13 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
             setFormInputType(value as BackendQuestionType)
           }
         >
-          <SelectTrigger className="rounded">
-            <SelectValue placeholder="Pilih tipe pertanyaan" />
+          <SelectTrigger className="rounded w-full">
+            <SelectValue placeholder="Pilih tipe pertanyaan">
+              {INPUT_TYPES.find((item) => item.value === formInputType)?.label}
+            </SelectValue>
           </SelectTrigger>
 
-          <SelectContent>
+          <SelectContent className={`w-full`}>
             {INPUT_TYPES.map((item) => (
               <SelectItem key={item.value} value={item.value}>
                 {item.label}
