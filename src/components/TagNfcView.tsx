@@ -7,6 +7,7 @@ import {
   Link2,
   Link2Off,
   Pencil,
+  Power,
   Radio,
   RefreshCw,
   Search,
@@ -43,6 +44,7 @@ import {
 import {
   useActivateNfc,
   useCreateNfcTag,
+  useDeactivateNfc,
   useDeleteNfcTag,
   useMarkNfcTagDamaged,
   useMarkNfcTagLost,
@@ -277,6 +279,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
   ) as PatrolPointResponse[];
 
   const createNfc = useCreateNfcTag();
+  const nonactiveNfc = useDeactivateNfc();
   const deleteNfc = useDeleteNfcTag();
 
   const assignNfcMutation = useAssignNfc();
@@ -302,6 +305,9 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
   const [editingTag, setEditingTag] = useState<NfcTagItem | null>(null);
 
   const [deletingTag, setDeletingTag] = useState<NfcTagItem | null>(null);
+
+  const [permanentlyDeletingTag, setPermanentlyDeletingTag] =
+    useState<NfcTagItem | null>(null);
 
   const [unassigningTag, setUnassigningTag] = useState<NfcTagItem | null>(null);
 
@@ -588,15 +594,49 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
     const tag = deletingTag;
 
     try {
-      await deleteNfc.mutateAsync(tag.id);
+      await nonactiveNfc.mutateAsync(tag.id);
 
       setDeletingTag(null);
 
-      await refetch();
+      toast.success(`Tag NFC ${tag.uid} berhasil dinonaktifkan.`);
 
-      toast.success(`Tag ${tag.uid} berhasil dinonaktifkan.`);
+      await refetch();
     } catch (err: any) {
       toast.error("Gagal menonaktifkan tag NFC.", {
+        description: getErrorMessage(err),
+      });
+    }
+  };
+
+  const handlePermanentDeleteTag = async () => {
+    if (!permanentlyDeletingTag) return;
+
+    const tag = permanentlyDeletingTag;
+
+    if (tag.status !== "LOST" && tag.status !== "REPLACED") {
+      toast.error("Hanya NFC LOST atau REPLACED yang dapat dihapus permanen.");
+      return;
+    }
+
+    if (isTagAssigned(tag)) {
+      toast.error(
+        "NFC masih memiliki assignment aktif dan tidak dapat dihapus.",
+      );
+      return;
+    }
+
+    try {
+      await deleteNfc.mutateAsync(tag.id);
+
+      setPermanentlyDeletingTag(null);
+
+      toast.success(`Tag NFC ${tag.uid} berhasil dihapus permanen.`);
+
+      await refetch();
+    } catch (err: any) {
+      console.error("DELETE NFC ERROR:", err);
+
+      toast.error("Gagal menghapus NFC Tag.", {
         description: getErrorMessage(err),
       });
     }
@@ -946,6 +986,15 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
 
                   const checkpointCode = getAssignmentCheckpointCode(tag);
 
+                  console.log({
+                    status: tag.status,
+                    assigned,
+                    canReplace:
+                      assigned &&
+                      (tag.status === "DAMAGED" || tag.status === "LOST"),
+                    replacementOptions,
+                  });
+
                   return (
                     <TableRow key={tag.id} className="text-xs">
                       <TableCell>
@@ -1011,7 +1060,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
                               <Unlink className="size-3.5 sm:mr-1" />
                               <span className="hidden md:inline">Lepas</span>
                             </Button>
-                          ) : (
+                          ) : tag.status === "UNASSIGNED" ? (
                             <Button
                               variant="outline"
                               size="sm"
@@ -1029,7 +1078,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
                               <Link2 className="size-3.5 sm:mr-1" />
                               <span className="hidden md:inline">Tautkan</span>
                             </Button>
-                          )}
+                          ) : null}
 
                           <Button
                             variant="ghost"
@@ -1042,7 +1091,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
                             <span>Edit</span>
                           </Button>
 
-                          {tag.status === "INACTIVE" && (
+                          {tag.status === "INACTIVE" && !assigned && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1091,40 +1140,62 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
                             </Button>
                           )}
 
-                          {tag.status === "ACTIVE" && (
+                          {(tag.status === "DAMAGED" ||
+                            tag.status === "LOST") &&
+                            assigned && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="rounded border-blue-200 bg-blue-50 px-2 text-[11px] text-blue-700 hover:bg-blue-100 hover:text-blue-800"
+                                title="Ganti NFC"
+                                onClick={() => {
+                                  setFormError("");
+                                  setReplacementNfcId("");
+                                  setReplacingTag(tag);
+                                }}
+                                disabled={
+                                  markReplacedNfc.isPending ||
+                                  replacementOptions.length === 0
+                                }
+                              >
+                                <RefreshCw className="size-3.5" />
+                                <span>Ganti</span>
+                              </Button>
+                            )}
+                          {tag.status === "LOST" && !assigned && (
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className=" rounded border-blue-200 bg-blue-50 px-2 text-[11px] text-blue-700 hover:bg-blue-100 hover:text-blue-800"
-                              title="Ganti NFC"
+                              size="icon"
+                              className="size-7 rounded text-slate-500 hover:bg-amber-50 hover:text-amber-600"
+                              title="Nonaktifkan NFC"
                               onClick={() => {
                                 setFormError("");
-                                setReplacementNfcId("");
-                                setReplacingTag(tag);
+                                setDeletingTag(tag);
                               }}
-                              disabled={
-                                markReplacedNfc.isPending ||
-                                replacementOptions.length === 0
-                              }
+                              disabled={nonactiveNfc.isPending}
                             >
-                              <RefreshCw className="size-3.5" />
-                              <span>Ganti</span>
+                              <Power className="size-3.5" />
                             </Button>
                           )}
 
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 rounded text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                            title="Nonaktifkan Tag"
-                            onClick={() => {
-                              setFormError("");
-                              setDeletingTag(tag);
-                            }}
-                            disabled={assigned || deleteNfc.isPending}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
+                          {/* Tombol hapus permanen untuk LOST dan REPLACED */}
+                          {(tag.status === "LOST" ||
+                            tag.status === "REPLACED") &&
+                            !assigned && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 rounded text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                                title="Hapus Permanen NFC"
+                                onClick={() => {
+                                  setFormError("");
+                                  setPermanentlyDeletingTag(tag);
+                                }}
+                                disabled={deleteNfc.isPending}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1137,6 +1208,10 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
       </div>
 
       <TagNfcDialogs
+        onPermanentDelete={handlePermanentDeleteTag}
+        permanentDeletePending={deleteNfc.isPending}
+        permanentlyDeletingTag={permanentlyDeletingTag}
+        setPermanentlyDeletingTag={setPermanentlyDeletingTag}
         diagnosingTag={diagnosingTag}
         editingTag={editingTag}
         deletingTag={deletingTag}
@@ -1160,7 +1235,7 @@ export const TagNfcView: React.FC<TagNfcViewProps> = ({ selectedSite }) => {
         assignPending={assignNfcMutation.isPending}
         unassignPending={unassignNfcMutation.isPending}
         updatePending={updateNfc.isPending}
-        deletePending={deleteNfc.isPending}
+        deletePending={nonactiveNfc.isPending}
         activatePending={activateNfc.isPending}
         damagedPending={markDamagedNfc.isPending}
         lostPending={markLostNfc.isPending}

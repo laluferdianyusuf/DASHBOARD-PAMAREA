@@ -195,17 +195,20 @@ export const useReplaceNfcTag = () => {
       payload: ReplaceNfcTagRequest;
     }) => replaceNfcTag(id, payload),
 
-    onSuccess: async (data) => {
+    onSuccess: async (_data, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: nfcQueryKeys.all,
         }),
+
         queryClient.invalidateQueries({
-          queryKey: nfcQueryKeys.detail(data.oldNfcId),
+          queryKey: nfcQueryKeys.detail(variables.id),
         }),
+
         queryClient.invalidateQueries({
-          queryKey: nfcQueryKeys.detail(data.newNfc.id),
+          queryKey: nfcQueryKeys.detail(variables.payload.newNfcTagId),
         }),
+
         queryClient.invalidateQueries({
           queryKey: nfcQueryKeys.unassigned(),
         }),

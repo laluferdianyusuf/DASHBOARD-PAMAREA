@@ -24,10 +24,12 @@ import { useAuthContext } from "../hooks/auth/useAuthContext";
 import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
 
 import {
+  useArchivePatrolSchedule,
   useCreatePatrolSchedule,
   useDeletePatrolSchedule,
   usePatrolScheduleActivate,
   usePatrolSchedules,
+  useUnarchivePatrolSchedule,
   useUpdatePatrolSchedule,
 } from "../hooks/schedule/usePatrolSchedules";
 
@@ -196,10 +198,6 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
   onNavigate,
 }) => {
-  // ====================================================
-  // AUTH
-  // ====================================================
-
   const { user } = useAuthContext();
 
   const siteId = user?.siteId;
@@ -231,6 +229,10 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     usePatrolScheduleActivate();
   const { mutateAsync: deleteSchedule, isPending: isDeleting } =
     useDeletePatrolSchedule();
+  const { mutateAsync: archiveSchedule, isPending: isArchiving } =
+    useArchivePatrolSchedule();
+  const { mutateAsync: unarchiveSchedule, isPending: isUnarchiving } =
+    useUnarchivePatrolSchedule();
 
   const schedules = patrolSchedules?.data ?? [];
 
@@ -250,6 +252,8 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
   );
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<string | null>(null);
+  const [unarchiveTarget, setUnarchiveTarget] = useState<string | null>(null);
 
   const [form, setForm] = useState<ScheduleForm>(INITIAL_FORM);
 
@@ -365,10 +369,6 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     });
   }, [activeUsers, officerSearch]);
 
-  // ====================================================
-  // ASSIGNMENT HELPERS
-  // ====================================================
-
   const getScheduleAssignments = (scheduleId: string) => {
     return assignments.filter((item) => item.scheduleId === scheduleId);
   };
@@ -384,10 +384,6 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
       ).values(),
     );
   };
-
-  // ====================================================
-  // DIALOG HANDLERS
-  // ====================================================
 
   const resetCreateForm = () => {
     setForm(INITIAL_FORM);
@@ -426,10 +422,6 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     setModalError("");
     setDialogMode("officers");
   };
-
-  // ====================================================
-  // FORM HANDLERS
-  // ====================================================
 
   const updateForm = <K extends keyof ScheduleForm>(
     key: K,
@@ -473,10 +465,6 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
   const clearAllPoints = () => {
     setSelectedPointIds([]);
   };
-
-  // ====================================================
-  // CREATE SCHEDULE
-  // ====================================================
 
   const handleCreateSchedule = async (
     event: React.FormEvent<HTMLFormElement>,
@@ -614,10 +602,6 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     }
   };
 
-  // ====================================================
-  // ADD SCHEDULE POINT
-  // ====================================================
-
   const handleAddPoint = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -670,10 +654,6 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
       );
     }
   };
-
-  // ====================================================
-  // ASSIGN USER
-  // ====================================================
 
   const handleAssignUser = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -742,10 +722,6 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     }
   };
 
-  // ====================================================
-  // ACTIVATE SCHEDULE
-  // ====================================================
-
   const handleActivateSchedule = (scheduleId: string) => {
     setError("");
 
@@ -760,10 +736,6 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
       },
     });
   };
-
-  // ====================================================
-  // DELETE SCHEDULE
-  // ====================================================
 
   const handleDeleteSchedule = async () => {
     if (!deleteTarget || isDeleting) return;
@@ -783,19 +755,43 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
     }
   };
 
-  // ====================================================
-  // LOADING
-  // ====================================================
+  const handleArchiveSchedule = async () => {
+    if (!archiveTarget || isArchiving) return;
+
+    try {
+      await archiveSchedule(archiveTarget);
+
+      setSuccess("Jadwal patroli berhasil diarsipkan.");
+
+      setArchiveTarget(null);
+    } catch (err) {
+      console.error("Gagal mengarsipkan jadwal:", err);
+
+      setError(getErrorMessage(err, "Gagal mengarsipkan jadwal patroli."));
+
+      setArchiveTarget(null);
+    }
+  };
+
+  const handleUnarchiveSchedule = async () => {
+    if (!unarchiveTarget || isUnarchiving) return;
+
+    try {
+      await unarchiveSchedule(unarchiveTarget);
+      setSuccess("Jadwal patroli berhasil dipulihkan.");
+      setUnarchiveTarget(null);
+    } catch (err) {
+      console.error("Gagal memulihkan jadwal:", err);
+      setError(getErrorMessage(err, "Gagal memulihkan jadwal patroli."));
+      setUnarchiveTarget(null);
+    }
+  };
 
   const isLoading =
     isLoadingSchedules ||
     isLoadingPoints ||
     isLoadingAssignments ||
     isLoadingUsers;
-
-  // ====================================================
-  // RENDER
-  // ====================================================
 
   const registeredPatrolPoints = useMemo(() => {
     if (!selectedSchedule) return [];
@@ -1073,7 +1069,7 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                         <Button
                           variant="link"
                           size="sm"
-                          className="h-auto rounded p-0 text-xs"
+                          className="h-auto rounded p-0 text-xs underline text-[#FED400]"
                           onClick={() => openAddPoint(schedule.id)}
                         >
                           Kelola titik
@@ -1090,7 +1086,7 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                         <Button
                           variant="link"
                           size="sm"
-                          className="h-auto rounded p-0 text-xs"
+                          className="h-auto rounded p-0 text-xs underline text-[#FED400]"
                           onClick={() => openAssignUser(schedule.id)}
                         >
                           Kelola personel
@@ -1143,6 +1139,22 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                               <Users className="mr-2 size-4" />
                               Assign Personel
                             </DropdownMenuItem>
+
+                            {schedule.status === "ARCHIVED" ? (
+                              <DropdownMenuItem
+                                onClick={() => setUnarchiveTarget(schedule.id)}
+                              >
+                                <RotateCcw className="mr-2 size-4" />
+                                Pulihkan Shift
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                onClick={() => setArchiveTarget(schedule.id)}
+                              >
+                                <CalendarDays className="mr-2 size-4" />
+                                Arsipkan Shift
+                              </DropdownMenuItem>
+                            )}
 
                             <DropdownMenuSeparator />
 
@@ -1909,12 +1921,18 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
       >
         <AlertDialogContent className="rounded">
           <AlertDialogHeader>
-            <AlertDialogTitle>Hapus konfigurasi shift?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Hapus konfigurasi shift secara permanen?
+            </AlertDialogTitle>
 
             <AlertDialogDescription>
-              Data shift akan dihapus melalui API backend. Pastikan jadwal
-              tersebut tidak sedang digunakan oleh penugasan atau aktivitas
-              patroli.
+              Seluruh data yang terkait dengan konfigurasi shift ini, termasuk
+              penugasan, jadwal patroli, ronde, dan checkpoint yang terhubung,
+              akan ikut dihapus secara permanen. Data yang telah dihapus tidak
+              dapat dipulihkan kembali.
+              <span className="mt-2 block font-medium text-destructive">
+                Apakah Anda yakin ingin melanjutkan?
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -1931,7 +1949,79 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
               disabled={isDeleting}
               className="rounded bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {isDeleting ? "Menghapus..." : "Hapus Shift"}
+              {isDeleting ? "Menghapus..." : "Hapus Permanen"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* ARCHIVE CONFIRMATION */}
+
+      <AlertDialog
+        open={Boolean(archiveTarget)}
+        onOpenChange={(open) => {
+          if (!open) setArchiveTarget(null);
+        }}
+      >
+        <AlertDialogContent className="rounded">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Arsipkan konfigurasi shift?</AlertDialogTitle>
+
+            <AlertDialogDescription>
+              Shift yang diarsipkan tidak akan lagi dianggap sebagai konfigurasi
+              aktif. Riwayat jadwal dan aktivitas patroli tetap tersimpan.
+              Apakah Anda yakin ingin melanjutkan?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded" disabled={isArchiving}>
+              Batal
+            </AlertDialogCancel>
+
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleArchiveSchedule();
+              }}
+              disabled={isArchiving}
+              className="rounded"
+            >
+              {isArchiving ? "Mengarsipkan..." : "Arsipkan Shift"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(unarchiveTarget)}
+        onOpenChange={(open) => {
+          if (!open) setUnarchiveTarget(null);
+        }}
+      >
+        <AlertDialogContent className="rounded">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Pulihkan konfigurasi shift?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Jadwal shift ini akan dikembalikan sehingga dapat digunakan
+              kembali untuk pengaturan dan aktivitas patroli. Apakah Anda yakin
+              ingin melanjutkan?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded" disabled={isUnarchiving}>
+              Batal
+            </AlertDialogCancel>
+
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleUnarchiveSchedule();
+              }}
+              disabled={isUnarchiving}
+              className="rounded"
+            >
+              {isUnarchiving ? "Memulihkan..." : "Pulihkan Shift"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

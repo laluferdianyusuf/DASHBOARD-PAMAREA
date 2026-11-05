@@ -107,6 +107,16 @@ export const archivePatrolSchedule = async (
 
   return response.data;
 };
+
+export const unarchivePatrolSchedule = async (
+  id: string,
+): Promise<PatrolScheduleMutationResponse> => {
+  const response = await apiClient.patch<PatrolScheduleMutationResponse>(
+    `/patrol-schedules/${id}/unarchive`,
+  );
+
+  return response.data;
+};
 // export const archivePatrolSchedule = async (
 //   id: string,
 // ): Promise<PatrolSchedule> => {

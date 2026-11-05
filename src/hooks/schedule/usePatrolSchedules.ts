@@ -2,11 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   activatePatrolSchedule,
   addScheduleAssignment,
+  archivePatrolSchedule,
   createPatrolSchedule,
   deletePatrolSchedule,
   getMonthlyRoster,
   getPatrolScheduleById,
   getPatrolSchedules,
+  unarchivePatrolSchedule,
   updatePatrolSchedule,
 } from "../../services/schedule/patrol-schedule.service";
 import type {
@@ -114,10 +116,15 @@ export const useUpdatePatrolSchedule = () => {
         queryClient.invalidateQueries({
           queryKey: ["patrol-schedule", variables.id],
         }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedule-assignments"],
+        }),
       ]);
     },
   });
 };
+
 export const useDeletePatrolSchedule = () => {
   const queryClient = useQueryClient();
 
@@ -125,9 +132,55 @@ export const useDeletePatrolSchedule = () => {
     mutationFn: (id: string) => deletePatrolSchedule(id),
 
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["patrol-schedules"],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedules"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedule-assignments"],
+        }),
+      ]);
+    },
+  });
+};
+
+export const useArchivePatrolSchedule = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => archivePatrolSchedule(id),
+
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedules"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedule-assignments"],
+        }),
+      ]);
+    },
+  });
+};
+
+export const useUnarchivePatrolSchedule = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => unarchivePatrolSchedule(id),
+
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedules"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["patrol-schedule-assignments"],
+        }),
+      ]);
     },
   });
 };

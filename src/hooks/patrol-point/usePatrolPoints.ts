@@ -57,7 +57,7 @@ export const useUpdatePatrolPoint = () => {
     onSuccess: async (_data, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["patrol-point"],
+          queryKey: ["patrol-points"],
         }),
         queryClient.invalidateQueries({
           queryKey: ["patrol-point", variables.id],
@@ -82,7 +82,7 @@ export const useDeactivatePatrolPoint = () => {
     onSuccess: async (_data, id) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["patrol-point"],
+          queryKey: ["patrol-points"],
         }),
         queryClient.invalidateQueries({
           queryKey: ["patrol-point", id],

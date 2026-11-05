@@ -120,7 +120,7 @@ export const replaceNfcTag = async (
   payload: ReplaceNfcTagRequest,
 ): Promise<ReplaceNfcTagResponse> => {
   const response = await apiClient.post<ReplaceNfcTagResponse>(
-    `/nfc-tags/${encodeURIComponent(id)}/replace`,
+    `/patrol-point-nfc/${encodeURIComponent(id)}/replace`,
     payload,
   );
 

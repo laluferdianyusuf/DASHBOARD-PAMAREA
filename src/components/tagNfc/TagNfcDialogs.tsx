@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Settings2,
   ShieldCheck,
+  Trash2,
   Unlink,
 } from "lucide-react";
 
@@ -284,6 +285,11 @@ interface TagNfcDialogsProps {
   setFormError: (value: string) => void;
   setSelectedCheckpointToAssign: (value: string) => void;
   setReplacementNfcId: (value: string) => void;
+
+  permanentlyDeletingTag: NfcTagItem | null;
+  permanentDeletePending: boolean;
+  setPermanentlyDeletingTag: (tag: NfcTagItem | null) => void;
+  onPermanentDelete: () => void;
 
   // Actions
   onRegister: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -878,6 +884,85 @@ export const DeleteNfcDialog: React.FC<{
   </AlertDialog>
 );
 
+export const PermanentDeleteNfcDialog: React.FC<{
+  tag: NfcTagItem | null;
+  pending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}> = ({ tag, pending, onOpenChange, onConfirm }) => (
+  <AlertDialog open={Boolean(tag)} onOpenChange={onOpenChange}>
+    <AlertDialogContent className="max-w-md rounded">
+      <AlertDialogHeader>
+        <AlertDialogTitle className="flex items-center gap-2 text-sm">
+          <Trash2 className="size-4 text-rose-600" />
+          Hapus Permanen Tag NFC
+        </AlertDialogTitle>
+
+        <AlertDialogDescription className="text-xs">
+          Tindakan ini akan menghapus data NFC secara permanen dari database.
+          Data yang sudah dihapus tidak dapat dipulihkan.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+
+      {tag && (
+        <div className="space-y-3">
+          <InfoPanel>
+            <InfoRow
+              label="UID Tag"
+              value={
+                <span className="font-mono font-semibold text-blue-600">
+                  {tag.uid}
+                </span>
+              }
+            />
+
+            <InfoRow label="Label" value={tag.label || "-"} />
+
+            <InfoRow label="Status" value={getStatusLabel(tag.status)} />
+
+            <InfoRow
+              label="Jumlah Assignment"
+              value={tag._count?.assignments ?? 0}
+            />
+
+            <InfoRow label="Jumlah Patroli" value={tag._count?.patrols ?? 0} />
+          </InfoPanel>
+
+          <div className="rounded border border-rose-200 bg-rose-50 p-3 text-[11px] text-rose-800">
+            <div className="mb-1 flex items-center gap-1.5 font-semibold">
+              <AlertTriangle className="size-3.5" />
+              Peringatan Penghapusan Permanen
+            </div>
+            Data NFC dan riwayat assignment yang diizinkan untuk dihapus akan
+            dihapus dari database. Pastikan tag ini memang sudah tidak
+            digunakan.
+          </div>
+        </div>
+      )}
+
+      <AlertDialogFooter>
+        <AlertDialogCancel className="rounded text-xs">Batal</AlertDialogCancel>
+
+        <AlertDialogAction
+          onClick={(event) => {
+            event.preventDefault();
+            onConfirm();
+          }}
+          disabled={pending}
+          className="rounded bg-rose-600 text-xs hover:bg-rose-700"
+        >
+          {pending ? (
+            <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="mr-1.5 size-3.5" />
+          )}
+          Hapus Permanen
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+);
+
 export const RegisterNfcDialog: React.FC<{
   open: boolean;
   uid: string;
@@ -1048,6 +1133,11 @@ export const TagNfcDialogs: React.FC<TagNfcDialogsProps> = (props) => {
     lostPending,
     replacePending,
 
+    onPermanentDelete,
+    permanentDeletePending,
+    permanentlyDeletingTag,
+    setPermanentlyDeletingTag,
+
     setDiagnosingTag,
     setEditingTag,
     setDeletingTag,
@@ -1176,6 +1266,18 @@ export const TagNfcDialogs: React.FC<TagNfcDialogsProps> = (props) => {
           }
         }}
         onConfirm={onDelete}
+      />
+
+      <PermanentDeleteNfcDialog
+        tag={permanentlyDeletingTag}
+        pending={permanentDeletePending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPermanentlyDeletingTag(null);
+            props.setFormError("");
+          }
+        }}
+        onConfirm={onPermanentDelete}
       />
 
       <RegisterNfcDialog

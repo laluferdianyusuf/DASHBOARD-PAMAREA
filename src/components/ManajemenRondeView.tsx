@@ -221,8 +221,6 @@ const ManajemenRondeView: React.FC<{
     search: debouncedSearch || undefined,
   });
 
-  console.log(roundsResponse);
-
   const assignments = useMemo(
     () =>
       mapGroupedRoundsToAssignments(
@@ -356,8 +354,6 @@ const ManajemenRondeView: React.FC<{
 
       await refetch();
     } catch (error) {
-      console.error("Gagal menyimpan urutan checkpoint:", error);
-
       showToast(
         error instanceof Error
           ? error.message
@@ -635,8 +631,6 @@ const ManajemenRondeView: React.FC<{
 
                     <TableBody>
                       {group.assignments.map((assignment) => {
-                        console.log(group);
-
                         const expanded = expandedAssignments.includes(
                           assignment.id,
                         );
