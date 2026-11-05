@@ -1069,7 +1069,7 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                         <Button
                           variant="link"
                           size="sm"
-                          className="h-auto rounded p-0 text-xs underline text-[#FED400]"
+                          className="h-auto rounded p-0 text-xs underline text-blue-700"
                           onClick={() => openAddPoint(schedule.id)}
                         >
                           Kelola titik
@@ -1086,7 +1086,7 @@ export const TambahJadwalShiftView: React.FC<TambahJadwalShiftViewProps> = ({
                         <Button
                           variant="link"
                           size="sm"
-                          className="h-auto rounded p-0 text-xs underline text-[#FED400]"
+                          className="h-auto rounded p-0 text-xs underline text-blue-700"
                           onClick={() => openAssignUser(schedule.id)}
                         >
                           Kelola personel
