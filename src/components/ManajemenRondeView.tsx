@@ -97,12 +97,10 @@ const mapGroupedRoundsToAssignments = (
   response.data.forEach(({ user, rounds }) => {
     rounds.forEach((round) => {
       const date = getDateKey(round.scheduleDate.date);
-
       const scheduleId = round.schedule.id;
       const scheduleName = round.schedule.name;
-
       const siteId = round.schedule.site?.id ?? "";
-      const siteName = round.schedule.site?.name ?? "-";
+      const siteName = round.schedule.site?.name ?? "";
 
       const assignmentId = [user.id, date, siteId, scheduleId].join("-");
 
@@ -134,17 +132,13 @@ const mapGroupedRoundsToAssignments = (
           id: assignmentId,
           userId: user.id,
           date,
-
           scheduleId,
           scheduleName,
-
           fullName: user.fullName,
           npp: user.employeeNumber ?? "-",
           squadName: user.teamName ?? "-",
-
           siteId,
           siteName,
-
           rounds: [mappedRound],
         });
       }
@@ -213,11 +207,8 @@ const ManajemenRondeView: React.FC<{
     isFetching,
   } = usePatrolRoundsGroupedByUser({
     date: selectedDate || undefined,
-
     siteId: selectedSite !== "all" ? selectedSite : undefined,
-
     scheduleId: selectedShift !== "all" ? selectedShift : undefined,
-
     search: debouncedSearch || undefined,
   });
 
@@ -263,9 +254,18 @@ const ManajemenRondeView: React.FC<{
       grouped.get(assignment.scheduleId)!.assignments.push(assignment);
     });
 
-    return Array.from(grouped.values()).sort((a, b) =>
-      a.scheduleName.localeCompare(b.scheduleName),
-    );
+    return Array.from(grouped.values())
+      .map((group) => ({
+        ...group,
+        assignments: [...group.assignments].sort((a, b) => {
+          const dateCompare = a.date.localeCompare(b.date);
+
+          if (dateCompare !== 0) return dateCompare;
+
+          return a.fullName.localeCompare(b.fullName);
+        }),
+      }))
+      .sort((a, b) => a.scheduleName.localeCompare(b.scheduleName));
   }, [assignments]);
 
   const totalPersonnel = useMemo(
@@ -333,7 +333,6 @@ const ManajemenRondeView: React.FC<{
     if (!editingRound) return;
 
     const { round } = editingRound;
-
     const checkpointIds = draftCheckpoints.map((checkpoint) => checkpoint.id);
 
     if (
@@ -554,302 +553,299 @@ const ManajemenRondeView: React.FC<{
           </Button>
         </div>
       ) : (
-        <>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold">
-                  Daftar Personel dan Ronde
-                </h2>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">
+                Daftar Personel dan Ronde
+              </h2>
 
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {selectedDate ? formatDate(selectedDate) : "Seluruh tanggal"}
-                  {" · "}
-                  {totalPersonnel} personel
-                  {" · "}
-                  {roundsResponse?.totalRounds ?? 0} ronde
-                </p>
-              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {selectedDate ? formatDate(selectedDate) : "Seluruh tanggal"}
+                {" · "}
+                {totalPersonnel} personel
+                {" · "}
+                {roundsResponse?.totalRounds ?? 0} ronde
+              </p>
             </div>
+          </div>
 
-            {groupedAssignments.length === 0 ? (
-              <div className="border bg-white py-12 text-center">
-                <Users className="mx-auto size-8 text-slate-300" />
+          {groupedAssignments.length === 0 ? (
+            <div className="border bg-white py-12 text-center">
+              <Users className="mx-auto size-8 text-slate-300" />
 
-                <p className="mt-3 text-sm font-medium">
-                  Tidak ada personel ditemukan
-                </p>
+              <p className="mt-3 text-sm font-medium">
+                Tidak ada personel ditemukan
+              </p>
 
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Coba ubah filter atau kata kunci pencarian.
-                </p>
-              </div>
-            ) : (
-              groupedAssignments.map((group) => (
-                <section
-                  key={group.scheduleId}
-                  className="overflow-hidden border bg-white"
-                >
-                  {/* SCHEDULE HEADER */}
-
-                  <div className="flex flex-col justify-between gap-2 border-b bg-slate-50 px-4 py-3 sm:flex-row sm:items-center">
-                    <div className="flex items-center gap-2">
-                      <div className="flex size-8 items-center justify-center rounded bg-white text-slate-600">
-                        <Clock3 className="size-4" />
-                      </div>
-
-                      <div>
-                        <p className="text-sm font-semibold">
-                          {group.scheduleName}
-                        </p>
-
-                        <p className="text-[11px] text-muted-foreground">
-                          Jadwal patroli
-                        </p>
-                      </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Coba ubah filter atau kata kunci pencarian.
+              </p>
+            </div>
+          ) : (
+            groupedAssignments.map((group) => (
+              <section
+                key={group.scheduleId}
+                className="overflow-hidden border bg-white"
+              >
+                <div className="flex flex-col justify-between gap-2 border-b bg-slate-50 px-4 py-3 sm:flex-row sm:items-center">
+                  <div className="flex items-center gap-2">
+                    <div className="flex size-8 items-center justify-center rounded bg-white text-slate-600">
+                      <Clock3 className="size-4" />
                     </div>
 
-                    <Badge variant="secondary" className="w-fit rounded">
-                      {group.assignments.length} Personel
-                    </Badge>
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {group.scheduleName}
+                      </p>
+
+                      <p className="text-[11px] text-muted-foreground">
+                        Jadwal patroli
+                      </p>
+                    </div>
                   </div>
 
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-8" />
-                        <TableHead>Personel</TableHead>
-                        <TableHead>Regu</TableHead>
-                        <TableHead>Shift</TableHead>
-                        <TableHead className="text-center">
-                          Total Ronde
-                        </TableHead>
-                        <TableHead className="text-center">Selesai</TableHead>
-                        <TableHead className="text-right">Detail</TableHead>
-                      </TableRow>
-                    </TableHeader>
+                  <Badge variant="secondary" className="w-fit rounded">
+                    {group.assignments.length} Personel
+                  </Badge>
+                </div>
 
-                    <TableBody>
-                      {group.assignments.map((assignment) => {
-                        const expanded = expandedAssignments.includes(
-                          assignment.id,
-                        );
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8" />
+                      <TableHead>Personel</TableHead>
+                      <TableHead>Regu</TableHead>
+                      <TableHead>Shift / Tanggal</TableHead>
+                      <TableHead className="text-center">Total Ronde</TableHead>
+                      <TableHead className="text-center">Selesai</TableHead>
+                      <TableHead className="text-right">Detail</TableHead>
+                    </TableRow>
+                  </TableHeader>
 
-                        const completedRounds = assignment.rounds.filter(
-                          (round) => round.status === "COMPLETED",
-                        ).length;
+                  <TableBody>
+                    {group.assignments.map((assignment) => {
+                      const expanded = expandedAssignments.includes(
+                        assignment.id,
+                      );
 
-                        return (
-                          <React.Fragment key={assignment.id}>
+                      const completedRounds = assignment.rounds.filter(
+                        (round) => round.status === "COMPLETED",
+                      ).length;
+
+                      return (
+                        <React.Fragment key={assignment.id}>
+                          <TableRow>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 rounded"
+                                onClick={() => toggleAssignment(assignment.id)}
+                              >
+                                {expanded ? (
+                                  <ChevronDown className="size-4" />
+                                ) : (
+                                  <ChevronRight className="size-4" />
+                                )}
+                              </Button>
+                            </TableCell>
+
+                            <TableCell>
+                              <div className="min-w-[150px]">
+                                <p className="text-xs font-semibold">
+                                  {assignment.fullName}
+                                </p>
+
+                                <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                                  {assignment.npp}
+                                </p>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                              {assignment.squadName}
+                            </TableCell>
+
+                            <TableCell>
+                              <div className="min-w-[110px]">
+                                <p className="text-xs font-medium">
+                                  {assignment.scheduleName}
+                                </p>
+
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  {formatDate(assignment.date)}
+                                </p>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-center text-xs font-medium">
+                              {assignment.rounds.length}
+                            </TableCell>
+
+                            <TableCell className="text-center text-xs">
+                              {completedRounds}/{assignment.rounds.length}
+                            </TableCell>
+
+                            <TableCell className="text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 rounded text-xs"
+                                onClick={() => toggleAssignment(assignment.id)}
+                              >
+                                {expanded ? "Tutup" : "Lihat Ronde"}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+
+                          {expanded && (
                             <TableRow>
-                              <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-7 rounded"
-                                  onClick={() =>
-                                    toggleAssignment(assignment.id)
-                                  }
-                                >
-                                  {expanded ? (
-                                    <ChevronDown className="size-4" />
-                                  ) : (
-                                    <ChevronRight className="size-4" />
-                                  )}
-                                </Button>
-                              </TableCell>
-
-                              <TableCell>
-                                <div className="min-w-[150px]">
-                                  <p className="text-xs font-semibold">
-                                    {assignment.fullName}
-                                  </p>
-
-                                  <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                                    {assignment.npp}
-                                  </p>
-                                </div>
-                              </TableCell>
-
-                              <TableCell className="text-xs">
-                                {assignment.squadName}
-                              </TableCell>
-
-                              <TableCell className="text-xs">
-                                {assignment.scheduleName}
-                              </TableCell>
-
-                              <TableCell className="text-center text-xs font-medium">
-                                {assignment.rounds.length}
-                              </TableCell>
-
-                              <TableCell className="text-center text-xs">
-                                {completedRounds}/{assignment.rounds.length}
-                              </TableCell>
-
-                              <TableCell className="text-right">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8 rounded text-xs"
-                                  onClick={() =>
-                                    toggleAssignment(assignment.id)
-                                  }
-                                >
-                                  {expanded ? "Tutup" : "Lihat Ronde"}
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-
-                            {expanded && (
-                              <TableRow>
-                                <TableCell
-                                  colSpan={7}
-                                  className="bg-slate-50/70 p-3"
-                                >
-                                  <div className="space-y-3">
-                                    <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
-                                      <div>
-                                        <p className="text-xs font-semibold">
-                                          Ronde Patroli
-                                        </p>
-
-                                        <p className="text-[10px] text-muted-foreground">
-                                          {assignment.fullName}
-                                          {" · "}
-                                          {assignment.scheduleName}
-                                        </p>
-                                      </div>
+                              <TableCell
+                                colSpan={7}
+                                className="bg-slate-50/70 p-3"
+                              >
+                                <div className="space-y-3">
+                                  <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
+                                    <div>
+                                      <p className="text-xs font-semibold">
+                                        Ronde Patroli
+                                      </p>
 
                                       <p className="text-[10px] text-muted-foreground">
-                                        {assignment.rounds.length} ronde
+                                        {assignment.fullName}
+                                        {" · "}
+                                        {assignment.scheduleName}
+                                        {" · "}
+                                        {formatDate(assignment.date)}
                                       </p>
                                     </div>
 
-                                    <div className="overflow-hidden border bg-white">
-                                      <Table>
-                                        <TableHeader>
-                                          <TableRow>
-                                            <TableHead className="w-20">
-                                              Ronde
-                                            </TableHead>
-
-                                            <TableHead>Waktu</TableHead>
-
-                                            <TableHead>Checkpoint</TableHead>
-
-                                            <TableHead>Status</TableHead>
-
-                                            <TableHead className="text-right">
-                                              Aksi
-                                            </TableHead>
-                                          </TableRow>
-                                        </TableHeader>
-
-                                        <TableBody>
-                                          {assignment.rounds
-                                            .slice()
-                                            .sort(
-                                              (a, b) =>
-                                                a.roundNumber - b.roundNumber,
-                                            )
-                                            .map((round) => {
-                                              const orderedCheckpoints = [
-                                                ...round.checkpoints,
-                                              ].sort(
-                                                (a, b) =>
-                                                  a.sequence - b.sequence,
-                                              );
-
-                                              const canEdit =
-                                                round.status === "PENDING";
-
-                                              return (
-                                                <TableRow key={round.id}>
-                                                  <TableCell>
-                                                    <span className="text-xs font-semibold">
-                                                      Ronde {round.roundNumber}
-                                                    </span>
-
-                                                    <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                                                      {round.id
-                                                        .slice(0, 7)
-                                                        .toUpperCase()}
-                                                    </p>
-                                                  </TableCell>
-
-                                                  <TableCell className="whitespace-nowrap text-xs">
-                                                    {formatTime(
-                                                      round.scheduledStartAt,
-                                                    )}
-                                                    {" - "}
-                                                    {formatTime(
-                                                      round.scheduledEndAt,
-                                                    )}
-                                                  </TableCell>
-
-                                                  <TableCell>
-                                                    <div className="flex max-w-[480px] flex-wrap gap-1">
-                                                      {orderedCheckpoints.map(
-                                                        (checkpoint) => (
-                                                          <Badge
-                                                            key={checkpoint.id}
-                                                            variant="outline"
-                                                            className="rounded bg-white text-[10px] font-normal"
-                                                          >
-                                                            {
-                                                              checkpoint.sequence
-                                                            }
-                                                            . {checkpoint.name}
-                                                          </Badge>
-                                                        ),
-                                                      )}
-                                                    </div>
-                                                  </TableCell>
-
-                                                  <TableCell>
-                                                    {renderRoundStatus(
-                                                      round.status,
-                                                    )}
-                                                  </TableCell>
-
-                                                  <TableCell className="text-right">
-                                                    <Button
-                                                      variant="outline"
-                                                      size="sm"
-                                                      disabled={!canEdit}
-                                                      className="h-8 rounded text-xs"
-                                                      onClick={() =>
-                                                        openRoundEditor(
-                                                          assignment.id,
-                                                          round,
-                                                        )
-                                                      }
-                                                    >
-                                                      <Route className="mr-1.5 size-3.5" />
-                                                      Atur Urutan
-                                                    </Button>
-                                                  </TableCell>
-                                                </TableRow>
-                                              );
-                                            })}
-                                        </TableBody>
-                                      </Table>
-                                    </div>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {assignment.rounds.length} ronde
+                                    </p>
                                   </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </section>
-              ))
-            )}
-          </div>
-        </>
+
+                                  <div className="overflow-hidden border bg-white">
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead className="w-20">
+                                            Ronde
+                                          </TableHead>
+
+                                          <TableHead>Waktu</TableHead>
+
+                                          <TableHead>Checkpoint</TableHead>
+
+                                          <TableHead>Status</TableHead>
+
+                                          <TableHead className="text-right">
+                                            Aksi
+                                          </TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+
+                                      <TableBody>
+                                        {assignment.rounds
+                                          .slice()
+                                          .sort(
+                                            (a, b) =>
+                                              a.roundNumber - b.roundNumber,
+                                          )
+                                          .map((round) => {
+                                            const orderedCheckpoints = [
+                                              ...round.checkpoints,
+                                            ].sort(
+                                              (a, b) => a.sequence - b.sequence,
+                                            );
+
+                                            const canEdit =
+                                              round.status === "PENDING";
+
+                                            return (
+                                              <TableRow key={round.id}>
+                                                <TableCell>
+                                                  <span className="text-xs font-semibold">
+                                                    Ronde {round.roundNumber}
+                                                  </span>
+
+                                                  <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                                                    {round.id
+                                                      .slice(0, 7)
+                                                      .toUpperCase()}
+                                                  </p>
+                                                </TableCell>
+
+                                                <TableCell className="whitespace-nowrap text-xs">
+                                                  {formatTime(
+                                                    round.scheduledStartAt,
+                                                  )}
+                                                  {" - "}
+                                                  {formatTime(
+                                                    round.scheduledEndAt,
+                                                  )}
+                                                </TableCell>
+
+                                                <TableCell>
+                                                  <div className="flex max-w-[480px] flex-wrap gap-1">
+                                                    {orderedCheckpoints.map(
+                                                      (checkpoint) => (
+                                                        <Badge
+                                                          key={checkpoint.id}
+                                                          variant="outline"
+                                                          className="rounded bg-white text-[10px] font-normal"
+                                                        >
+                                                          {checkpoint.sequence}.{" "}
+                                                          {checkpoint.name}
+                                                        </Badge>
+                                                      ),
+                                                    )}
+                                                  </div>
+                                                </TableCell>
+
+                                                <TableCell>
+                                                  {renderRoundStatus(
+                                                    round.status,
+                                                  )}
+                                                </TableCell>
+
+                                                <TableCell className="text-right">
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={!canEdit}
+                                                    className="h-8 rounded text-xs"
+                                                    onClick={() =>
+                                                      openRoundEditor(
+                                                        assignment.id,
+                                                        round,
+                                                      )
+                                                    }
+                                                  >
+                                                    <Route className="mr-1.5 size-3.5" />
+                                                    Atur Urutan
+                                                  </Button>
+                                                </TableCell>
+                                              </TableRow>
+                                            );
+                                          })}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </section>
+            ))
+          )}
+        </div>
       )}
 
       <Dialog
@@ -861,7 +857,7 @@ const ManajemenRondeView: React.FC<{
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-xl sm:max-w-2xl overflow-y-auto rounded">
+        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-base">
               Atur Urutan Checkpoint
@@ -893,6 +889,18 @@ const ManajemenRondeView: React.FC<{
 
                   <p className="mt-1 text-xs font-semibold">
                     Ronde {editingRound.round.roundNumber}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-muted-foreground">Tanggal</p>
+
+                  <p className="mt-1 text-xs font-semibold">
+                    {formatDate(
+                      assignments.find(
+                        (item) => item.id === editingRound.assignmentId,
+                      )?.date ?? "",
+                    )}
                   </p>
                 </div>
 

@@ -32,8 +32,6 @@ export const getAllRoundsGroupedByUser = async (
     },
   );
 
-  console.log("[GROUPED ROUNDS]", response.data);
-
   return response.data;
 };
 
