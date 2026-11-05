@@ -1,8 +1,18 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+
+import {
+  deleteAllAuditLogs,
+  deleteAuditLog,
+  deleteSelectedAuditLogs,
   getAuditLogById,
   getAuditLogs,
 } from "../../services/audit/audit-log.service";
+
 import type { AuditLogQuery } from "../../types/audit/audit-log";
 
 export const auditLogKeys = {
@@ -34,5 +44,44 @@ export const useAuditLogDetail = (id: string | null) => {
     enabled: Boolean(id),
     staleTime: 30 * 1000,
     retry: false,
+  });
+};
+
+export const useDeleteAuditLog = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteAuditLog,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: auditLogKeys.all,
+      });
+    },
+  });
+};
+
+export const useDeleteSelectedAuditLogs = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteSelectedAuditLogs,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: auditLogKeys.all,
+      });
+    },
+  });
+};
+
+export const useDeleteAllAuditLogs = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteAllAuditLogs,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: auditLogKeys.all,
+      });
+    },
   });
 };

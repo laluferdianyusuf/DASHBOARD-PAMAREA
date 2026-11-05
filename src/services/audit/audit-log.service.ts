@@ -36,6 +36,11 @@ interface AuditLogsResponse {
   };
 }
 
+export interface DeleteAuditLogResponse {
+  message: string;
+  deletedCount: number;
+}
+
 export const getAuditLogs = async (
   params: AuditLogQuery = {},
 ): Promise<AuditLogListResponse> => {
@@ -55,33 +60,54 @@ export const getAuditLogById = async (id: string): Promise<AuditLog> => {
 export const getAllAuditLogs = async (): Promise<AuditLog[]> => {
   const limit = 100;
 
-  // Ambil halaman pertama untuk mengetahui total halaman.
   const firstResponse = await apiClient.get<AuditLogsResponse>("/audit-logs", {
-    params: {
-      page: 1,
-      limit,
-    },
+    params: { page: 1, limit },
   });
 
   const firstPage = firstResponse.data;
   const allLogs = [...firstPage.data];
 
-  // Jika hanya ada satu halaman, langsung kembalikan hasilnya.
   if (firstPage.meta.totalPages <= 1) {
     return allLogs;
   }
 
-  // Ambil halaman berikutnya sampai seluruh data terkumpul.
   for (let page = 2; page <= firstPage.meta.totalPages; page++) {
     const response = await apiClient.get<AuditLogsResponse>("/audit-logs", {
-      params: {
-        page,
-        limit,
-      },
+      params: { page, limit },
     });
 
     allLogs.push(...response.data.data);
   }
 
   return allLogs;
+};
+
+export const deleteAuditLog = async (
+  id: string,
+): Promise<DeleteAuditLogResponse> => {
+  const response = await apiClient.delete<DeleteAuditLogResponse>(
+    `/audit-logs/${id}`,
+  );
+
+  return response.data;
+};
+
+export const deleteSelectedAuditLogs = async (
+  ids: string[],
+): Promise<DeleteAuditLogResponse> => {
+  const response = await apiClient.delete<DeleteAuditLogResponse>(
+    "/audit-logs/selected",
+    {
+      data: { ids },
+    },
+  );
+
+  return response.data;
+};
+
+export const deleteAllAuditLogs = async (): Promise<DeleteAuditLogResponse> => {
+  const response =
+    await apiClient.delete<DeleteAuditLogResponse>("/audit-logs/all");
+
+  return response.data;
 };

@@ -5,6 +5,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   X,
 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
@@ -44,7 +45,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import { useAuditLogs } from "../hooks/audit/useAuditLogs";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  useAuditLogs,
+  useDeleteAllAuditLogs,
+  useDeleteAuditLog,
+  useDeleteSelectedAuditLogs,
+} from "../hooks/audit/useAuditLogs";
 import { PaginationComponent } from "./PaginationComponent";
 
 interface AnalyticAuditViewProps {
@@ -369,6 +376,22 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
     limit: Number(pageSize),
   });
 
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const [deleteDialog, setDeleteDialog] = useState<{
+    type: "one" | "selected" | "all";
+    id?: string;
+  } | null>(null);
+
+  const [deleteError, setDeleteError] = useState("");
+
+  const deleteOne = useDeleteAuditLog();
+  const deleteSelected = useDeleteSelectedAuditLogs();
+  const deleteAll = useDeleteAllAuditLogs();
+
+  const isDeleting =
+    deleteOne.isPending || deleteSelected.isPending || deleteAll.isPending;
+
   const auditResponse = useMemo(
     () => extractAuditResponse(auditData),
     [auditData],
@@ -514,6 +537,58 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
     pageSize,
   ]);
 
+  const allVisibleSelected =
+    filteredLogs.length > 0 &&
+    filteredLogs.every((log) => selectedIds.includes(log.id));
+
+  const toggleSelectOne = (id: string, checked: boolean) => {
+    setSelectedIds((previous) =>
+      checked
+        ? [...new Set([...previous, id])]
+        : previous.filter((item) => item !== id),
+    );
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    const visibleIds = filteredLogs.map((log) => log.id);
+
+    setSelectedIds((previous) =>
+      checked
+        ? [...new Set([...previous, ...visibleIds])]
+        : previous.filter((id) => !visibleIds.includes(id)),
+    );
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteDialog) return;
+
+    setDeleteError("");
+
+    try {
+      if (deleteDialog.type === "one" && deleteDialog.id) {
+        await deleteOne.mutateAsync(deleteDialog.id);
+      }
+
+      if (deleteDialog.type === "selected") {
+        await deleteSelected.mutateAsync(selectedIds);
+      }
+
+      if (deleteDialog.type === "all") {
+        await deleteAll.mutateAsync();
+      }
+
+      setSelectedIds([]);
+      setDeleteDialog(null);
+
+      setCurrentPage(1);
+
+      await refetch();
+    } catch (error) {
+      console.error("DELETE AUDIT LOG ERROR:", error);
+      setDeleteError("Gagal menghapus riwayat audit. Silakan coba lagi.");
+    }
+  };
+
   const startItem = meta.total === 0 ? 0 : (meta.page - 1) * meta.limit + 1;
 
   const endItem = Math.min(meta.page * meta.limit, meta.total);
@@ -642,6 +717,44 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm text-muted-foreground">
+            {selectedIds.length > 0
+              ? `${selectedIds.length} data dipilih`
+              : "Pilih data yang ingin dihapus"}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={selectedIds.length === 0 || isDeleting}
+              onClick={() => {
+                setDeleteError("");
+                setDeleteDialog({ type: "selected" });
+              }}
+            >
+              <Trash2 className="mr-2 size-4" />
+              Hapus Terpilih ({selectedIds.length})
+            </Button>
+
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={meta.total === 0 || isDeleting}
+              onClick={() => {
+                setDeleteError("");
+                setDeleteDialog({ type: "all" });
+              }}
+            >
+              <Trash2 className="mr-2 size-4" />
+              Hapus Semua
+            </Button>
+          </div>
+        </div>
+
         <PaginationComponent
           totalItems={meta.total}
           startItem={startItem}
@@ -663,18 +776,28 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead className="w-[40px]">
+                    <Checkbox
+                      checked={allVisibleSelected}
+                      onCheckedChange={(checked) =>
+                        toggleSelectAll(checked === true)
+                      }
+                      aria-label="Pilih semua data pada halaman ini"
+                    />
+                  </TableHead>
+
                   <TableHead className="min-w-[150px]">Waktu & ID</TableHead>
                   <TableHead className="min-w-[160px]">Kategori</TableHead>
                   <TableHead className="min-w-[220px]">
                     Aksi / Kegiatan
                   </TableHead>
                   <TableHead className="min-w-[160px]">Aktor</TableHead>
-
                   <TableHead className="w-[120px]">Status</TableHead>
                   <TableHead className="w-[90px] text-right">Detail</TableHead>
                 </TableRow>
 
                 <TableRow className="bg-background hover:bg-background">
+                  <TableHead />
                   <TableHead>
                     <Input
                       value={columnSearch.idTimestamp}
@@ -834,6 +957,16 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                   filteredLogs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell>
+                        <Checkbox
+                          checked={selectedIds.includes(log.id)}
+                          onCheckedChange={(checked) =>
+                            toggleSelectOne(log.id, checked === true)
+                          }
+                          aria-label={`Pilih audit ${log.id}`}
+                        />
+                      </TableCell>
+
+                      <TableCell>
                         <div className="font-mono text-xs font-medium text-slate-900">
                           {log.id.slice(0, 7).toUpperCase()}
                         </div>
@@ -865,14 +998,34 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
                       <TableCell>{getStatusBadge(log.status)}</TableCell>
 
                       <TableCell className="text-right">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedLogDetail(log)}
-                        >
-                          Detail
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedLogDetail(log)}
+                          >
+                            Detail
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            title="Hapus audit log"
+                            disabled={isDeleting}
+                            onClick={() => {
+                              setDeleteError("");
+                              setDeleteDialog({
+                                type: "one",
+                                id: log.id,
+                              });
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -1031,6 +1184,70 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteDialog)}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) {
+            setDeleteDialog(null);
+            setDeleteError("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md rounded">
+          <DialogHeader>
+            <DialogTitle>
+              {deleteDialog?.type === "one"
+                ? "Hapus Riwayat Audit?"
+                : deleteDialog?.type === "selected"
+                  ? "Hapus Audit Terpilih?"
+                  : "Hapus Seluruh Riwayat Audit?"}
+            </DialogTitle>
+
+            <DialogDescription>
+              {deleteDialog?.type === "one"
+                ? "Riwayat audit ini akan dihapus secara permanen."
+                : deleteDialog?.type === "selected"
+                  ? `Sebanyak ${selectedIds.length} riwayat audit yang dipilih akan dihapus secara permanen.`
+                  : `Seluruh ${meta.total} riwayat audit dalam database akan dihapus secara permanen.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteError && (
+            <p className="text-sm text-rose-600">{deleteError}</p>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isDeleting}
+              onClick={() => setDeleteDialog(null)}
+            >
+              Batal
+            </Button>
+
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={handleConfirmDelete}
+            >
+              {isDeleting ? (
+                <>
+                  <RefreshCw className="mr-2 size-4 animate-spin" />
+                  Menghapus...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 size-4" />
+                  Hapus Permanen
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
