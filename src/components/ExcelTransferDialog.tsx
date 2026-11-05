@@ -32,6 +32,7 @@ import {
 
 import { getErrorMessage } from "../helpers/getErrorMessage";
 
+import { toast } from "sonner";
 import {
   useDownloadRosterTemplate,
   useImportRoster,
@@ -182,9 +183,18 @@ const ExcelTransferDialog: React.FC<ExcelTransferDialogProps> = ({
     if (!file || !canImport) return;
 
     try {
-      await importMutation.mutateAsync(file);
+      const result = await importMutation.mutateAsync(file);
+
+      toast.success("Import roster berhasil", {
+        description: "Data roster berhasil disimpan dan diproses.",
+      });
+
+      handleClose(false);
     } catch {
-      return;
+      toast.error("Import roster gagal", {
+        description:
+          "Terjadi kesalahan saat mengimpor roster. Silakan coba lagi.",
+      });
     }
   };
 
