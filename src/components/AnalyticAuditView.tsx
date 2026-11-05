@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "sonner";
 import {
   useAuditLogs,
   useDeleteAllAuditLogs,
@@ -566,26 +567,37 @@ export const AnalyticAuditView: React.FC<AnalyticAuditViewProps> = ({
 
     try {
       if (deleteDialog.type === "one" && deleteDialog.id) {
-        await deleteOne.mutateAsync(deleteDialog.id);
+        const response = await deleteOne.mutateAsync(deleteDialog.id);
+
+        toast.success(response.message || "Riwayat audit berhasil dihapus");
       }
 
       if (deleteDialog.type === "selected") {
-        await deleteSelected.mutateAsync(selectedIds);
+        const response = await deleteSelected.mutateAsync(selectedIds);
+
+        toast.success(
+          `${response.deletedCount} riwayat audit berhasil dihapus`,
+        );
       }
 
       if (deleteDialog.type === "all") {
-        await deleteAll.mutateAsync();
+        const response = await deleteAll.mutateAsync();
+
+        toast.success(
+          `Seluruh riwayat audit berhasil dihapus (${response.deletedCount} data)`,
+        );
       }
 
       setSelectedIds([]);
       setDeleteDialog(null);
-
       setCurrentPage(1);
 
       await refetch();
     } catch (error) {
       console.error("DELETE AUDIT LOG ERROR:", error);
+
       setDeleteError("Gagal menghapus riwayat audit. Silakan coba lagi.");
+      toast.error("Gagal menghapus riwayat audit");
     }
   };
 
