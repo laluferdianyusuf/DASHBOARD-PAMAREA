@@ -230,7 +230,20 @@ export function Sidebar({ currentTab, onSelectTab, user }: SidebarProps) {
       <Separator className="bg-[#263653] group-data-[collapsible=icon]:hidden" />
 
       {/* MENU */}
-      <SidebarContent className=" py-3">
+      <SidebarContent
+        className="
+    py-3
+    overflow-y-auto
+    [scrollbar-width:thin]
+    [scrollbar-color:#64748b_#10243D]
+    [&::-webkit-scrollbar]:w-[7px]
+    [&::-webkit-scrollbar-track]:bg-[#10243D]
+    [&::-webkit-scrollbar-thumb]:rounded-full
+    [&::-webkit-scrollbar-thumb]:bg-slate-500
+    [&::-webkit-scrollbar-thumb]:min-h-[30px]
+    [&::-webkit-scrollbar-thumb:hover]:bg-slate-400
+  "
+      >
         {groups.map((group) => (
           <SidebarGroup
             key={group.label}
