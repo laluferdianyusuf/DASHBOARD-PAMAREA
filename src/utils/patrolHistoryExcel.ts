@@ -66,10 +66,10 @@ const fetchPhotoForExcel = async (
 ): Promise<ExcelPhoto | null> => {
   try {
     const imageUrl = getPhotoUrlForExport(fileUrl);
+
     const response = await fetch(imageUrl);
 
     if (!response.ok) {
-      console.error("[Excel] Foto gagal diambil:", response.status, imageUrl);
       return null;
     }
 

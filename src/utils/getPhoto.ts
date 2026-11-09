@@ -20,12 +20,5 @@ export const getPhotoUrl = (fileUrl?: string | null): string => {
 export const getPhotoUrlForExport = (fileUrl?: string | null): string => {
   if (!fileUrl) return "";
 
-  // Ambil pathname agar URL gambar diarahkan melalui proxy Vite.
-  const pathname = /^https?:\/\//i.test(fileUrl)
-    ? new URL(fileUrl).pathname
-    : fileUrl.startsWith("/")
-      ? fileUrl
-      : `/${fileUrl}`;
-
-  return pathname;
+  return getPhotoUrl(fileUrl);
 };

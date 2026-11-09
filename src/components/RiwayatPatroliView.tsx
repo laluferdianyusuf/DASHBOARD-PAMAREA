@@ -492,7 +492,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                       Waktu Mulai
                     </TableHead>
 
-                    <TableHead className="whitespace-nowrap">GPS</TableHead>
+                    {/* <TableHead className="whitespace-nowrap">GPS</TableHead> */}
 
                     <TableHead className="whitespace-nowrap">Status</TableHead>
 
@@ -560,9 +560,9 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                           </p>
                         </TableCell>
 
-                        <TableCell>
+                        {/* <TableCell>
                           {getGpsBadge(log.gpsValidationStatus)}
-                        </TableCell>
+                        </TableCell> */}
 
                         <TableCell>{getStatusBadge(log.status)}</TableCell>
 
