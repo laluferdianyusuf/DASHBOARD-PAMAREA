@@ -450,20 +450,6 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
     }
   }, [selectedCheckpoint, coordinateGroups]);
 
-  useEffect(() => {
-    console.log("Total checkpoint:", checkpoints.length);
-    console.log("Total setelah filter:", filteredCheckpoints.length);
-    console.log("Total marker valid:", validCheckpoints.length);
-    console.log("Jumlah kelompok koordinat:", coordinateGroups.length);
-    console.log("Jumlah kelompok bertumpuk:", overlappingGroups.length);
-  }, [
-    checkpoints,
-    filteredCheckpoints,
-    validCheckpoints,
-    coordinateGroups,
-    overlappingGroups,
-  ]);
-
   if (isPending) {
     return <MapLoading />;
   }
