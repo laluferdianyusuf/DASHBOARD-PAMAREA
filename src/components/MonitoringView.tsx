@@ -732,7 +732,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-col justify-between gap-3 border-b pb-4 md:flex-row md:items-end">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">
@@ -779,6 +779,33 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
             />
             Refresh
           </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded border bg-slate-50 px-3 py-2.5">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+          Rumus
+        </p>
+
+        <div className="flex items-center gap-1.5 text-[10px]">
+          <span className="font-medium text-slate-600">Kepatuhan:</span>
+          <span className="font-semibold text-slate-800">
+            (Checkpoint selesai ÷ Checkpoint wajib) × 100%
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-[10px]">
+          <span className="font-medium text-slate-600">Ketepatan waktu:</span>
+          <span className="font-semibold text-slate-800">
+            (Ronde tepat waktu ÷ Ronde selesai) × 100%
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-[10px]">
+          <span className="font-medium text-slate-600">Skor akhir:</span>
+          <span className="font-semibold text-slate-800">
+            (Kepatuhan × 60%) + (Ketepatan waktu × 40%)
+          </span>
         </div>
       </div>
 
