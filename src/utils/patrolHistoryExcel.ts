@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 
+import { toast } from "sonner";
 import { getPatrolHistoryGroupedByUser } from "../services/patrol/patrol-history.service";
 import { getPhotoUrlForExport } from "./getPhoto";
 
@@ -16,6 +17,34 @@ type PatrolGroup = PatrolHistoryResponse["data"][number];
 
 type PatrolRecord = PatrolGroup["patrols"][number] & {
   user: PatrolGroup["user"];
+};
+
+type PatrolHistoryDateFilter = {
+  startDate: string;
+  endDate: string;
+};
+
+const getWitaDateKey = (value?: string | Date | null): string | null => {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Makassar",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  if (!year || !month || !day) return null;
+
+  return `${year}-${month}-${day}`;
 };
 
 const EXCEL_COLORS = {
@@ -130,14 +159,12 @@ const downloadExcelZip = async (
 ) => {
   const zip = new JSZip();
 
-  // Masukkan setiap workbook ke dalam ZIP.
   for (const file of files) {
     const buffer = await file.workbook.xlsx.writeBuffer();
 
     zip.file(file.fileName, buffer);
   }
 
-  // Generate ZIP.
   const blob = await zip.generateAsync({
     type: "blob",
     compression: "DEFLATE",
@@ -146,7 +173,6 @@ const downloadExcelZip = async (
     },
   });
 
-  // Download satu file ZIP.
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
 
@@ -181,7 +207,6 @@ const styleExcelWorksheet = (
 ) => {
   const lastColumn = worksheet.columns.length;
 
-  // Header kolom otomatis ExcelJS dipindahkan dari baris pertama.
   worksheet.spliceRows(1, 1);
 
   worksheet.mergeCells(1, 1, 1, lastColumn);
@@ -418,14 +443,14 @@ const getStatusLabel = (status?: string) => {
 };
 
 const getTimestamp = () => {
-  return new Date().toISOString().slice(0, 10);
+  return getWitaDateKey(new Date()) ?? new Date().toISOString().slice(0, 10);
 };
 
 export const exportPatrolHistoryExcel = async (
   queryParams: PatrolHistoryQuery,
   selectedSite: string,
+  dateFilter: PatrolHistoryDateFilter,
 ) => {
-  // Ambil seluruh halaman data.
   const limit = 100;
 
   const firstResponse = await getPatrolHistoryGroupedByUser({
@@ -454,13 +479,23 @@ export const exportPatrolHistoryExcel = async (
     })),
   );
 
+  const dateFilteredLogs = allLogs.filter((log) => {
+    const patrolDate = getWitaDateKey(log.startedAt);
+
+    if (!patrolDate) return false;
+
+    return (
+      patrolDate >= dateFilter.startDate && patrolDate <= dateFilter.endDate
+    );
+  });
+
   const exportLogs =
     selectedSite === "all"
-      ? allLogs
-      : allLogs.filter((log) => log.site?.id === selectedSite);
+      ? dateFilteredLogs
+      : dateFilteredLogs.filter((log) => log.site?.id === selectedSite);
 
   if (exportLogs.length === 0) {
-    alert("Tidak ada data riwayat patroli untuk diekspor.");
+    toast.warning("Tidak ada data riwayat patroli untuk diekspor.");
     return;
   }
 
@@ -469,6 +504,7 @@ export const exportPatrolHistoryExcel = async (
   const exportedAt = new Intl.DateTimeFormat("id-ID", {
     dateStyle: "long",
     timeStyle: "short",
+    timeZone: "Asia/Makassar",
   }).format(new Date());
 
   const siteName =
@@ -477,10 +513,6 @@ export const exportPatrolHistoryExcel = async (
       : (exportLogs[0]?.site?.name ?? "Site");
 
   const subtitle = `PAMAREA | ${siteName} | Diekspor ${exportedAt}`;
-
-  // ==========================================
-  // 1. WORKBOOK RIWAYAT PATROLI
-  // ==========================================
 
   const historyWorkbook = createExcelWorkbook(
     "Riwayat Patroli",
@@ -557,10 +589,6 @@ export const exportPatrolHistoryExcel = async (
     styleExcelStatus(row.getCell(20), getStatusLabel(log.status));
   });
 
-  // ==========================================
-  // 2. WORKBOOK JAWABAN + FOTO
-  // ==========================================
-
   const answerWorkbook = createExcelWorkbook(
     "Jawaban Patroli",
     "Laporan jawaban pertanyaan patroli beserta dokumentasi",
@@ -572,6 +600,7 @@ export const exportPatrolHistoryExcel = async (
       site: log.site?.name ?? "-",
       security: log.user?.fullName ?? "-",
       employeeNumber: log.user?.employeeNumber ?? "-",
+      startedAt: log.startedAt,
       point: log.patrolPoint?.name ?? "-",
       question: answer.questionTextSnapshot ?? "-",
       answer: answer.answerLabelSnapshot ?? answer.answerValue ?? "-",
@@ -590,6 +619,7 @@ export const exportPatrolHistoryExcel = async (
     { header: "Site", key: "site", width: 22 },
     { header: "NPP Security", key: "employeeNumber", width: 18 },
     { header: "Nama Security", key: "security", width: 25 },
+    { header: "Waktu Patroli", key: "startedAt", width: 22 },
     { header: "Titik Patroli", key: "point", width: 25 },
     { header: "Pertanyaan", key: "question", width: 42 },
     { header: "Jawaban", key: "answer", width: 30 },
@@ -614,6 +644,7 @@ export const exportPatrolHistoryExcel = async (
       site: item.site,
       employeeNumber: item.employeeNumber,
       security: item.security,
+      startedAt: item.startedAt ? new Date(item.startedAt) : null,
       point: item.point,
       question: item.question,
       answer: item.answer,
@@ -621,7 +652,6 @@ export const exportPatrolHistoryExcel = async (
     };
 
     item.photos.forEach((_, photoIndex) => {
-      // Kolom foto hanya untuk gambar, tanpa nama file.
       rowData[`photo${photoIndex + 1}`] = "";
     });
 
@@ -629,6 +659,8 @@ export const exportPatrolHistoryExcel = async (
   });
 
   styleExcelDataRows(answerSheet);
+
+  answerSheet.getColumn("startedAt").numFmt = "dd mmm yyyy hh:mm";
 
   for (let index = 0; index < answerRecords.length; index++) {
     const item = answerRecords[index];
@@ -650,8 +682,7 @@ export const exportPatrolHistoryExcel = async (
         extension: image.extension,
       });
 
-      // Kolom foto dimulai dari J (index 9).
-      const columnIndex = 9 + photoIndex;
+      const columnIndex = 10 + photoIndex;
 
       answerSheet.addImage(imageId, {
         tl: {
@@ -666,10 +697,6 @@ export const exportPatrolHistoryExcel = async (
       });
     }
   }
-
-  // ==========================================
-  // 3. WORKBOOK TEMUAN + FOTO
-  // ==========================================
 
   const findingWorkbook = createExcelWorkbook(
     "Temuan Patroli",
@@ -759,7 +786,6 @@ export const exportPatrolHistoryExcel = async (
     };
 
     item.photos.forEach((_, photoIndex) => {
-      // Kolom foto hanya untuk gambar, tanpa nama file.
       rowData[`photo${photoIndex + 1}`] = "";
     });
 
@@ -805,7 +831,6 @@ export const exportPatrolHistoryExcel = async (
         extension: image.extension,
       });
 
-      // Kolom foto dimulai dari Q (index 16).
       const columnIndex = 16 + photoIndex;
 
       findingSheet.addImage(imageId, {
@@ -822,7 +847,6 @@ export const exportPatrolHistoryExcel = async (
     }
   }
 
-  // Download satu file ZIP berisi tiga Excel.
   await downloadExcelZip(
     [
       {
@@ -841,14 +865,9 @@ export const exportPatrolHistoryExcel = async (
     `Laporan-Patroli-${timestamp}.zip`,
   );
 
-  alert(
-    [
-      "Export Excel berhasil.",
-      "",
-      "File ZIP berisi:",
-      "1. Riwayat Patroli",
-      "2. Jawaban Patroli beserta foto",
-      "3. Temuan Patroli beserta foto",
-    ].join("\n"),
-  );
+  toast.success("Export Excel berhasil!", {
+    description:
+      "ZIP berisi Riwayat Patroli, Jawaban Patroli beserta foto, dan Temuan Patroli beserta foto.",
+    duration: 5000,
+  });
 };

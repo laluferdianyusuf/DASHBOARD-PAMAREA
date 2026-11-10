@@ -223,6 +223,9 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
     useState<PatrolRecord | null>(null);
 
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportDateDialogOpen, setIsExportDateDialogOpen] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
 
   const queryParams = useMemo(
     () => ({
@@ -324,13 +327,36 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
     return <Badge variant="outline">{status ?? "-"}</Badge>;
   };
 
-  const handleExportExcel = async () => {
+  const handleExportExcel = () => {
     if (isExporting) return;
+
+    setExportStartDate("");
+    setExportEndDate("");
+    setIsExportDateDialogOpen(true);
+  };
+
+  const handleConfirmExport = async () => {
+    if (isExporting) return;
+
+    if (!exportStartDate || !exportEndDate) {
+      alert("Silakan pilih tanggal mulai dan tanggal selesai.");
+      return;
+    }
+
+    if (exportStartDate > exportEndDate) {
+      alert("Tanggal mulai tidak boleh lebih besar dari tanggal selesai.");
+      return;
+    }
 
     setIsExporting(true);
 
     try {
-      await exportPatrolHistoryExcel(queryParams, selectedSite);
+      await exportPatrolHistoryExcel(queryParams, selectedSite, {
+        startDate: exportStartDate,
+        endDate: exportEndDate,
+      });
+
+      setIsExportDateDialogOpen(false);
     } catch (error) {
       console.error("Gagal export Excel:", error);
       alert("Gagal membuat laporan Excel. Silakan coba kembali.");
@@ -584,6 +610,124 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
           </>
         )}
       </div>
+
+      <Dialog
+        open={isExportDateDialogOpen}
+        onOpenChange={(open) => {
+          if (!isExporting) {
+            setIsExportDateDialogOpen(open);
+          }
+        }}
+      >
+        <DialogContent className="rounded sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="size-5 text-emerald-600" />
+              Export Riwayat Patroli
+            </DialogTitle>
+
+            <DialogDescription>
+              Pilih periode tanggal pelaksanaan patroli yang ingin dimasukkan ke
+              dalam laporan Excel.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label
+                htmlFor="export-start-date"
+                className="text-sm font-medium text-slate-700"
+              >
+                Tanggal Mulai
+              </label>
+
+              <Input
+                id="export-start-date"
+                type="date"
+                value={exportStartDate}
+                max={exportEndDate || undefined}
+                onChange={(event) => setExportStartDate(event.target.value)}
+                disabled={isExporting}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="export-end-date"
+                className="text-sm font-medium text-slate-700"
+              >
+                Tanggal Selesai
+              </label>
+
+              <Input
+                id="export-end-date"
+                type="date"
+                value={exportEndDate}
+                min={exportStartDate || undefined}
+                onChange={(event) => setExportEndDate(event.target.value)}
+                disabled={isExporting}
+              />
+            </div>
+
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+              <p className="text-xs leading-relaxed text-blue-700">
+                Filter berdasarkan waktu mulai patroli (WITA). Semua data
+                jawaban, foto, dan temuan dari sesi patroli dalam periode
+                tersebut akan ikut diekspor.
+              </p>
+            </div>
+
+            {exportStartDate && exportEndDate && (
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-xs text-muted-foreground">Periode laporan</p>
+
+                <p className="mt-1 text-sm font-semibold text-slate-800">
+                  {new Intl.DateTimeFormat("id-ID", {
+                    dateStyle: "long",
+                    timeZone: "Asia/Makassar",
+                  }).format(new Date(`${exportStartDate}T12:00:00+08:00`))}
+                  {" - "}
+                  {new Intl.DateTimeFormat("id-ID", {
+                    dateStyle: "long",
+                    timeZone: "Asia/Makassar",
+                  }).format(new Date(`${exportEndDate}T12:00:00+08:00`))}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsExportDateDialogOpen(false)}
+              disabled={isExporting}
+            >
+              Batal
+            </Button>
+
+            <Button
+              type="button"
+              onClick={handleConfirmExport}
+              disabled={
+                isExporting ||
+                !exportStartDate ||
+                !exportEndDate ||
+                exportStartDate > exportEndDate
+              }
+              className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {isExporting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+
+              {isExporting ? "Menyiapkan Excel..." : "Download Excel"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!selectedDetailLog}
