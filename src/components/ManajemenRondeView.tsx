@@ -463,7 +463,7 @@ const ManajemenRondeView: React.FC<{
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="size-9 shrink-0 rounded"
+                  className="shrink-0 rounded"
                   onClick={() => setSelectedDate("")}
                   title="Hapus tanggal"
                 >

@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import {
+  MapContainer,
+  Marker,
+  Popup,
+  TileLayer,
+  Tooltip,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -29,6 +37,7 @@ import {
   RotateCcw,
   Search,
   Wifi,
+  X,
 } from "lucide-react";
 
 import type { PatrolPointResponse } from "@/src/types/patrol-point/patrolPoint";
@@ -40,32 +49,168 @@ interface MapsCheckpointProps {
 
 type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
-const createMarkerIcon = (active: boolean) => {
+interface CheckpointGroup {
+  key: string;
+  latitude: number;
+  longitude: number;
+  items: PatrolPointResponse[];
+}
+
+const getCoordinateKey = (latitude: number, longitude: number) => {
+  return `${latitude.toFixed(7)}:${longitude.toFixed(7)}`;
+};
+
+const createMarkerIcon = (active: boolean, findingCount: number) => {
   return L.divIcon({
     className: "checkpoint-marker-wrapper",
     html: `
       <div style="
-        width: 30px;
-        height: 30px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 3px solid white;
-        border-radius: 50%;
-        background: ${active ? "#16A34A" : "#9CA3AF"};
-        color: white;
-        font-size: 12px;
-        font-weight: 700;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        position: relative;
+        width: 36px;
+        height: 36px;
       ">
-        ●
+        <div style="
+          width: 30px;
+          height: 30px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 3px solid white;
+          border-radius: 50%;
+          background: ${active ? "#16A34A" : "#9CA3AF"};
+          color: white;
+          font-size: 12px;
+          font-weight: 700;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        ">
+          ●
+        </div>
+
+        ${
+          findingCount > 0
+            ? `
+              <div style="
+                position: absolute;
+                top: -7px;
+                right: -7px;
+                min-width: 20px;
+                height: 20px;
+                padding: 0 5px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 2px solid white;
+                border-radius: 999px;
+                background: #DC2626;
+                color: white;
+                font-size: 10px;
+                font-weight: 800;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+              ">
+                ${findingCount > 99 ? "99+" : findingCount}
+              </div>
+            `
+            : ""
+        }
       </div>
     `,
-    iconSize: [30, 30],
+    iconSize: [36, 36],
     iconAnchor: [15, 15],
     popupAnchor: [0, -15],
   });
 };
+
+const createStackIcon = (count: number) => {
+  return L.divIcon({
+    className: "checkpoint-stack-wrapper",
+    html: `
+      <div style="
+        width: 42px;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 4px solid white;
+        border-radius: 50%;
+        background: #2563EB;
+        color: white;
+        font-size: 15px;
+        font-weight: 800;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.35);
+        cursor: pointer;
+      ">
+        ${count}
+      </div>
+    `,
+    iconSize: [42, 42],
+    iconAnchor: [21, 21],
+    popupAnchor: [0, -20],
+  });
+};
+
+const getSpreadPosition = (
+  latitude: number,
+  longitude: number,
+  index: number,
+  total: number,
+): [number, number] => {
+  const radiusInMeters = total <= 3 ? 7 : total <= 5 ? 10 : 13;
+
+  const angle = (2 * Math.PI * index) / total - Math.PI / 2;
+
+  const northOffset = Math.cos(angle) * radiusInMeters;
+  const eastOffset = Math.sin(angle) * radiusInMeters;
+
+  const latitudeOffset = northOffset / 111320;
+
+  const longitudeOffset =
+    eastOffset / (111320 * Math.cos((latitude * Math.PI) / 180));
+
+  return [latitude + latitudeOffset, longitude + longitudeOffset];
+};
+
+function CheckpointTooltip({ item }: { item: PatrolPointResponse }) {
+  const findingCount = item._count?.findings ?? 0;
+  const isActive = item.status === "ACTIVE";
+
+  return (
+    <Tooltip
+      direction="top"
+      offset={[0, -12]}
+      opacity={1}
+      sticky={false}
+      className="checkpoint-tooltip"
+    >
+      <div className="min-w-[170px] space-y-2 p-1">
+        <div>
+          <p className="text-xs font-semibold text-gray-900">{item.name}</p>
+
+          <p className="text-[10px] text-gray-500">{item.code}</p>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <span
+            className={`text-[10px] font-semibold ${
+              isActive ? "text-green-600" : "text-gray-500"
+            }`}
+          >
+            {isActive ? "● Aktif" : "● Nonaktif"}
+          </span>
+
+          {findingCount > 0 ? (
+            <span className="text-[10px] font-semibold text-red-600">
+              {findingCount} Temuan
+            </span>
+          ) : (
+            <span className="text-[10px] font-semibold text-green-600">
+              Aman
+            </span>
+          )}
+        </div>
+      </div>
+    </Tooltip>
+  );
+}
 
 interface MapControllerProps {
   selectedCheckpoint: PatrolPointResponse | null;
@@ -91,7 +236,7 @@ function MapController({ selectedCheckpoint }: MapControllerProps) {
       return;
     }
 
-    map.flyTo([latitude, longitude], 18, {
+    map.flyTo([latitude, longitude], 19, {
       animate: true,
       duration: 0.8,
     });
@@ -101,6 +246,20 @@ function MapController({ selectedCheckpoint }: MapControllerProps) {
     selectedCheckpoint?.latitude,
     selectedCheckpoint?.longitude,
   ]);
+
+  return null;
+}
+
+interface MapClickHandlerProps {
+  onMapClick: () => void;
+}
+
+function MapClickHandler({ onMapClick }: MapClickHandlerProps) {
+  useMapEvents({
+    click: () => {
+      onMapClick();
+    },
+  });
 
   return null;
 }
@@ -115,7 +274,7 @@ function MapLoading() {
         </CardHeader>
 
         <CardContent className="p-3">
-          <Skeleton className="h-[450px] w-full rounded-md" />
+          <Skeleton className="h-[450px] w-full rounded" />
         </CardContent>
       </Card>
 
@@ -130,6 +289,7 @@ function MapLoading() {
           {Array.from({ length: 5 }).map((_, index) => (
             <div key={index} className="flex items-center gap-3">
               <Skeleton className="size-3 rounded-full" />
+
               <div className="flex-1 space-y-2">
                 <Skeleton className="h-3 w-2/3" />
                 <Skeleton className="h-3 w-1/2" />
@@ -148,6 +308,8 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
 
   const [selectedCheckpoint, setSelectedCheckpoint] =
     useState<PatrolPointResponse | null>(null);
+
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
 
   const {
     data: patrolPoints,
@@ -193,6 +355,36 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
     });
   }, [filteredCheckpoints]);
 
+  const coordinateGroups = useMemo<CheckpointGroup[]>(() => {
+    const groups = new Map<string, CheckpointGroup>();
+
+    validCheckpoints.forEach((item) => {
+      const latitude = Number(item.latitude);
+      const longitude = Number(item.longitude);
+
+      const key = getCoordinateKey(latitude, longitude);
+
+      const existingGroup = groups.get(key);
+
+      if (existingGroup) {
+        existingGroup.items.push(item);
+      } else {
+        groups.set(key, {
+          key,
+          latitude,
+          longitude,
+          items: [item],
+        });
+      }
+    });
+
+    return Array.from(groups.values());
+  }, [validCheckpoints]);
+
+  const overlappingGroups = useMemo(() => {
+    return coordinateGroups.filter((group) => group.items.length > 1);
+  }, [coordinateGroups]);
+
   const center = useMemo<[number, number]>(() => {
     if (validCheckpoints.length > 0) {
       return [
@@ -212,10 +404,65 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
     (item) => item.status === "INACTIVE",
   ).length;
 
+  const totalFindings = checkpoints.reduce(
+    (total, item) => total + (item._count?.findings ?? 0),
+    0,
+  );
+
+  const checkpointsWithFindings = checkpoints.filter(
+    (item) => (item._count?.findings ?? 0) > 0,
+  ).length;
+
   const handleResetFilter = () => {
     setSearchQuery("");
     setFilterStatus("ALL");
+    setExpandedGroupKey(null);
+    setSelectedCheckpoint(null);
   };
+
+  const handleSelectCheckpoint = (checkpoint: PatrolPointResponse) => {
+    setSelectedCheckpoint(checkpoint);
+
+    const latitude = Number(checkpoint.latitude);
+    const longitude = Number(checkpoint.longitude);
+
+    const key = getCoordinateKey(latitude, longitude);
+
+    const group = coordinateGroups.find((item) => item.key === key);
+
+    if (group && group.items.length > 1) {
+      setExpandedGroupKey(key);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedCheckpoint) return;
+
+    const latitude = Number(selectedCheckpoint.latitude);
+    const longitude = Number(selectedCheckpoint.longitude);
+
+    const key = getCoordinateKey(latitude, longitude);
+
+    const group = coordinateGroups.find((item) => item.key === key);
+
+    if (group && group.items.length > 1) {
+      setExpandedGroupKey(key);
+    }
+  }, [selectedCheckpoint, coordinateGroups]);
+
+  useEffect(() => {
+    console.log("Total checkpoint:", checkpoints.length);
+    console.log("Total setelah filter:", filteredCheckpoints.length);
+    console.log("Total marker valid:", validCheckpoints.length);
+    console.log("Jumlah kelompok koordinat:", coordinateGroups.length);
+    console.log("Jumlah kelompok bertumpuk:", overlappingGroups.length);
+  }, [
+    checkpoints,
+    filteredCheckpoints,
+    validCheckpoints,
+    coordinateGroups,
+    overlappingGroups,
+  ]);
 
   if (isPending) {
     return <MapLoading />;
@@ -240,8 +487,6 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
   return (
     <div className="mt-4 space-y-4">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        {/* MAP */}
-
         <Card className="overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-3 border-b px-4 py-3">
             <div className="space-y-1">
@@ -278,50 +523,241 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
 
                 <MapController selectedCheckpoint={selectedCheckpoint} />
 
-                {validCheckpoints.map((item) => {
-                  const isActive = item.status === "ACTIVE";
+                <MapClickHandler onMapClick={() => setExpandedGroupKey(null)} />
 
-                  return (
-                    <Marker
-                      key={item.id}
-                      position={[Number(item.latitude), Number(item.longitude)]}
-                      icon={createMarkerIcon(isActive)}
-                      eventHandlers={{
-                        click: () => setSelectedCheckpoint(item),
-                      }}
-                    >
-                      <Popup>
-                        <div className="min-w-[180px] space-y-2">
-                          <div>
-                            <p className="text-sm font-semibold">{item.name}</p>
+                {coordinateGroups.map((group) => {
+                  const isExpanded = expandedGroupKey === group.key;
 
-                            <p className="text-xs text-gray-500">{item.code}</p>
+                  if (group.items.length === 1) {
+                    const item = group.items[0];
+
+                    const isActive = item.status === "ACTIVE";
+                    const findingCount = item._count?.findings ?? 0;
+
+                    return (
+                      <Marker
+                        key={item.id}
+                        position={[group.latitude, group.longitude]}
+                        icon={createMarkerIcon(isActive, findingCount)}
+                        eventHandlers={{
+                          click: () => setSelectedCheckpoint(item),
+                        }}
+                      >
+                        <CheckpointTooltip item={item} />
+
+                        <Popup>
+                          <div className="min-w-[190px] space-y-2">
+                            <div>
+                              <p className="text-sm font-semibold">
+                                {item.name}
+                              </p>
+
+                              <p className="text-xs text-gray-500">
+                                {item.code}
+                              </p>
+                            </div>
+
+                            <Separator />
+
+                            <p className="text-xs">
+                              {item.description || "Tidak ada deskripsi"}
+                            </p>
+
+                            <div className="flex items-center justify-between gap-2">
+                              <Badge
+                                className={
+                                  isActive
+                                    ? "bg-green-600 hover:bg-green-600"
+                                    : "bg-gray-500 hover:bg-gray-500"
+                                }
+                              >
+                                {isActive ? "Aktif" : "Nonaktif"}
+                              </Badge>
+
+                              {findingCount > 0 ? (
+                                <Badge variant="destructive">
+                                  <AlertCircle className="mr-1 size-3" />
+                                  {findingCount} Temuan
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="border-green-200 bg-green-50 text-green-700"
+                                >
+                                  <CheckCircle2 className="mr-1 size-3" />
+                                  Tidak Ada Temuan
+                                </Badge>
+                              )}
+                            </div>
                           </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  }
 
-                          <Separator />
+                  if (!isExpanded) {
+                    return (
+                      <Marker
+                        key={group.key}
+                        position={[group.latitude, group.longitude]}
+                        icon={createStackIcon(group.items.length)}
+                        eventHandlers={{
+                          click: () => setExpandedGroupKey(group.key),
+                        }}
+                      >
+                        <Tooltip direction="top" offset={[0, -15]} opacity={1}>
+                          <div className="min-w-[190px] space-y-1">
+                            <p className="text-xs font-semibold">
+                              {group.items.length} Checkpoint Bertumpuk
+                            </p>
 
-                          <p className="text-xs">
-                            {item.description || "Tidak ada deskripsi"}
-                          </p>
+                            {group.items.map((item) => (
+                              <p key={item.id} className="text-[10px]">
+                                <span className="font-semibold">
+                                  {item.code}
+                                </span>
+                                {" - "}
+                                {item.name}
+                              </p>
+                            ))}
 
-                          <Badge
-                            className={
-                              isActive
-                                ? "bg-green-600 hover:bg-green-600"
-                                : "bg-gray-500 hover:bg-gray-500"
-                            }
-                          >
-                            {isActive ? "Aktif" : "Nonaktif"}
-                          </Badge>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  );
+                            <p className="pt-1 text-[10px] font-semibold text-blue-600">
+                              Klik untuk melihat semua checkpoint
+                            </p>
+                          </div>
+                        </Tooltip>
+
+                        <Popup>
+                          <div className="min-w-[190px] space-y-2">
+                            <p className="text-sm font-semibold">
+                              {group.items.length} Checkpoint Bertumpuk
+                            </p>
+
+                            <p className="text-xs text-gray-500">
+                              Pilih tombol di bawah untuk melihat setiap
+                              checkpoint.
+                            </p>
+
+                            <Separator />
+
+                            <div className="space-y-1">
+                              {group.items.map((item) => (
+                                <p key={item.id} className="text-xs">
+                                  <span className="font-mono font-semibold">
+                                    {item.code}
+                                  </span>
+                                  {" - "}
+                                  {item.name}
+                                </p>
+                              ))}
+                            </div>
+
+                            <Button
+                              size="sm"
+                              className="w-full"
+                              onClick={() => setExpandedGroupKey(group.key)}
+                            >
+                              Tampilkan Semua Checkpoint
+                            </Button>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  }
+
+                  return group.items.map((item, index) => {
+                    const isActive = item.status === "ACTIVE";
+                    const findingCount = item._count?.findings ?? 0;
+
+                    const position = getSpreadPosition(
+                      group.latitude,
+                      group.longitude,
+                      index,
+                      group.items.length,
+                    );
+
+                    return (
+                      <Marker
+                        key={item.id}
+                        position={position}
+                        icon={createMarkerIcon(isActive, findingCount)}
+                        eventHandlers={{
+                          click: () => setSelectedCheckpoint(item),
+                        }}
+                      >
+                        <CheckpointTooltip item={item} />
+
+                        <Popup>
+                          <div className="min-w-[190px] space-y-2">
+                            <div>
+                              <p className="text-sm font-semibold">
+                                {item.name}
+                              </p>
+
+                              <p className="text-xs text-gray-500">
+                                {item.code}
+                              </p>
+                            </div>
+
+                            <Separator />
+
+                            <p className="text-xs">
+                              {item.description || "Tidak ada deskripsi"}
+                            </p>
+
+                            <div className="flex items-center justify-between gap-2">
+                              <Badge
+                                className={
+                                  isActive
+                                    ? "bg-green-600 hover:bg-green-600"
+                                    : "bg-gray-500 hover:bg-gray-500"
+                                }
+                              >
+                                {isActive ? "Aktif" : "Nonaktif"}
+                              </Badge>
+
+                              {findingCount > 0 ? (
+                                <Badge variant="destructive">
+                                  <AlertCircle className="mr-1 size-3" />
+                                  {findingCount} Temuan
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="border-green-200 bg-green-50 text-green-700"
+                                >
+                                  <CheckCircle2 className="mr-1 size-3" />
+                                  Tidak Ada Temuan
+                                </Badge>
+                              )}
+                            </div>
+
+                            <p className="text-[10px] text-gray-500">
+                              Posisi marker disebarkan secara visual. Koordinat
+                              GPS asli tetap tersimpan.
+                            </p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  });
                 })}
               </MapContainer>
-            </div>
 
-            {/* LEGEND */}
+              {expandedGroupKey && (
+                <div className="absolute right-3 top-3 z-[1000]">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="gap-2 shadow-md"
+                    onClick={() => setExpandedGroupKey(null)}
+                  >
+                    <X className="size-4" />
+                    Tutup Sebaran
+                  </Button>
+                </div>
+              )}
+            </div>
 
             <div className="flex flex-wrap items-center gap-5 border-t px-4 py-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -334,14 +770,22 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
                 Nonaktif
               </div>
 
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="size-2.5 rounded-full bg-red-600" />
+                Memiliki Temuan
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="flex size-2.5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white"></span>
+                Marker bertumpuk
+              </div>
+
               <div className="ml-auto text-xs text-muted-foreground">
                 {validCheckpoints.length} marker
               </div>
             </div>
           </CardContent>
         </Card>
-
-        {/* CHECKPOINT LIST */}
 
         <Card className="flex min-h-0 flex-col overflow-hidden">
           <CardHeader className="space-y-3 border-b px-4 py-3">
@@ -358,8 +802,6 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
 
               <Badge variant="secondary">{filteredCheckpoints.length}</Badge>
             </div>
-
-            {/* SEARCH */}
 
             <div className="relative">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -408,8 +850,6 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
             </div>
           </CardHeader>
 
-          {/* LIST */}
-
           <CardContent className="min-h-0 flex-1 p-0">
             {filteredCheckpoints.length === 0 ? (
               <div className="flex min-h-[250px] flex-col items-center justify-center gap-2 p-6 text-center">
@@ -433,11 +873,13 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
 
                     const isActive = checkpoint.status === "ACTIVE";
 
+                    const findingCount = checkpoint._count?.findings ?? 0;
+
                     return (
                       <button
                         key={checkpoint.id}
                         type="button"
-                        onClick={() => setSelectedCheckpoint(checkpoint)}
+                        onClick={() => handleSelectCheckpoint(checkpoint)}
                         className={`flex w-full items-start gap-3 border-l-2 p-3 text-left transition-colors ${
                           isSelected
                             ? "border-l-primary bg-primary/5"
@@ -468,9 +910,21 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
                             </Badge>
                           </div>
 
-                          <p className="mt-1 truncate text-xs font-semibold">
-                            {checkpoint.name}
-                          </p>
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-semibold">
+                              {checkpoint.name}
+                            </p>
+
+                            {findingCount > 0 && (
+                              <Badge
+                                variant="destructive"
+                                className="h-5 shrink-0 gap-1 px-1.5 text-[9px]"
+                              >
+                                <AlertCircle className="size-3" />
+                                {findingCount} Temuan
+                              </Badge>
+                            )}
+                          </div>
 
                           <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
                             <Wifi className="size-3 shrink-0" />
@@ -490,11 +944,9 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
         </Card>
       </div>
 
-      {/* SUMMARY */}
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
-          <div className="flex size-9 items-center justify-center rounded-md bg-muted">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="flex items-center gap-3 rounded border bg-card px-4 py-3">
+          <div className="flex size-9 items-center justify-center rounded bg-muted">
             <MapPin className="size-4 text-muted-foreground" />
           </div>
 
@@ -507,8 +959,8 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
-          <div className="flex size-9 items-center justify-center rounded-md bg-green-50">
+        <div className="flex items-center gap-3 rounded border bg-card px-4 py-3">
+          <div className="flex size-9 items-center justify-center rounded bg-green-50">
             <CheckCircle2 className="size-4 text-green-600" />
           </div>
 
@@ -519,8 +971,8 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
-          <div className="flex size-9 items-center justify-center rounded-md bg-muted">
+        <div className="flex items-center gap-3 rounded border bg-card px-4 py-3">
+          <div className="flex size-9 items-center justify-center rounded bg-muted">
             <Circle className="size-4 text-muted-foreground" />
           </div>
 
@@ -529,6 +981,24 @@ export default function MapsCheckpoint({ siteId }: MapsCheckpointProps) {
 
             <p className="text-lg font-semibold tabular-nums">
               {inactiveCount}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 rounded border bg-card px-4 py-3">
+          <div className="flex size-9 items-center justify-center rounded bg-red-50">
+            <AlertCircle className="size-4 text-red-600" />
+          </div>
+
+          <div>
+            <p className="text-xs text-muted-foreground">Total Temuan</p>
+
+            <p className="text-lg font-semibold tabular-nums text-red-600">
+              {totalFindings}
+            </p>
+
+            <p className="text-[10px] text-muted-foreground">
+              Pada {checkpointsWithFindings} checkpoint
             </p>
           </div>
         </div>

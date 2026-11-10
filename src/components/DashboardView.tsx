@@ -150,7 +150,7 @@ export const DashboardView = () => {
               </div>
 
               <div
-                className={`flex size-11 items-center justify-center rounded-lg ${item.iconClassName}`}
+                className={`flex size-11 items-center justify-center rounded ${item.iconClassName}`}
               >
                 {item.icon}
               </div>
