@@ -1,9 +1,56 @@
+import axios from "axios";
 import { apiClient } from "../../lib/apiClient";
 import type {
   PatrolHistoryGroupedByUserParams,
   PatrolHistoryGroupedByUserResponse,
   PatrolHistoryQuery,
 } from "../../types/patrol/patrol-history";
+
+export interface ExportPatrolHistoryPayload {
+  startDate: string;
+  endDate: string;
+  siteId: string;
+}
+
+export const exportPatrolHistoryExcelByFilter = async (
+  payload: ExportPatrolHistoryPayload,
+): Promise<Blob> => {
+  try {
+    const response = await apiClient.post("/patrols/export-excel", payload, {
+      responseType: "blob",
+      timeout: 300000,
+    });
+
+    return response.data;
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error)) {
+      let responseData: unknown = error.response?.data;
+
+      if (responseData instanceof Blob) {
+        const text = await responseData.text();
+
+        try {
+          responseData = JSON.parse(text);
+        } catch {
+          responseData = text;
+        }
+      }
+
+      const backendMessage =
+        typeof responseData === "object" &&
+        responseData !== null &&
+        "message" in responseData
+          ? String(responseData.message)
+          : undefined;
+
+      throw new Error(
+        backendMessage || error.message || "Gagal mengekspor laporan patroli.",
+      );
+    }
+
+    throw error;
+  }
+};
 
 export const getPatrolHistoryGroupedByUser = async (
   params: PatrolHistoryGroupedByUserParams = {},

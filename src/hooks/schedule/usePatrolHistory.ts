@@ -2,6 +2,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import {
   exportPatrolHistoryExcel,
+  exportPatrolHistoryExcelByFilter,
+  ExportPatrolHistoryPayload,
   getPatrolHistoryGroupedByUser,
 } from "../../services/patrol/patrol-history.service";
 
@@ -28,6 +30,13 @@ export const usePatrolHistoryGroupedByUser = (
     retry: false,
 
     staleTime: 30_000,
+  });
+};
+
+export const useExportPatrolHistory = () => {
+  return useMutation({
+    mutationFn: (payload: ExportPatrolHistoryPayload) =>
+      exportPatrolHistoryExcelByFilter(payload),
   });
 };
 

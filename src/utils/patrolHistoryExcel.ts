@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
-
 import { toast } from "sonner";
+
 import { getPatrolHistoryGroupedByUser } from "../services/patrol/patrol-history.service";
 import { getPhotoUrlForExport } from "./getPhoto";
 
@@ -24,27 +24,9 @@ type PatrolHistoryDateFilter = {
   endDate: string;
 };
 
-const getWitaDateKey = (value?: string | Date | null): string | null => {
-  if (!value) return null;
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Makassar",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-
-  const year = parts.find((part) => part.type === "year")?.value;
-  const month = parts.find((part) => part.type === "month")?.value;
-  const day = parts.find((part) => part.type === "day")?.value;
-
-  if (!year || !month || !day) return null;
-
-  return `${year}-${month}-${day}`;
+type ExcelPhoto = {
+  base64: string;
+  extension: "jpeg" | "png";
 };
 
 const EXCEL_COLORS = {
@@ -66,11 +48,6 @@ const EXCEL_COLORS = {
   lightGray: "FFF1F5F9",
 };
 
-type ExcelPhoto = {
-  base64: string;
-  extension: "jpeg" | "png";
-};
-
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -90,64 +67,101 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-const fetchPhotoForExcel = async (
-  fileUrl: string,
-): Promise<ExcelPhoto | null> => {
-  try {
-    const imageUrl = getPhotoUrlForExport(fileUrl);
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  callback: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(items.length);
+  let currentIndex = 0;
 
-    const response = await fetch(imageUrl);
+  const worker = async () => {
+    while (true) {
+      const index = currentIndex++;
 
-    if (!response.ok) {
+      if (index >= items.length) return;
+
+      results[index] = await callback(items[index], index);
+    }
+  };
+
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return results;
+};
+
+const photoCache = new Map<string, Promise<ExcelPhoto | null>>();
+
+const fetchPhotoForExcel = (fileUrl: string): Promise<ExcelPhoto | null> => {
+  const imageUrl = getPhotoUrlForExport(fileUrl);
+
+  const cached = photoCache.get(imageUrl);
+
+  if (cached) return cached;
+
+  const request = (async (): Promise<ExcelPhoto | null> => {
+    try {
+      const response = await fetch(imageUrl);
+
+      if (!response.ok) return null;
+
+      const blob = await response.blob();
+      const mimeType = blob.type.toLowerCase();
+
+      if (mimeType.includes("png")) {
+        return {
+          base64: await blobToBase64(blob),
+          extension: "png",
+        };
+      }
+
+      if (mimeType.includes("jpeg") || mimeType.includes("jpg")) {
+        return {
+          base64: await blobToBase64(blob),
+          extension: "jpeg",
+        };
+      }
+
+      if (!blob.type.startsWith("image/")) return null;
+
+      const bitmap = await createImageBitmap(blob);
+
+      try {
+        const canvas = document.createElement("canvas");
+
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+
+        const context = canvas.getContext("2d");
+
+        if (!context) return null;
+
+        context.drawImage(bitmap, 0, 0);
+
+        const dataUrl = canvas.toDataURL("image/png");
+        const base64 = dataUrl.split(",")[1];
+
+        if (!base64) return null;
+
+        return {
+          base64,
+          extension: "png",
+        };
+      } finally {
+        bitmap.close();
+      }
+    } catch (error) {
+      console.error("[Excel] Gagal mengambil foto:", fileUrl, error);
+
       return null;
     }
+  })();
 
-    const blob = await response.blob();
-    const mimeType = blob.type.toLowerCase();
+  photoCache.set(imageUrl, request);
 
-    if (mimeType.includes("png")) {
-      return {
-        base64: await blobToBase64(blob),
-        extension: "png",
-      };
-    }
-
-    if (mimeType.includes("jpeg") || mimeType.includes("jpg")) {
-      return {
-        base64: await blobToBase64(blob),
-        extension: "jpeg",
-      };
-    }
-
-    const bitmap = await createImageBitmap(blob);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-
-    const context = canvas.getContext("2d");
-
-    if (!context) {
-      bitmap.close();
-      return null;
-    }
-
-    context.drawImage(bitmap, 0, 0);
-    bitmap.close();
-
-    const dataUrl = canvas.toDataURL("image/png");
-    const base64 = dataUrl.split(",")[1];
-
-    if (!base64) return null;
-
-    return {
-      base64,
-      extension: "png",
-    };
-  } catch (error) {
-    console.error("[Excel] Gagal mengambil foto:", fileUrl, error);
-    return null;
-  }
+  return request;
 };
 
 const downloadExcelZip = async (
@@ -167,10 +181,7 @@ const downloadExcelZip = async (
 
   const blob = await zip.generateAsync({
     type: "blob",
-    compression: "DEFLATE",
-    compressionOptions: {
-      level: 6,
-    },
+    compression: "STORE",
   });
 
   const url = URL.createObjectURL(blob);
@@ -185,7 +196,7 @@ const downloadExcelZip = async (
 
   window.setTimeout(() => {
     URL.revokeObjectURL(url);
-  }, 2000);
+  }, 5000);
 };
 
 const createExcelWorkbook = (title: string, subject: string) => {
@@ -213,6 +224,7 @@ const styleExcelWorksheet = (
   worksheet.mergeCells(2, 1, 2, lastColumn);
 
   const titleCell = worksheet.getCell("A1");
+
   titleCell.value = title;
   titleCell.font = {
     name: "Aptos Display",
@@ -232,6 +244,7 @@ const styleExcelWorksheet = (
   };
 
   const subtitleCell = worksheet.getCell("A2");
+
   subtitleCell.value = subtitle;
   subtitleCell.font = {
     name: "Aptos",
@@ -442,15 +455,38 @@ const getStatusLabel = (status?: string) => {
   return labels[status ?? ""] ?? status ?? "-";
 };
 
+const getWitaDateKey = (value?: string | Date | null): string | null => {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Makassar",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value;
+
+  const month = parts.find((part) => part.type === "month")?.value;
+
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  if (!year || !month || !day) return null;
+
+  return `${year}-${month}-${day}`;
+};
+
 const getTimestamp = () => {
   return getWitaDateKey(new Date()) ?? new Date().toISOString().slice(0, 10);
 };
 
-export const exportPatrolHistoryExcel = async (
+const getExportLogs = async (
   queryParams: PatrolHistoryQuery,
-  selectedSite: string,
-  dateFilter: PatrolHistoryDateFilter,
-) => {
+): Promise<PatrolRecord[]> => {
   const limit = 100;
 
   const firstResponse = await getPatrolHistoryGroupedByUser({
@@ -460,229 +496,267 @@ export const exportPatrolHistoryExcel = async (
   });
 
   const allGroups = [...(firstResponse.data ?? [])];
+
   const totalPages = firstResponse.pagination?.totalPages ?? 1;
 
-  for (let page = 2; page <= totalPages; page++) {
-    const response = await getPatrolHistoryGroupedByUser({
+  const remainingPages = Array.from(
+    { length: Math.max(0, totalPages - 1) },
+    (_, index) => index + 2,
+  );
+
+  const pageResponses = await mapWithConcurrency(remainingPages, 4, (page) =>
+    getPatrolHistoryGroupedByUser({
       ...queryParams,
       page,
       limit,
-    });
+    }),
+  );
 
+  for (const response of pageResponses) {
     allGroups.push(...(response.data ?? []));
   }
 
-  const allLogs: PatrolRecord[] = allGroups.flatMap((group) =>
+  return allGroups.flatMap((group) =>
     group.patrols.map((patrol) => ({
       ...patrol,
       user: group.user,
     })),
   );
+};
 
-  const dateFilteredLogs = allLogs.filter((log) => {
-    const patrolDate = getWitaDateKey(log.startedAt);
+export const exportPatrolHistoryExcel = async (
+  queryParams: PatrolHistoryQuery,
+  selectedSite: string,
+  dateFilter: PatrolHistoryDateFilter,
+) => {
+  const startedTime = performance.now();
 
-    if (!patrolDate) return false;
+  photoCache.clear();
 
-    return (
-      patrolDate >= dateFilter.startDate && patrolDate <= dateFilter.endDate
-    );
-  });
+  try {
+    toast.info("Menyiapkan data laporan patroli...");
 
-  const exportLogs =
-    selectedSite === "all"
-      ? dateFilteredLogs
-      : dateFilteredLogs.filter((log) => log.site?.id === selectedSite);
+    const allLogs = await getExportLogs(queryParams);
 
-  if (exportLogs.length === 0) {
-    toast.warning("Tidak ada data riwayat patroli untuk diekspor.");
-    return;
-  }
+    console.log("[Excel Export] Total data dari API:", allLogs.length);
 
-  const timestamp = getTimestamp();
+    const dateFilteredLogs = allLogs.filter((log) => {
+      const patrolDate = getWitaDateKey(log.startedAt);
 
-  const exportedAt = new Intl.DateTimeFormat("id-ID", {
-    dateStyle: "long",
-    timeStyle: "short",
-    timeZone: "Asia/Makassar",
-  }).format(new Date());
+      if (!patrolDate) return false;
 
-  const siteName =
-    selectedSite === "all"
-      ? "Semua Site"
-      : (exportLogs[0]?.site?.name ?? "Site");
-
-  const subtitle = `PAMAREA | ${siteName} | Diekspor ${exportedAt}`;
-
-  const historyWorkbook = createExcelWorkbook(
-    "Riwayat Patroli",
-    "Laporan pelaksanaan patroli",
-  );
-
-  const historySheet = historyWorkbook.addWorksheet("Riwayat Patroli");
-
-  const historyColumns = [
-    { header: "No.", key: "no", width: 8 },
-    { header: "ID Sesi", key: "reportNumber", width: 24 },
-    { header: "Site", key: "site", width: 22 },
-    { header: "Kode Titik", key: "pointCode", width: 16 },
-    { header: "Titik Patroli", key: "pointName", width: 25 },
-    { header: "NPP Security", key: "employeeNumber", width: 18 },
-    { header: "Nama Security", key: "security", width: 25 },
-    { header: "Urutan Titik", key: "sequence", width: 14 },
-    { header: "Waktu Mulai", key: "startedAt", width: 22 },
-    { header: "Waktu Selesai", key: "completedAt", width: 22 },
-    { header: "Durasi", key: "duration", width: 18 },
-    { header: "Status GPS", key: "gps", width: 16 },
-    { header: "Akurasi GPS (m)", key: "accuracy", width: 17 },
-    { header: "Jarak Titik (m)", key: "distance", width: 17 },
-    { header: "Status NFC", key: "nfc", width: 18 },
-    { header: "NFC Bypass", key: "nfcBypass", width: 14 },
-    { header: "Alasan Bypass", key: "nfcReason", width: 22 },
-    { header: "Catatan Bypass", key: "nfcNote", width: 28 },
-    { header: "Status Checkpoint", key: "checkpointStatus", width: 20 },
-    { header: "Status Patroli", key: "status", width: 18 },
-  ];
-
-  historySheet.columns = historyColumns;
-
-  styleExcelWorksheet(historySheet, "LAPORAN RIWAYAT PATROLI", subtitle);
-
-  exportLogs.forEach((log, index) => {
-    historySheet.addRow({
-      no: index + 1,
-      reportNumber: log.reportNumber ?? "-",
-      site: log.site?.name ?? "-",
-      pointCode: log.patrolPoint?.code ?? "-",
-      pointName: log.patrolPoint?.name ?? "-",
-      employeeNumber: log.user?.employeeNumber ?? "-",
-      security: log.user?.fullName ?? "-",
-      sequence: log.checkpoint?.sequence ?? "-",
-      startedAt: log.startedAt ? new Date(log.startedAt) : null,
-      completedAt: log.completedAt ? new Date(log.completedAt) : null,
-      duration: formatDuration(log.startedAt, log.completedAt),
-      gps: log.gpsValidationStatus ?? "-",
-      accuracy: log.gpsAccuracy ?? "-",
-      distance: log.distanceFromPoint ?? "-",
-      nfc: log.nfcValidationStatus ?? "-",
-      nfcBypass: log.nfcBypass ? "Ya" : "Tidak",
-      nfcReason: log.nfcBypassReason ?? "-",
-      nfcNote: log.nfcBypassNote ?? "-",
-      checkpointStatus: log.checkpoint?.status ?? "-",
-      status: getStatusLabel(log.status),
-    });
-  });
-
-  styleExcelDataRows(historySheet);
-
-  historySheet.getColumn("startedAt").numFmt = "dd mmm yyyy hh:mm";
-  historySheet.getColumn("completedAt").numFmt = "dd mmm yyyy hh:mm";
-  historySheet.getColumn("accuracy").numFmt = "0.00";
-  historySheet.getColumn("distance").numFmt = "0.00";
-
-  exportLogs.forEach((log, index) => {
-    const row = historySheet.getRow(index + 5);
-
-    styleExcelStatus(row.getCell(12), log.gpsValidationStatus);
-    styleExcelStatus(row.getCell(15), log.nfcValidationStatus);
-    styleExcelStatus(row.getCell(19), log.checkpoint?.status);
-    styleExcelStatus(row.getCell(20), getStatusLabel(log.status));
-  });
-
-  const answerWorkbook = createExcelWorkbook(
-    "Jawaban Patroli",
-    "Laporan jawaban pertanyaan patroli beserta dokumentasi",
-  );
-
-  const answerRecords = exportLogs.flatMap((log) =>
-    (log.answers ?? []).map((answer) => ({
-      reportNumber: log.reportNumber ?? "-",
-      site: log.site?.name ?? "-",
-      security: log.user?.fullName ?? "-",
-      employeeNumber: log.user?.employeeNumber ?? "-",
-      startedAt: log.startedAt,
-      point: log.patrolPoint?.name ?? "-",
-      question: answer.questionTextSnapshot ?? "-",
-      answer: answer.answerLabelSnapshot ?? answer.answerValue ?? "-",
-      photos: answer.photos ?? [],
-    })),
-  );
-
-  const maxAnswerPhotos = Math.max(
-    1,
-    ...answerRecords.map((item) => item.photos.length),
-  );
-
-  const answerColumns = [
-    { header: "No.", key: "no", width: 8 },
-    { header: "ID Sesi", key: "reportNumber", width: 24 },
-    { header: "Site", key: "site", width: 22 },
-    { header: "NPP Security", key: "employeeNumber", width: 18 },
-    { header: "Nama Security", key: "security", width: 25 },
-    { header: "Waktu Patroli", key: "startedAt", width: 22 },
-    { header: "Titik Patroli", key: "point", width: 25 },
-    { header: "Pertanyaan", key: "question", width: 42 },
-    { header: "Jawaban", key: "answer", width: 30 },
-    { header: "Jumlah Foto", key: "photoCount", width: 14 },
-    ...Array.from({ length: maxAnswerPhotos }, (_, index) => ({
-      header: `Foto ${index + 1}`,
-      key: `photo${index + 1}`,
-      width: 20,
-    })),
-  ];
-
-  const answerSheet = answerWorkbook.addWorksheet("Jawaban");
-
-  answerSheet.columns = answerColumns;
-
-  styleExcelWorksheet(answerSheet, "LAPORAN JAWABAN PATROLI", subtitle);
-
-  answerRecords.forEach((item, index) => {
-    const rowData: Record<string, unknown> = {
-      no: index + 1,
-      reportNumber: item.reportNumber,
-      site: item.site,
-      employeeNumber: item.employeeNumber,
-      security: item.security,
-      startedAt: item.startedAt ? new Date(item.startedAt) : null,
-      point: item.point,
-      question: item.question,
-      answer: item.answer,
-      photoCount: item.photos.length,
-    };
-
-    item.photos.forEach((_, photoIndex) => {
-      rowData[`photo${photoIndex + 1}`] = "";
+      return (
+        patrolDate >= dateFilter.startDate && patrolDate <= dateFilter.endDate
+      );
     });
 
-    answerSheet.addRow(rowData);
-  });
+    const exportLogs =
+      selectedSite === "all"
+        ? dateFilteredLogs
+        : dateFilteredLogs.filter((log) => log.site?.id === selectedSite);
 
-  styleExcelDataRows(answerSheet);
-
-  answerSheet.getColumn("startedAt").numFmt = "dd mmm yyyy hh:mm";
-
-  for (let index = 0; index < answerRecords.length; index++) {
-    const item = answerRecords[index];
-    const rowNumber = index + 5;
-    const row = answerSheet.getRow(rowNumber);
-
-    if (item.photos.length > 0) {
-      row.height = 75;
+    if (exportLogs.length === 0) {
+      toast.warning("Tidak ada data riwayat patroli untuk diekspor.");
+      return;
     }
 
-    for (let photoIndex = 0; photoIndex < item.photos.length; photoIndex++) {
-      const photo = item.photos[photoIndex];
-      const image = await fetchPhotoForExcel(photo.fileUrl);
+    const timestamp = getTimestamp();
 
-      if (!image) continue;
+    const exportedAt = new Intl.DateTimeFormat("id-ID", {
+      dateStyle: "long",
+      timeStyle: "short",
+      timeZone: "Asia/Makassar",
+    }).format(new Date());
 
-      const imageId = answerWorkbook.addImage({
-        base64: image.base64,
-        extension: image.extension,
+    const siteName =
+      selectedSite === "all"
+        ? "Semua Site"
+        : (exportLogs[0]?.site?.name ?? "Site");
+
+    const subtitle = `PAMAREA | ${siteName} | Diekspor ${exportedAt}`;
+
+    const historyWorkbook = createExcelWorkbook(
+      "Riwayat Patroli",
+      "Laporan pelaksanaan patroli",
+    );
+
+    const historySheet = historyWorkbook.addWorksheet("Riwayat Patroli");
+
+    historySheet.columns = [
+      { header: "No.", key: "no", width: 8 },
+      { header: "ID Sesi", key: "reportNumber", width: 24 },
+      { header: "Site", key: "site", width: 22 },
+      { header: "Kode Titik", key: "pointCode", width: 16 },
+      { header: "Titik Patroli", key: "pointName", width: 25 },
+      { header: "NPP Security", key: "employeeNumber", width: 18 },
+      { header: "Nama Security", key: "security", width: 25 },
+      { header: "Urutan Titik", key: "sequence", width: 14 },
+      { header: "Waktu Mulai", key: "startedAt", width: 22 },
+      { header: "Waktu Selesai", key: "completedAt", width: 22 },
+      { header: "Durasi", key: "duration", width: 18 },
+      { header: "Status GPS", key: "gps", width: 16 },
+      { header: "Akurasi GPS (m)", key: "accuracy", width: 17 },
+      { header: "Jarak Titik (m)", key: "distance", width: 17 },
+      { header: "Status NFC", key: "nfc", width: 18 },
+      { header: "NFC Bypass", key: "nfcBypass", width: 14 },
+      { header: "Alasan Bypass", key: "nfcReason", width: 22 },
+      { header: "Catatan Bypass", key: "nfcNote", width: 28 },
+      { header: "Status Checkpoint", key: "checkpointStatus", width: 20 },
+      { header: "Status Patroli", key: "status", width: 18 },
+    ];
+
+    styleExcelWorksheet(historySheet, "LAPORAN RIWAYAT PATROLI", subtitle);
+
+    exportLogs.forEach((log, index) => {
+      historySheet.addRow({
+        no: index + 1,
+        reportNumber: log.reportNumber ?? "-",
+        site: log.site?.name ?? "-",
+        pointCode: log.patrolPoint?.code ?? "-",
+        pointName: log.patrolPoint?.name ?? "-",
+        employeeNumber: log.user?.employeeNumber ?? "-",
+        security: log.user?.fullName ?? "-",
+        sequence: log.checkpoint?.sequence ?? "-",
+        startedAt: log.startedAt ? new Date(log.startedAt) : null,
+        completedAt: log.completedAt ? new Date(log.completedAt) : null,
+        duration: formatDuration(log.startedAt, log.completedAt),
+        gps: log.gpsValidationStatus ?? "-",
+        accuracy: log.gpsAccuracy ?? "-",
+        distance: log.distanceFromPoint ?? "-",
+        nfc: log.nfcValidationStatus ?? "-",
+        nfcBypass: log.nfcBypass ? "Ya" : "Tidak",
+        nfcReason: log.nfcBypassReason ?? "-",
+        nfcNote: log.nfcBypassNote ?? "-",
+        checkpointStatus: log.checkpoint?.status ?? "-",
+        status: getStatusLabel(log.status),
+      });
+    });
+
+    styleExcelDataRows(historySheet);
+
+    historySheet.getColumn("startedAt").numFmt = "dd mmm yyyy hh:mm";
+
+    historySheet.getColumn("completedAt").numFmt = "dd mmm yyyy hh:mm";
+
+    historySheet.getColumn("accuracy").numFmt = "0.00";
+    historySheet.getColumn("distance").numFmt = "0.00";
+
+    exportLogs.forEach((log, index) => {
+      const row = historySheet.getRow(index + 5);
+
+      styleExcelStatus(row.getCell(12), log.gpsValidationStatus);
+
+      styleExcelStatus(row.getCell(15), log.nfcValidationStatus);
+
+      styleExcelStatus(row.getCell(19), log.checkpoint?.status);
+
+      styleExcelStatus(row.getCell(20), getStatusLabel(log.status));
+    });
+
+    const answerWorkbook = createExcelWorkbook(
+      "Jawaban Patroli",
+      "Laporan jawaban pertanyaan patroli beserta dokumentasi",
+    );
+
+    const answerRecords = exportLogs.flatMap((log) =>
+      (log.answers ?? []).map((answer) => ({
+        reportNumber: log.reportNumber ?? "-",
+        site: log.site?.name ?? "-",
+        security: log.user?.fullName ?? "-",
+        employeeNumber: log.user?.employeeNumber ?? "-",
+        startedAt: log.startedAt,
+        point: log.patrolPoint?.name ?? "-",
+        question: answer.questionTextSnapshot ?? "-",
+        answer: answer.answerLabelSnapshot ?? answer.answerValue ?? "-",
+        photos: answer.photos ?? [],
+      })),
+    );
+
+    const maxAnswerPhotos = Math.max(
+      1,
+      ...answerRecords.map((item) => item.photos.length),
+    );
+
+    const answerSheet = answerWorkbook.addWorksheet("Jawaban");
+
+    answerSheet.columns = [
+      { header: "No.", key: "no", width: 8 },
+      { header: "ID Sesi", key: "reportNumber", width: 24 },
+      { header: "Site", key: "site", width: 22 },
+      { header: "NPP Security", key: "employeeNumber", width: 18 },
+      { header: "Nama Security", key: "security", width: 25 },
+      { header: "Waktu Patroli", key: "startedAt", width: 22 },
+      { header: "Titik Patroli", key: "point", width: 25 },
+      { header: "Pertanyaan", key: "question", width: 42 },
+      { header: "Jawaban", key: "answer", width: 30 },
+      { header: "Jumlah Foto", key: "photoCount", width: 14 },
+      ...Array.from({ length: maxAnswerPhotos }, (_, index) => ({
+        header: `Foto ${index + 1}`,
+        key: `photo${index + 1}`,
+        width: 20,
+      })),
+    ];
+
+    styleExcelWorksheet(answerSheet, "LAPORAN JAWABAN PATROLI", subtitle);
+
+    answerRecords.forEach((item, index) => {
+      const rowData: Record<string, unknown> = {
+        no: index + 1,
+        reportNumber: item.reportNumber,
+        site: item.site,
+        employeeNumber: item.employeeNumber,
+        security: item.security,
+        startedAt: item.startedAt ? new Date(item.startedAt) : null,
+        point: item.point,
+        question: item.question,
+        answer: item.answer,
+        photoCount: item.photos.length,
+      };
+
+      item.photos.forEach((_, photoIndex) => {
+        rowData[`photo${photoIndex + 1}`] = "";
       });
 
-      const columnIndex = 10 + photoIndex;
+      answerSheet.addRow(rowData);
+    });
+
+    styleExcelDataRows(answerSheet);
+
+    answerSheet.getColumn("startedAt").numFmt = "dd mmm yyyy hh:mm";
+
+    const answerPhotoTasks = answerRecords.flatMap((item, recordIndex) =>
+      item.photos.map((photo, photoIndex) => ({
+        recordIndex,
+        photoIndex,
+        fileUrl: photo.fileUrl,
+      })),
+    );
+
+    console.log("[Excel Export] Total jawaban:", answerRecords.length);
+
+    console.log("[Excel Export] Total foto jawaban:", answerPhotoTasks.length);
+
+    const answerPhotoResults = await mapWithConcurrency(
+      answerPhotoTasks,
+      6,
+      async (task) => ({
+        ...task,
+        image: await fetchPhotoForExcel(task.fileUrl),
+      }),
+    );
+
+    for (const result of answerPhotoResults) {
+      if (!result.image) continue;
+
+      const imageId = answerWorkbook.addImage({
+        base64: result.image.base64,
+        extension: result.image.extension,
+      });
+
+      const rowNumber = result.recordIndex + 5;
+      const columnIndex = 10 + result.photoIndex;
+
+      answerSheet.getRow(rowNumber).height = 75;
 
       answerSheet.addImage(imageId, {
         tl: {
@@ -696,142 +770,147 @@ export const exportPatrolHistoryExcel = async (
         editAs: "oneCell",
       });
     }
-  }
 
-  const findingWorkbook = createExcelWorkbook(
-    "Temuan Patroli",
-    "Laporan temuan patroli beserta dokumentasi",
-  );
+    const findingWorkbook = createExcelWorkbook(
+      "Temuan Patroli",
+      "Laporan temuan patroli beserta dokumentasi",
+    );
 
-  const findingRecords = exportLogs.flatMap((log) =>
-    (log.findings ?? []).map((finding) => ({
-      reportNumber: log.reportNumber ?? "-",
-      site: log.site?.name ?? "-",
-      employeeNumber: log.user?.employeeNumber ?? "-",
-      security: log.user?.fullName ?? "-",
-      point: log.patrolPoint?.name ?? "-",
-      pointCode: log.patrolPoint?.code ?? "-",
-      checkpointSequence: log.checkpoint?.sequence ?? "-",
-      startedAt: log.startedAt,
-      title: finding.title ?? "-",
-      description: finding.description ?? "-",
-      severity: finding.severity ?? "-",
-      status: finding.status ?? "-",
-      resolutionNote: finding.resolutionNote ?? "-",
-      resolvedAt: finding.resolvedAt,
-      photos: finding.photos ?? [],
-    })),
-  );
+    const findingRecords = exportLogs.flatMap((log) =>
+      (log.findings ?? []).map((finding) => ({
+        reportNumber: log.reportNumber ?? "-",
+        site: log.site?.name ?? "-",
+        employeeNumber: log.user?.employeeNumber ?? "-",
+        security: log.user?.fullName ?? "-",
+        point: log.patrolPoint?.name ?? "-",
+        pointCode: log.patrolPoint?.code ?? "-",
+        checkpointSequence: log.checkpoint?.sequence ?? "-",
+        startedAt: log.startedAt,
+        title: finding.title ?? "-",
+        description: finding.description ?? "-",
+        severity: finding.severity ?? "-",
+        status: finding.status ?? "-",
+        resolutionNote: finding.resolutionNote ?? "-",
+        resolvedAt: finding.resolvedAt,
+        photos: finding.photos ?? [],
+      })),
+    );
 
-  console.log("[Excel Export] Total patroli:", exportLogs.length);
-  console.log("[Excel Export] Total temuan:", findingRecords.length);
-  console.log(
-    "[Excel Export] Total foto temuan:",
-    findingRecords.reduce((total, item) => total + item.photos.length, 0),
-  );
+    console.log("[Excel Export] Total patroli:", exportLogs.length);
 
-  const maxFindingPhotos = Math.max(
-    1,
-    ...findingRecords.map((item) => item.photos.length),
-  );
+    console.log("[Excel Export] Total temuan:", findingRecords.length);
 
-  const findingColumns = [
-    { header: "No.", key: "no", width: 8 },
-    { header: "ID Sesi", key: "reportNumber", width: 24 },
-    { header: "Site", key: "site", width: 22 },
-    { header: "NPP Security", key: "employeeNumber", width: 18 },
-    { header: "Nama Security", key: "security", width: 25 },
-    { header: "Titik Patroli", key: "point", width: 25 },
-    { header: "Kode Titik", key: "pointCode", width: 16 },
-    { header: "Urutan Titik", key: "checkpointSequence", width: 14 },
-    { header: "Waktu Patroli", key: "startedAt", width: 22 },
-    { header: "Judul Temuan", key: "title", width: 30 },
-    { header: "Deskripsi", key: "description", width: 42 },
-    { header: "Severity", key: "severity", width: 16 },
-    { header: "Status", key: "status", width: 18 },
-    { header: "Catatan Penyelesaian", key: "resolutionNote", width: 38 },
-    { header: "Waktu Penyelesaian", key: "resolvedAt", width: 22 },
-    { header: "Jumlah Foto", key: "photoCount", width: 14 },
-    ...Array.from({ length: maxFindingPhotos }, (_, index) => ({
-      header: `Foto ${index + 1}`,
-      key: `photo${index + 1}`,
-      width: 20,
-    })),
-  ];
+    const maxFindingPhotos = Math.max(
+      1,
+      ...findingRecords.map((item) => item.photos.length),
+    );
 
-  const findingSheet = findingWorkbook.addWorksheet("Temuan");
+    const findingSheet = findingWorkbook.addWorksheet("Temuan");
 
-  findingSheet.columns = findingColumns;
+    findingSheet.columns = [
+      { header: "No.", key: "no", width: 8 },
+      { header: "ID Sesi", key: "reportNumber", width: 24 },
+      { header: "Site", key: "site", width: 22 },
+      { header: "NPP Security", key: "employeeNumber", width: 18 },
+      { header: "Nama Security", key: "security", width: 25 },
+      { header: "Titik Patroli", key: "point", width: 25 },
+      { header: "Kode Titik", key: "pointCode", width: 16 },
+      { header: "Urutan Titik", key: "checkpointSequence", width: 14 },
+      { header: "Waktu Patroli", key: "startedAt", width: 22 },
+      { header: "Judul Temuan", key: "title", width: 30 },
+      { header: "Deskripsi", key: "description", width: 42 },
+      { header: "Severity", key: "severity", width: 16 },
+      { header: "Status", key: "status", width: 18 },
+      { header: "Catatan Penyelesaian", key: "resolutionNote", width: 38 },
+      { header: "Waktu Penyelesaian", key: "resolvedAt", width: 22 },
+      { header: "Jumlah Foto", key: "photoCount", width: 14 },
+      ...Array.from({ length: maxFindingPhotos }, (_, index) => ({
+        header: `Foto ${index + 1}`,
+        key: `photo${index + 1}`,
+        width: 20,
+      })),
+    ];
 
-  styleExcelWorksheet(findingSheet, "LAPORAN TEMUAN PATROLI", subtitle);
+    styleExcelWorksheet(findingSheet, "LAPORAN TEMUAN PATROLI", subtitle);
 
-  findingRecords.forEach((item, index) => {
-    const rowData: Record<string, unknown> = {
-      no: index + 1,
-      reportNumber: item.reportNumber,
-      site: item.site,
-      employeeNumber: item.employeeNumber,
-      security: item.security,
-      point: item.point,
-      pointCode: item.pointCode,
-      checkpointSequence: item.checkpointSequence,
-      startedAt: item.startedAt ? new Date(item.startedAt) : null,
-      title: item.title,
-      description: item.description,
-      severity: item.severity,
-      status: item.status,
-      resolutionNote: item.resolutionNote,
-      resolvedAt: item.resolvedAt ? new Date(item.resolvedAt) : null,
-      photoCount: item.photos.length,
-    };
+    findingRecords.forEach((item, index) => {
+      const rowData: Record<string, unknown> = {
+        no: index + 1,
+        reportNumber: item.reportNumber,
+        site: item.site,
+        employeeNumber: item.employeeNumber,
+        security: item.security,
+        point: item.point,
+        pointCode: item.pointCode,
+        checkpointSequence: item.checkpointSequence,
+        startedAt: item.startedAt ? new Date(item.startedAt) : null,
+        title: item.title,
+        description: item.description,
+        severity: item.severity,
+        status: item.status,
+        resolutionNote: item.resolutionNote,
+        resolvedAt: item.resolvedAt ? new Date(item.resolvedAt) : null,
+        photoCount: item.photos.length,
+      };
 
-    item.photos.forEach((_, photoIndex) => {
-      rowData[`photo${photoIndex + 1}`] = "";
+      item.photos.forEach((_, photoIndex) => {
+        rowData[`photo${photoIndex + 1}`] = "";
+      });
+
+      findingSheet.addRow(rowData);
     });
 
-    findingSheet.addRow(rowData);
-  });
+    styleExcelDataRows(findingSheet);
 
-  styleExcelDataRows(findingSheet);
+    findingSheet.getColumn("startedAt").numFmt = "dd mmm yyyy hh:mm";
 
-  findingSheet.getColumn("startedAt").numFmt = "dd mmm yyyy hh:mm";
-  findingSheet.getColumn("resolvedAt").numFmt = "dd mmm yyyy hh:mm";
+    findingSheet.getColumn("resolvedAt").numFmt = "dd mmm yyyy hh:mm";
 
-  findingRecords.forEach((item, index) => {
-    const row = findingSheet.getRow(index + 5);
+    findingRecords.forEach((item, index) => {
+      const row = findingSheet.getRow(index + 5);
 
-    styleExcelStatus(row.getCell(12), item.severity);
-    styleExcelStatus(row.getCell(13), item.status);
-  });
+      styleExcelStatus(row.getCell(12), item.severity);
+      styleExcelStatus(row.getCell(13), item.status);
+    });
 
-  for (let index = 0; index < findingRecords.length; index++) {
-    const item = findingRecords[index];
-    const rowNumber = index + 5;
-    const row = findingSheet.getRow(rowNumber);
+    const findingPhotoTasks = findingRecords.flatMap((item, recordIndex) =>
+      item.photos.map((photo, photoIndex) => ({
+        recordIndex,
+        photoIndex,
+        fileUrl: photo.fileUrl,
+      })),
+    );
 
-    if (item.photos.length > 0) {
-      row.height = 75;
-    }
+    console.log("[Excel Export] Total foto temuan:", findingPhotoTasks.length);
 
-    for (let photoIndex = 0; photoIndex < item.photos.length; photoIndex++) {
-      const photo = item.photos[photoIndex];
+    const findingPhotoResults = await mapWithConcurrency(
+      findingPhotoTasks,
+      6,
+      async (task) => ({
+        ...task,
+        image: await fetchPhotoForExcel(task.fileUrl),
+      }),
+    );
 
-      const image = await fetchPhotoForExcel(photo.fileUrl);
-
-      if (!image) {
+    for (const result of findingPhotoResults) {
+      if (!result.image) {
         console.warn(
           "[Excel Export] Foto temuan gagal dimasukkan:",
-          photo.fileUrl,
+          result.fileUrl,
         );
+
         continue;
       }
 
       const imageId = findingWorkbook.addImage({
-        base64: image.base64,
-        extension: image.extension,
+        base64: result.image.base64,
+        extension: result.image.extension,
       });
 
-      const columnIndex = 16 + photoIndex;
+      const rowNumber = result.recordIndex + 5;
+      const columnIndex = 16 + result.photoIndex;
+
+      findingSheet.getRow(rowNumber).height = 75;
 
       findingSheet.addImage(imageId, {
         tl: {
@@ -845,29 +924,48 @@ export const exportPatrolHistoryExcel = async (
         editAs: "oneCell",
       });
     }
+
+    console.log("[Excel Export] Mulai membuat file ZIP...");
+
+    await downloadExcelZip(
+      [
+        {
+          workbook: historyWorkbook,
+          fileName: `01-Riwayat-Patroli-${timestamp}.xlsx`,
+        },
+        {
+          workbook: answerWorkbook,
+          fileName: `02-Jawaban-Patroli-${timestamp}.xlsx`,
+        },
+        {
+          workbook: findingWorkbook,
+          fileName: `03-Temuan-Patroli-${timestamp}.xlsx`,
+        },
+      ],
+      `Laporan-Patroli-${timestamp}.zip`,
+    );
+
+    const durationSeconds = ((performance.now() - startedTime) / 1000).toFixed(
+      2,
+    );
+
+    console.log(`[Excel Export] Selesai dalam ${durationSeconds} detik.`);
+
+    toast.success("Export Excel berhasil!", {
+      description: `ZIP berisi Riwayat Patroli, Jawaban Patroli beserta foto, dan Temuan Patroli beserta foto. Waktu proses: ${durationSeconds} detik.`,
+      duration: 7000,
+    });
+  } catch (error) {
+    console.error("[Excel Export] Gagal:", error);
+
+    toast.error("Export Excel gagal.", {
+      description:
+        error instanceof Error
+          ? error.message
+          : "Terjadi kesalahan saat membuat laporan.",
+      duration: 7000,
+    });
+  } finally {
+    photoCache.clear();
   }
-
-  await downloadExcelZip(
-    [
-      {
-        workbook: historyWorkbook,
-        fileName: `01-Riwayat-Patroli-${timestamp}.xlsx`,
-      },
-      {
-        workbook: answerWorkbook,
-        fileName: `02-Jawaban-Patroli-${timestamp}.xlsx`,
-      },
-      {
-        workbook: findingWorkbook,
-        fileName: `03-Temuan-Patroli-${timestamp}.xlsx`,
-      },
-    ],
-    `Laporan-Patroli-${timestamp}.zip`,
-  );
-
-  toast.success("Export Excel berhasil!", {
-    description:
-      "ZIP berisi Riwayat Patroli, Jawaban Patroli beserta foto, dan Temuan Patroli beserta foto.",
-    duration: 5000,
-  });
 };

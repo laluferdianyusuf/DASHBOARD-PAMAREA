@@ -39,10 +39,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { usePatrolHistoryGroupedByUser } from "../hooks/schedule/usePatrolHistory";
+import {
+  useExportPatrolHistory,
+  usePatrolHistoryGroupedByUser,
+} from "../hooks/schedule/usePatrolHistory";
 import { getPatrolHistoryGroupedByUser } from "../services/patrol/patrol-history.service";
 import { getPhotoUrl } from "../utils/getPhoto";
-import { exportPatrolHistoryExcel } from "../utils/patrolHistoryExcel";
 import { PaginationComponent } from "./PaginationComponent";
 interface RiwayatPatroliViewProps {
   selectedSite: string;
@@ -156,6 +158,25 @@ const getStatusBadge = (status?: string) => {
   }
 };
 
+const downloadExportFile = (blob: Blob) => {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `Laporan-Patroli-${new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Makassar",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())}.zip`;
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.URL.revokeObjectURL(url);
+};
+
 interface PhotoItem {
   id: string;
   fileUrl: string;
@@ -222,7 +243,6 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
   const [selectedDetailLog, setSelectedDetailLog] =
     useState<PatrolRecord | null>(null);
 
-  const [isExporting, setIsExporting] = useState(false);
   const [isExportDateDialogOpen, setIsExportDateDialogOpen] = useState(false);
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
@@ -250,6 +270,8 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
     isFetching,
     refetch,
   } = usePatrolHistoryGroupedByUser(queryParams);
+  const exportMutation = useExportPatrolHistory();
+  const isExporting = exportMutation.isPending;
 
   const logs = useMemo<PatrolRecord[]>(() => {
     return (
@@ -348,20 +370,35 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
       return;
     }
 
-    setIsExporting(true);
-
     try {
-      await exportPatrolHistoryExcel(queryParams, selectedSite, {
+      const blob = await exportMutation.mutateAsync({
         startDate: exportStartDate,
         endDate: exportEndDate,
+        siteId: selectedSite,
       });
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = `Laporan-Patroli-${new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Makassar",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date())}.zip`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 1000);
 
       setIsExportDateDialogOpen(false);
     } catch (error) {
-      console.error("Gagal export Excel:", error);
       alert("Gagal membuat laporan Excel. Silakan coba kembali.");
-    } finally {
-      setIsExporting(false);
     }
   };
 

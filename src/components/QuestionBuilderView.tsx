@@ -16,6 +16,7 @@ import type {
   Question as BackendQuestion,
   CreateQuestionPayload,
   PointQuestion as PointQuestionItem,
+  UpdateQuestionPayload,
 } from "../types";
 
 import { Badge } from "@/components/ui/badge";
@@ -724,47 +725,32 @@ export const QuestionBuilderView: React.FC = () => {
     e.preventDefault();
 
     if (!editingQuestion) return;
-
     if (!validateForm()) return;
+
+    const payload = {
+      questionText: formText.trim(),
+      questionType: formInputType,
+      isRequired: formRequired,
+      photoRequirement: formRequirePhoto ? "REQUIRED" : "OPTIONAL",
+      questionOptions:
+        formInputType === "SINGLE_CHOICE"
+          ? formOptions.map((option) => ({
+              label: option.label.trim(),
+              isSafe: option.isSafe,
+            }))
+          : undefined,
+    } as UpdateQuestionPayload;
 
     try {
       await updateQuestionMutation.mutateAsync({
         id: editingQuestion.id,
-        payload: {
-          questionText: formText.trim(),
-          isRequired: formRequired,
-          photoRequirement: formRequirePhoto ? "REQUIRED" : "NONE",
-        },
+        payload,
       });
 
-      if (formInputType === "SINGLE_CHOICE") {
-        for (let index = 0; index < formOptions.length; index++) {
-          const option = formOptions[index];
-
-          if (!option.label.trim()) continue;
-
-          const payload = {
-            value: option.label.trim().toUpperCase(),
-            label: option.label.trim(),
-            sortOrder: index + 1,
-            isSafe: option.isSafe,
-          };
-
-          if (option.id) {
-            await updateOptionMutation.mutateAsync({
-              optionId: option.id,
-              payload,
-            });
-          } else {
-            await createOptionMutation.mutateAsync({
-              questionId: editingQuestion.id,
-              payload,
-            });
-          }
-        }
-      }
       toast.success(`Pertanyaan ${editingQuestion.code} berhasil diperbarui.`);
+
       closeFormDialog();
+      await refetch();
     } catch (error) {
       toast.error("Gagal memperbarui pertanyaan", {
         description: getErrorMessage(error),
