@@ -18,6 +18,7 @@ export type ColumnSearch = {
   squadSite: string;
   compliance: string;
   score: string;
+  onTimeRate: string;
   status: string;
 };
 

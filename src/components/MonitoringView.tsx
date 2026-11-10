@@ -79,6 +79,7 @@ const INITIAL_COLUMN_SEARCH: ColumnSearch = {
   officer: "",
   squadSite: "",
   compliance: "",
+  onTimeRate: "",
   score: "",
   status: "",
 };
@@ -525,6 +526,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
         officer: (officer) => `${officer.name} ${officer.npp} ${officer.role}`,
         squadSite: (officer) => `${officer.squad} ${officer.siteName}`,
         compliance: (officer) => `${officer.complianceRate}%`,
+        onTimeRate: (officer) => `${officer.onTimeRate}%`,
         score: (officer) => `${officer.score}`,
         status: (officer) => officer.status,
       },
@@ -1167,6 +1169,9 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
                       Kepatuhan
                     </TableHead>
                     <TableHead className="text-center text-[11px]">
+                      Ketepatan Waktu
+                    </TableHead>
+                    <TableHead className="text-center text-[11px]">
                       Skor
                     </TableHead>
                     <TableHead className="min-w-[120px] text-[11px]">
@@ -1218,7 +1223,16 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
                         className="h-7 min-w-0 px-1 text-center text-[10px]"
                       />
                     </TableCell>
-
+                    <TableCell className="p-1.5">
+                      <Input
+                        value={columnSearch.onTimeRate}
+                        onChange={(event) =>
+                          updateColumnSearch("onTimeRate", event.target.value)
+                        }
+                        placeholder="%"
+                        className="h-7 min-w-0 px-1 text-center text-[10px]"
+                      />
+                    </TableCell>
                     <TableCell className="p-1.5">
                       <Input
                         value={columnSearch.score}
@@ -1282,6 +1296,20 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
                         <TableCell className="text-center">
                           <span className="text-xs font-semibold tabular-nums text-emerald-700">
                             {officer.complianceRate}%
+                          </span>
+                        </TableCell>
+
+                        <TableCell className="text-center">
+                          <span
+                            className={`text-xs font-semibold tabular-nums ${
+                              officer.onTimeRate >= 95
+                                ? "text-emerald-700"
+                                : officer.onTimeRate >= 80
+                                  ? "text-blue-700"
+                                  : "text-amber-700"
+                            }`}
+                          >
+                            {officer.onTimeRate}%
                           </span>
                         </TableCell>
 
