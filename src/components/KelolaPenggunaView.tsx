@@ -1294,7 +1294,6 @@ export const KelolaPenggunaView: React.FC<KelolaPenggunaViewProps> = ({
                 <TableHeader>
                   <TableRow>
                     <TableHead>ID Regu</TableHead>
-                    <TableHead>ID Regu</TableHead>
                     <TableHead>Nama Regu</TableHead>
                     <TableHead>Deskripsi</TableHead>
                     <TableHead>Site</TableHead>
