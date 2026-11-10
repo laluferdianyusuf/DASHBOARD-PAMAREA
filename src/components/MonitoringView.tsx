@@ -747,20 +747,27 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
             type="button"
             size="sm"
             variant="outline"
-            className="rounded text-xs"
+            className="h-9 gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
             onClick={handleExportExcel}
             disabled={isExporting || filteredLeaderboard.length === 0}
           >
-            <Download
-              className={`mr-2 size-3.5 ${isExporting ? "animate-pulse" : ""}`}
-            />
-            {isExporting ? "Mengunduh..." : "Export Excel"}
+            {isExporting ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Memproses...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Download Excel
+              </>
+            )}
           </Button>
 
           <Button
             size="sm"
             variant="outline"
-            className="rounded text-xs"
+            className="rounded text-xs h-9"
             onClick={handleRefresh}
             disabled={isRefreshing}
             title="Refresh semua data"

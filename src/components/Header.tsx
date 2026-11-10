@@ -152,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           variant="outline"
           size="lg"
-          className="shrink-0 text-black bg-[#FED400] hover:bg-[#e9c300]"
+          className="shrink-0 text- border border-emerald-600 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-600"
           title="Import & Export Excel"
           onClick={() => setIsExcelDialogOpen(true)}
         >

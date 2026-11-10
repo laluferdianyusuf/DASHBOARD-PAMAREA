@@ -680,6 +680,7 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
               !filteredFindings.length ||
               isExportingExcel
             }
+            className={`h-9 gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800`}
           >
             {isExportingExcel ? (
               <>
@@ -689,7 +690,7 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
             ) : (
               <>
                 <Download className="mr-2 h-4 w-4" />
-                Ekspor Excel
+                Download Excel
               </>
             )}
           </Button>
@@ -697,7 +698,7 @@ export const TemuanPatroliView: React.FC<TemuanPatroliViewProps> = ({
           <Button
             size="sm"
             variant="outline"
-            className="rounded text-xs"
+            className="rounded text-xs h-9"
             disabled={isFetching}
             onClick={refetchAll}
           >
