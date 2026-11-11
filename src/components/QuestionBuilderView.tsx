@@ -3,11 +3,9 @@ import React, { useMemo, useState } from "react";
 import {
   useActivateQuestion,
   useCreateQuestion,
-  useCreateQuestionOption,
   useDeactivateQuestion,
   useQuestions,
   useUpdateQuestion,
-  useUpdateQuestionOption,
 } from "../hooks/question/useQuestions";
 
 import { usePatrolPoints } from "../hooks/patrol-point/usePatrolPoints";
@@ -78,7 +76,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+
 import { toast } from "sonner";
+
 import {
   useAssignQuestion,
   usePointQuestions,
@@ -123,58 +123,18 @@ interface QuestionFormProps {
 }
 
 const INPUT_TYPES = [
-  {
-    value: "YES_NO",
-    label: "Ya / Tidak",
-  },
-  {
-    value: "SINGLE_CHOICE",
-    label: "Pilihan Ganda",
-  },
-  {
-    value: "TEXT",
-    label: "Catatan Teks",
-  },
+  { value: "YES_NO", label: "Ya / Tidak" },
+  { value: "SINGLE_CHOICE", label: "Pilihan Ganda" },
+  { value: "TEXT", label: "Catatan Teks" },
 ] as const;
 
 const DEFAULT_OPTIONS: OptionForm[] = [
-  {
-    label: "Kondisi Normal / Baik",
-    isSafe: true,
-  },
-  {
-    label: "Ada Kerusakan / Kendala",
-    isSafe: false,
-  },
+  { label: "Kondisi Normal / Baik", isSafe: true },
+  { label: "Ada Kerusakan / Kendala", isSafe: false },
 ];
 
-const getInputTypeLabel = (type: string) => {
-  return INPUT_TYPES.find((item) => item.value === type)?.label ?? type;
-};
-
-const getInputTypeVariant = (type: string) => {
-  switch (type) {
-    case "YES_NO":
-      return "bg-emerald-50 text-emerald-700 border-emerald-200";
-
-    case "SINGLE_CHOICE":
-      return "bg-amber-50 text-amber-700 border-amber-200";
-
-    case "TEXT":
-      return "bg-slate-100 text-slate-700 border-slate-200";
-
-    default:
-      return "bg-slate-100 text-slate-700 border-slate-200";
-  }
-};
-
-const getStatusLabel = (status: string) => {
-  return status === "ACTIVE" ? "Aktif" : "Nonaktif";
-};
-
-const getPhotoLabel = (photoRequirement: string) => {
-  return photoRequirement === "REQUIRED" ? "Wajib Foto" : "Foto Opsional";
-};
+const getInputTypeLabel = (type: string) =>
+  INPUT_TYPES.find((item) => item.value === type)?.label ?? type;
 
 const getErrorMessage = (error: unknown): string => {
   const err = error as {
@@ -188,11 +148,25 @@ const getErrorMessage = (error: unknown): string => {
 
   const message = err?.response?.data?.message;
 
-  if (Array.isArray(message)) {
-    return message.join(", ");
-  }
+  if (Array.isArray(message)) return message.join(", ");
 
   return message || err?.message || "Terjadi kesalahan.";
+};
+
+const getTypeStyle = (type: string) => {
+  switch (type) {
+    case "YES_NO":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+
+    case "SINGLE_CHOICE":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+
+    case "TEXT":
+      return "bg-slate-100 text-slate-600 border-slate-200";
+
+    default:
+      return "bg-slate-100 text-slate-600 border-slate-200";
+  }
 };
 
 const QuestionFormFields: React.FC<QuestionFormProps> = ({
@@ -219,7 +193,10 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
       (option) => option.label.trim().toLowerCase() === label.toLowerCase(),
     );
 
-    if (duplicate) return;
+    if (duplicate) {
+      toast.error("Pilihan jawaban sudah tersedia.");
+      return;
+    }
 
     setFormOptions([
       ...formOptions,
@@ -233,14 +210,20 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
   };
 
   const handleRemoveOption = (index: number) => {
-    if (formOptions.length <= 2) return;
-
-    const option = formOptions[index];
-
-    // Opsi yang sudah tersimpan tidak dihapus karena belum ada hook remove.
-    if (option.id) return;
+    if (formOptions.length <= 2) {
+      toast.error("Minimal harus tersedia dua pilihan.");
+      return;
+    }
 
     setFormOptions(formOptions.filter((_, i) => i !== index));
+  };
+
+  const handleTypeChange = (value: BackendQuestionType) => {
+    setFormInputType(value);
+
+    if (value === "SINGLE_CHOICE" && formOptions.length === 0) {
+      setFormOptions(DEFAULT_OPTIONS.map((option) => ({ ...option })));
+    }
   };
 
   return (
@@ -248,7 +231,7 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
       {formError && (
         <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          <span>{formError}</span>
+          {formError}
         </div>
       )}
 
@@ -256,30 +239,28 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
         <Label>Teks Pertanyaan *</Label>
 
         <Textarea
-          className="rounded"
           rows={3}
-          placeholder="Contoh: Apakah seluruh pekerja menggunakan APD sesuai ketentuan?"
+          className="resize-none rounded"
+          placeholder="Masukkan teks pertanyaan..."
           value={formText}
           onChange={(e) => setFormText(e.target.value)}
         />
       </div>
 
       <div className="space-y-2">
-        <Label>Tipe Input Jawaban *</Label>
+        <Label>Tipe Jawaban *</Label>
 
         <Select
           value={formInputType}
           onValueChange={(value) =>
-            setFormInputType(value as BackendQuestionType)
+            handleTypeChange(value as BackendQuestionType)
           }
         >
-          <SelectTrigger className="rounded w-full">
-            <SelectValue placeholder="Pilih tipe pertanyaan">
-              {INPUT_TYPES.find((item) => item.value === formInputType)?.label}
-            </SelectValue>
+          <SelectTrigger className="w-full rounded">
+            <SelectValue placeholder="Pilih tipe jawaban" />
           </SelectTrigger>
 
-          <SelectContent className={`w-full`}>
+          <SelectContent>
             {INPUT_TYPES.map((item) => (
               <SelectItem key={item.value} value={item.value}>
                 {item.label}
@@ -289,58 +270,53 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
         </Select>
       </div>
 
-      {/* YES NO OPTIONS */}
-
       {formInputType === "YES_NO" && (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
-          <p className="text-sm font-semibold text-emerald-800">
-            Pilihan otomatis
-          </p>
+        <div className="space-y-2">
+          <Label>Pilihan Jawaban</Label>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Badge className="rounded bg-white text-emerald-700 hover:bg-white">
+          <div className="flex gap-2">
+            <Badge className="rounded bg-emerald-50 px-3 py-1.5 text-emerald-700 hover:bg-emerald-50">
               Ya
             </Badge>
 
-            <Badge className="rounded bg-white text-rose-700 hover:bg-white">
+            <Badge className="rounded bg-rose-50 px-3 py-1.5 text-rose-700 hover:bg-rose-50">
               Tidak
             </Badge>
           </div>
 
-          <p className="mt-2 text-xs text-emerald-700">
-            Opsi Ya dan Tidak dibuat otomatis oleh backend.
+          <p className="text-xs text-slate-500">
+            Pilihan Ya dan Tidak dibuat otomatis oleh sistem.
           </p>
         </div>
       )}
 
-      {/* SINGLE CHOICE OPTIONS */}
-
       {formInputType === "SINGLE_CHOICE" && (
-        <div className="space-y-3 rounded border border-slate-200 p-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">
-              Pilihan Jawaban
-            </p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Pilihan Jawaban *</Label>
+              <p className="mt-1 text-xs text-slate-500">
+                Minimal dua pilihan jawaban.
+              </p>
+            </div>
 
-            <p className="text-xs text-slate-500">
-              Minimal harus tersedia dua pilihan.
-            </p>
+            <Badge variant="outline" className="rounded">
+              {formOptions.length} pilihan
+            </Badge>
           </div>
 
-          <div className="space-y-3">
+          <div className="divide-y divide-slate-100 border-y border-slate-200">
             {formOptions.map((option, index) => (
-              <div
-                key={option.id ?? `new-${index}`}
-                className="space-y-2 rounded border border-slate-100 p-3"
-              >
+              <div key={option.id ?? `new-${index}`} className="py-3">
                 <div className="flex items-center gap-2">
-                  <span className="w-6 text-center text-xs text-slate-400">
+                  <span className="w-6 shrink-0 text-xs text-slate-400">
                     {index + 1}.
                   </span>
 
                   <Input
-                    className="rounded"
+                    className="h-9 rounded"
                     value={option.label}
+                    placeholder="Nama pilihan jawaban"
                     onChange={(e) => {
                       const updated = [...formOptions];
 
@@ -356,23 +332,18 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="rounded text-rose-600"
-                    disabled={Boolean(option.id) || formOptions.length <= 2}
-                    title={
-                      option.id
-                        ? "Opsi tersimpan belum dapat dihapus"
-                        : "Hapus opsi"
-                    }
+                    size="sm"
+                    className="h-9 shrink-0 rounded px-2 text-rose-600 hover:bg-rose-50"
+                    disabled={formOptions.length <= 2}
                     onClick={() => handleRemoveOption(index)}
                   >
-                    <X className="size-4" />
+                    <Trash2 className="mr-1.5 size-3.5" />
+                    Hapus
                   </Button>
                 </div>
 
-                <label className="flex cursor-pointer items-center gap-2 pl-8">
+                <label className="mt-2 flex cursor-pointer items-center gap-2 pl-8">
                   <Checkbox
-                    className="rounded"
                     checked={option.isSafe}
                     onCheckedChange={(checked) => {
                       const updated = [...formOptions];
@@ -387,8 +358,14 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
                   />
 
                   <span className="text-xs text-slate-600">
-                    Jawaban ini menunjukkan kondisi aman
+                    Jawaban menunjukkan kondisi aman
                   </span>
+
+                  {option.isSafe && (
+                    <Badge className="rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                      Aman
+                    </Badge>
+                  )}
                 </label>
               </div>
             ))}
@@ -396,7 +373,7 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
 
           <div className="flex gap-2">
             <Input
-              className="rounded"
+              className="h-9 rounded"
               placeholder="Masukkan pilihan baru..."
               value={newOptionInput}
               onChange={(e) => setNewOptionInput(e.target.value)}
@@ -411,36 +388,30 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
             <Button
               type="button"
               variant="outline"
-              className="rounded"
+              className="h-9 shrink-0 rounded"
               onClick={handleAddOption}
             >
-              <Plus className="mr-1 size-4" />
+              <Plus className="mr-1.5 size-4" />
               Tambah
             </Button>
           </div>
         </div>
       )}
 
-      {/* SETTINGS */}
-
-      <div className="space-y-3 rounded border border-slate-200 p-4">
-        <p className="text-sm font-semibold text-slate-900">
-          Pengaturan Pertanyaan
-        </p>
+      <div className="space-y-3 border-t border-slate-200 pt-4">
+        <Label>Pengaturan Pertanyaan</Label>
 
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox
-            className="rounded"
             checked={formRequired}
             onCheckedChange={(checked) => setFormRequired(checked === true)}
           />
 
           <span>
             <span className="block text-sm font-medium text-slate-800">
-              Wajib Diisi
+              Wajib diisi
             </span>
-
-            <span className="block text-xs text-slate-500">
+            <span className="text-xs text-slate-500">
               Petugas harus mengisi pertanyaan ini.
             </span>
           </span>
@@ -448,33 +419,27 @@ const QuestionFormFields: React.FC<QuestionFormProps> = ({
 
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox
-            className="rounded"
             checked={formRequirePhoto}
             onCheckedChange={(checked) => setFormRequirePhoto(checked === true)}
           />
 
           <span>
             <span className="block text-sm font-medium text-slate-800">
-              Wajib Lampirkan Foto
+              Wajib lampirkan foto
             </span>
-
-            <span className="block text-xs text-slate-500">
-              Petugas wajib melampirkan bukti foto lapangan.
+            <span className="text-xs text-slate-500">
+              Petugas harus melampirkan foto sebagai bukti pemeriksaan.
             </span>
           </span>
         </label>
       </div>
 
-      <div className="rounded border border-blue-100 bg-blue-50 p-3">
-        <div className="flex items-start gap-2">
-          <Info className="mt-0.5 size-4 shrink-0 text-blue-600" />
-
-          <p className="text-xs leading-relaxed text-blue-700">
-            Pertanyaan baru mengikuti konfigurasi alokasi Patrol Point pada
-            backend. Pengaturan kategori, severity, dan auto finding belum
-            tersedia pada model Question.
-          </p>
-        </div>
+      <div className="flex items-start gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
+        <Info className="mt-0.5 size-4 shrink-0" />
+        <p>
+          Perubahan pertanyaan akan menggunakan kode dan ID yang sama. Jawaban
+          patrol lama tidak otomatis dikonversi.
+        </p>
       </div>
     </div>
   );
@@ -489,7 +454,20 @@ export const QuestionBuilderView: React.FC = () => {
     refetch,
     isFetching,
   } = useQuestions();
+
   const patrolPointsQuery = usePatrolPoints();
+
+  const createQuestionMutation = useCreateQuestion();
+  const updateQuestionMutation = useUpdateQuestion();
+  const deactivateQuestionMutation = useDeactivateQuestion();
+  const activateQuestionMutation = useActivateQuestion();
+
+  const assignQuestionMutation = useAssignQuestion();
+  const unassignQuestionMutation = useUnassignQuestion();
+
+  const questions = useMemo<BackendQuestion[]>(() => {
+    return Array.isArray(questionsData) ? questionsData : [];
+  }, [questionsData]);
 
   const patrolPoints = useMemo<PatrolPointItem[]>(() => {
     const response = patrolPointsQuery.data as
@@ -507,23 +485,35 @@ export const QuestionBuilderView: React.FC = () => {
     [patrolPoints],
   );
 
-  const createQuestionMutation = useCreateQuestion();
-  const updateQuestionMutation = useUpdateQuestion();
-  const deactivateQuestionMutation = useDeactivateQuestion();
-  const activateQuestionMutation = useActivateQuestion();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedInputType, setSelectedInputType] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState("all");
 
-  const createOptionMutation = useCreateQuestionOption();
-  const updateOptionMutation = useUpdateQuestionOption();
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  const assignQuestionMutation = useAssignQuestion();
-  const unassignQuestionMutation = useUnassignQuestion();
+  const [editingQuestion, setEditingQuestion] =
+    useState<BackendQuestion | null>(null);
+
+  const [deletingQuestion, setDeletingQuestion] =
+    useState<BackendQuestion | null>(null);
 
   const [assignmentQuestion, setAssignmentQuestion] =
     useState<BackendQuestion | null>(null);
 
   const [selectedPatrolPointId, setSelectedPatrolPointId] = useState("");
-
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
+
+  const [formText, setFormText] = useState("");
+  const [formInputType, setFormInputType] =
+    useState<BackendQuestionType>("YES_NO");
+
+  const [formOptions, setFormOptions] = useState<OptionForm[]>(DEFAULT_OPTIONS);
+
+  const [newOptionInput, setNewOptionInput] = useState("");
+
+  const [formRequired, setFormRequired] = useState(true);
+  const [formRequirePhoto, setFormRequirePhoto] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const {
     data: pointAssignmentsData,
@@ -538,56 +528,6 @@ export const QuestionBuilderView: React.FC = () => {
 
     return pointAssignmentsData as PointQuestionItem[];
   }, [pointAssignmentsData]);
-
-  const currentAssignment = useMemo(() => {
-    if (!assignmentQuestion) return undefined;
-
-    return pointAssignments.find(
-      (item) => item.questionId === assignmentQuestion.id,
-    );
-  }, [pointAssignments, assignmentQuestion]);
-
-  const isAssignmentSaving =
-    assignQuestionMutation.isPending || unassignQuestionMutation.isPending;
-
-  const isSaving =
-    createQuestionMutation.isPending ||
-    updateQuestionMutation.isPending ||
-    createOptionMutation.isPending ||
-    updateOptionMutation.isPending;
-
-  const questions = useMemo<BackendQuestion[]>(() => {
-    if (!Array.isArray(questionsData)) return [];
-
-    return questionsData as BackendQuestion[];
-  }, [questionsData]);
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedInputType, setSelectedInputType] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState("all");
-
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-
-  const [editingQuestion, setEditingQuestion] =
-    useState<BackendQuestion | null>(null);
-
-  const [deletingQuestion, setDeletingQuestion] =
-    useState<BackendQuestion | null>(null);
-
-  const [formText, setFormText] = useState("");
-
-  const [formInputType, setFormInputType] =
-    useState<BackendQuestionType>("YES_NO");
-
-  const [formOptions, setFormOptions] = useState<OptionForm[]>(DEFAULT_OPTIONS);
-
-  const [newOptionInput, setNewOptionInput] = useState("");
-
-  const [formRequired, setFormRequired] = useState(true);
-
-  const [formRequirePhoto, setFormRequirePhoto] = useState(false);
-
-  const [formError, setFormError] = useState<string | null>(null);
 
   const filteredQuestions = useMemo(() => {
     return questions.filter((question) => {
@@ -619,6 +559,20 @@ export const QuestionBuilderView: React.FC = () => {
     });
   }, [questions, searchQuery, selectedInputType, selectedStatus]);
 
+  const currentAssignment = useMemo(() => {
+    if (!assignmentQuestion) return undefined;
+
+    return pointAssignments.find(
+      (item) => item.questionId === assignmentQuestion.id,
+    );
+  }, [pointAssignments, assignmentQuestion]);
+
+  const isSaving =
+    createQuestionMutation.isPending || updateQuestionMutation.isPending;
+
+  const isAssignmentSaving =
+    assignQuestionMutation.isPending || unassignQuestionMutation.isPending;
+
   const resetForm = () => {
     setFormText("");
     setFormInputType("YES_NO");
@@ -627,6 +581,14 @@ export const QuestionBuilderView: React.FC = () => {
     setFormRequired(true);
     setFormRequirePhoto(false);
     setFormError(null);
+  };
+
+  const closeFormDialog = () => {
+    if (isSaving) return;
+
+    setIsAddModalOpen(false);
+    setEditingQuestion(null);
+    resetForm();
   };
 
   const handleOpenAdd = () => {
@@ -652,14 +614,7 @@ export const QuestionBuilderView: React.FC = () => {
     setNewOptionInput("");
     setFormRequired(question.isRequired);
     setFormRequirePhoto(question.photoRequirement === "REQUIRED");
-
     setFormError(null);
-  };
-
-  const closeFormDialog = () => {
-    setIsAddModalOpen(false);
-    setEditingQuestion(null);
-    resetForm();
   };
 
   const validateForm = () => {
@@ -672,7 +627,7 @@ export const QuestionBuilderView: React.FC = () => {
       const validOptions = formOptions.filter((option) => option.label.trim());
 
       if (validOptions.length < 2) {
-        setFormError("Minimal harus ada dua pilihan jawaban.");
+        setFormError("Minimal harus tersedia dua pilihan jawaban.");
         return false;
       }
 
@@ -690,30 +645,36 @@ export const QuestionBuilderView: React.FC = () => {
     return true;
   };
 
+  const getQuestionPayload = () => ({
+    questionText: formText.trim(),
+    questionType: formInputType,
+    isRequired: formRequired,
+    photoRequirement: formRequirePhoto ? "REQUIRED" : "OPTIONAL",
+    questionOptions:
+      formInputType === "SINGLE_CHOICE"
+        ? formOptions.map((option) => ({
+            label: option.label.trim(),
+            isSafe: option.isSafe,
+          }))
+        : undefined,
+  });
+
   const handleCreateQuestion = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!validateForm()) return;
 
     try {
-      const payload = {
-        questionText: formText.trim(),
-        questionType: formInputType,
-        isRequired: formRequired,
-        photoRequirement: formRequirePhoto ? "REQUIRED" : "OPTIONAL",
-        questionOptions:
-          formInputType === "SINGLE_CHOICE"
-            ? formOptions.map((option) => ({
-                label: option.label.trim(),
-                isSafe: option.isSafe,
-              }))
-            : undefined,
-      } as CreateQuestionPayload;
+      const payload = getQuestionPayload() as CreateQuestionPayload;
 
       const result = await createQuestionMutation.mutateAsync(payload);
 
       toast.success(`Pertanyaan ${result?.code ?? ""} berhasil ditambahkan.`);
-      closeFormDialog();
+
+      setIsAddModalOpen(false);
+      resetForm();
+
+      await refetch();
     } catch (error) {
       toast.error("Gagal menambahkan pertanyaan", {
         description: getErrorMessage(error),
@@ -727,21 +688,9 @@ export const QuestionBuilderView: React.FC = () => {
     if (!editingQuestion) return;
     if (!validateForm()) return;
 
-    const payload = {
-      questionText: formText.trim(),
-      questionType: formInputType,
-      isRequired: formRequired,
-      photoRequirement: formRequirePhoto ? "REQUIRED" : "OPTIONAL",
-      questionOptions:
-        formInputType === "SINGLE_CHOICE"
-          ? formOptions.map((option) => ({
-              label: option.label.trim(),
-              isSafe: option.isSafe,
-            }))
-          : undefined,
-    } as UpdateQuestionPayload;
-
     try {
+      const payload = getQuestionPayload() as UpdateQuestionPayload;
+
       await updateQuestionMutation.mutateAsync({
         id: editingQuestion.id,
         payload,
@@ -749,46 +698,12 @@ export const QuestionBuilderView: React.FC = () => {
 
       toast.success(`Pertanyaan ${editingQuestion.code} berhasil diperbarui.`);
 
-      closeFormDialog();
+      setEditingQuestion(null);
+      resetForm();
+
       await refetch();
     } catch (error) {
       toast.error("Gagal memperbarui pertanyaan", {
-        description: getErrorMessage(error),
-      });
-    }
-  };
-
-  const handleDeleteQuestion = async () => {
-    if (!deletingQuestion) return;
-
-    try {
-      await deactivateQuestionMutation.mutateAsync(deletingQuestion.id);
-
-      toast.success(
-        `Pertanyaan ${deletingQuestion.code} berhasil dinonaktifkan.`,
-      );
-
-      setDeletingQuestion(null);
-    } catch (error) {
-      toast.error("Gagal menonaktifkan pertanyaan", {
-        description: getErrorMessage(error),
-      });
-    }
-  };
-
-  const handleToggleStatus = async (question: BackendQuestion) => {
-    try {
-      if (question.status === "ACTIVE") {
-        await deactivateQuestionMutation.mutateAsync(question.id);
-
-        toast.success(`Pertanyaan ${question.code} berhasil dinonaktifkan.`);
-      } else {
-        await activateQuestionMutation.mutateAsync(question.id);
-
-        toast.success(`Pertanyaan ${question.code} berhasil diaktifkan.`);
-      }
-    } catch (error) {
-      toast.error("Gagal mengubah status pertanyaan", {
         description: getErrorMessage(error),
       });
     }
@@ -813,8 +728,49 @@ export const QuestionBuilderView: React.FC = () => {
       const result = await createQuestionMutation.mutateAsync(payload);
 
       toast.success(`Pertanyaan berhasil diduplikasi ${result?.code ?? ""}.`);
+
+      await refetch();
     } catch (error) {
       toast.error("Gagal menduplikasi pertanyaan", {
+        description: getErrorMessage(error),
+      });
+    }
+  };
+
+  const handleDeleteQuestion = async () => {
+    if (!deletingQuestion) return;
+
+    try {
+      await deactivateQuestionMutation.mutateAsync(deletingQuestion.id);
+
+      toast.success(
+        `Pertanyaan ${deletingQuestion.code} berhasil dinonaktifkan.`,
+      );
+
+      setDeletingQuestion(null);
+      await refetch();
+    } catch (error) {
+      toast.error("Gagal menonaktifkan pertanyaan", {
+        description: getErrorMessage(error),
+      });
+    }
+  };
+
+  const handleToggleStatus = async (question: BackendQuestion) => {
+    try {
+      if (question.status === "ACTIVE") {
+        await deactivateQuestionMutation.mutateAsync(question.id);
+
+        toast.success(`Pertanyaan ${question.code} berhasil dinonaktifkan.`);
+      } else {
+        await activateQuestionMutation.mutateAsync(question.id);
+
+        toast.success(`Pertanyaan ${question.code} berhasil diaktifkan.`);
+      }
+
+      await refetch();
+    } catch (error) {
+      toast.error("Gagal mengubah status pertanyaan", {
         description: getErrorMessage(error),
       });
     }
@@ -831,11 +787,6 @@ export const QuestionBuilderView: React.FC = () => {
 
     setAssignmentQuestion(null);
     setSelectedPatrolPointId("");
-    setAssignmentError(null);
-  };
-
-  const handleSelectPatrolPoint = (patrolPointId: string) => {
-    setSelectedPatrolPointId(patrolPointId);
     setAssignmentError(null);
   };
 
@@ -860,7 +811,7 @@ export const QuestionBuilderView: React.FC = () => {
 
       await refetchPointAssignments();
 
-      toast.success("Pertanyaan berhasil dihubungkan ke Patrol Point.");
+      toast.success("Pertanyaan berhasil dihubungkan.");
     } catch (error) {
       toast.error("Gagal menghubungkan pertanyaan", {
         description: getErrorMessage(error),
@@ -877,8 +828,6 @@ export const QuestionBuilderView: React.FC = () => {
 
     if (!confirmed) return;
 
-    setAssignmentError(null);
-
     try {
       await unassignQuestionMutation.mutateAsync(currentAssignment.id);
 
@@ -886,7 +835,7 @@ export const QuestionBuilderView: React.FC = () => {
 
       toast.success("Pertanyaan berhasil dilepas dari Patrol Point.");
     } catch (error) {
-      toast.error("Gagal melepas pertanyaan dari Patrol Point", {
+      toast.error("Gagal melepas pertanyaan", {
         description: getErrorMessage(error),
       });
     }
@@ -895,30 +844,25 @@ export const QuestionBuilderView: React.FC = () => {
   const formProps: QuestionFormProps = {
     formText,
     setFormText,
-
     formInputType,
     setFormInputType,
-
     formOptions,
     setFormOptions,
-
     newOptionInput,
     setNewOptionInput,
-
     formRequired,
     setFormRequired,
-
     formRequirePhoto,
     setFormRequirePhoto,
-
     formError,
   };
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-center">
+      {/* HEADER */}
+      <div className="flex flex-col justify-between gap-3 border-b pb-5 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-xl font-semibold text-slate-900">
             Question Builder
           </h1>
 
@@ -929,19 +873,22 @@ export const QuestionBuilderView: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <Button
+            type="button"
             variant="outline"
-            className="rounded"
+            className="h-9 rounded"
             disabled={isFetching}
             onClick={() => refetch()}
           >
             <RefreshCw
-              className={`mr-1.5 size-4 ${isFetching ? "animate-spin" : ""}`}
+              className={`mr-2 size-4 ${isFetching ? "animate-spin" : ""}`}
             />
             Refresh
           </Button>
+
           <Button
+            type="button"
+            className="h-9 rounded bg-[#FED400] text-black hover:bg-[#e9c300]"
             onClick={handleOpenAdd}
-            className="rounded text-black bg-[#FED400] hover:bg-[#e9c300]"
           >
             <Plus className="mr-2 size-4" />
             Tambah Pertanyaan
@@ -949,130 +896,120 @@ export const QuestionBuilderView: React.FC = () => {
         </div>
       </div>
 
-      <div className="space-y-3 rounded border border-slate-200 bg-white p-4">
-        <div className="grid gap-3 lg:grid-cols-3">
-          <InputGroup className="rounded">
-            <InputGroupAddon>
-              <Search className="size-4 text-slate-400" />
-            </InputGroupAddon>
+      {/* FILTER */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <InputGroup className="rounded">
+          <InputGroupAddon>
+            <Search className="size-4 text-slate-400" />
+          </InputGroupAddon>
 
-            <InputGroupInput
-              placeholder="Cari pertanyaan, kategori, atau ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </InputGroup>
+          <InputGroupInput
+            placeholder="Cari pertanyaan atau kode..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </InputGroup>
 
-          <Select
-            value={selectedInputType}
-            onValueChange={(value) => setSelectedInputType(value ?? "all")}
+        <Select
+          value={selectedInputType}
+          onValueChange={(value) => setSelectedInputType(value ?? "all")}
+        >
+          <SelectTrigger className="w-full rounded">
+            <SelectValue placeholder="Semua tipe jawaban">
+              {selectedInputType === "all"
+                ? "Semua tipe jawaban"
+                : getInputTypeLabel(selectedInputType)}
+            </SelectValue>
+          </SelectTrigger>
+
+          <SelectContent>
+            <SelectItem value="all">Semua tipe jawaban</SelectItem>
+
+            {INPUT_TYPES.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={selectedStatus}
+          onValueChange={(value) => setSelectedStatus(value ?? "all")}
+        >
+          <SelectTrigger className="w-full rounded">
+            <SelectValue placeholder="Semua status">
+              {selectedStatus === "all"
+                ? "Semua status"
+                : selectedStatus === "ACTIVE"
+                  ? "Aktif"
+                  : "Nonaktif"}
+            </SelectValue>
+          </SelectTrigger>
+
+          <SelectContent>
+            <SelectItem value="all">Semua status</SelectItem>
+            <SelectItem value="ACTIVE">Aktif</SelectItem>
+            <SelectItem value="INACTIVE">Nonaktif</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* LIST SUMMARY */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <p className="text-sm text-slate-600">
+          Menampilkan{" "}
+          <span className="font-semibold text-slate-900">
+            {filteredQuestions.length}
+          </span>{" "}
+          dari {questions.length} pertanyaan
+        </p>
+
+        {(searchQuery ||
+          selectedInputType !== "all" ||
+          selectedStatus !== "all") && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded text-xs text-slate-500"
+            onClick={() => {
+              setSearchQuery("");
+              setSelectedInputType("all");
+              setSelectedStatus("all");
+            }}
           >
-            <SelectTrigger className="w-full rounded">
-              <span>
-                {selectedInputType === "all"
-                  ? "Semua Tipe Input"
-                  : (INPUT_TYPES.find(
-                      (type) => type.value === selectedInputType,
-                    )?.label ?? "Semua Tipe Input")}
-              </span>
-            </SelectTrigger>
-
-            <SelectContent>
-              <SelectItem value="all">Semua Tipe Input</SelectItem>
-
-              {INPUT_TYPES.map((type) => (
-                <SelectItem key={type.value} value={type.value}>
-                  {type.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={selectedStatus}
-            onValueChange={(value) => setSelectedStatus(value ?? "all")}
-          >
-            <SelectTrigger className="w-full rounded">
-              <span>
-                {selectedStatus === "all"
-                  ? "Semua Status"
-                  : selectedStatus === "ACTIVE"
-                    ? "Aktif"
-                    : selectedStatus === "INACTIVE"
-                      ? "Nonaktif"
-                      : "Semua Status"}
-              </span>
-            </SelectTrigger>
-
-            <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="ACTIVE">Aktif</SelectItem>
-              <SelectItem value="INACTIVE">Nonaktif</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-          <p className="text-xs text-slate-500">
-            Menampilkan{" "}
-            <span className="font-semibold text-slate-900">
-              {filteredQuestions.length}
-            </span>{" "}
-            dari {questions.length} pertanyaan
-          </p>
-
-          <div className="flex items-center gap-2">
-            {(searchQuery ||
-              selectedInputType !== "all" ||
-              selectedStatus !== "all") && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 rounded text-xs text-slate-500"
-                onClick={() => {
-                  setSearchQuery("");
-                  setSelectedInputType("all");
-                  setSelectedStatus("all");
-                }}
-              >
-                Reset Filter
-              </Button>
-            )}
-          </div>
-        </div>
+            <X className="mr-1.5 size-3.5" />
+            Reset Filter
+          </Button>
+        )}
       </div>
 
       {/* LOADING */}
-
       {isLoading && (
-        <div className="flex items-center justify-center rounded border border-slate-200 bg-white p-12">
-          <Loader2 className="mr-2 size-5 animate-spin text-blue-600" />
-          <span className="text-sm text-slate-500">
-            Memuat data pertanyaan...
-          </span>
+        <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+          <Loader2 className="mr-2 size-5 animate-spin" />
+          Memuat pertanyaan...
         </div>
       )}
 
       {/* ERROR */}
-
       {isError && !isLoading && (
-        <div className="rounded border border-rose-200 bg-rose-50 p-8 text-center">
+        <div className="py-12 text-center">
           <AlertTriangle className="mx-auto size-8 text-rose-500" />
 
-          <p className="mt-3 text-sm font-semibold text-rose-800">
+          <p className="mt-3 text-sm font-semibold text-slate-800">
             Gagal memuat pertanyaan
           </p>
 
-          <p className="mt-1 text-xs text-rose-600">
-            {error instanceof Error
-              ? error.message
-              : "Terjadi kesalahan saat mengambil data."}
+          <p className="mt-1 text-xs text-slate-500">
+            {getErrorMessage(error)}
           </p>
 
           <Button
             type="button"
             variant="outline"
+            size="sm"
             className="mt-4 rounded"
             onClick={() => refetch()}
           >
@@ -1083,14 +1020,13 @@ export const QuestionBuilderView: React.FC = () => {
       )}
 
       {/* QUESTION LIST */}
-
       {!isLoading && !isError && (
-        <div className="space-y-3">
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
           {filteredQuestions.length === 0 ? (
-            <div className="rounded-lg border border-slate-200 bg-white px-6 py-12 text-center">
+            <div className="py-16 text-center">
               <Search className="mx-auto size-8 text-slate-300" />
 
-              <p className="mt-3 text-sm font-semibold text-slate-800">
+              <p className="mt-3 text-sm font-medium text-slate-700">
                 Tidak ada pertanyaan ditemukan
               </p>
 
@@ -1102,28 +1038,24 @@ export const QuestionBuilderView: React.FC = () => {
             filteredQuestions.map((question, index) => (
               <div
                 key={question.id}
-                className={`group rounded-lg border bg-white p-4 transition-colors hover:border-blue-200 ${
-                  question.status !== "ACTIVE"
-                    ? "border-slate-200 bg-slate-50/70"
-                    : "border-slate-200"
+                className={`flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between ${
+                  question.status !== "ACTIVE" ? "opacity-60" : ""
                 }`}
               >
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                  {/* NOMOR */}
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-sm font-semibold text-slate-600">
+                <div className="flex min-w-0 flex-1 gap-3">
+                  <span className="pt-0.5 text-sm font-medium tabular-nums text-slate-400">
                     {String(index + 1).padStart(2, "0")}
-                  </div>
+                  </span>
 
-                  {/* INFORMASI UTAMA */}
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-[11px] font-medium text-slate-400">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-slate-400">
                         {question.code}
                       </span>
 
                       <Badge
                         variant="outline"
-                        className={`rounded-md text-[10px] font-medium ${getInputTypeVariant(
+                        className={`rounded px-2 py-0 text-[10px] ${getTypeStyle(
                           question.questionType,
                         )}`}
                       >
@@ -1132,120 +1064,106 @@ export const QuestionBuilderView: React.FC = () => {
 
                       <Badge
                         variant="outline"
-                        className={`rounded-md text-[10px] ${
+                        className={`rounded px-2 py-0 text-[10px] ${
                           question.status === "ACTIVE"
                             ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                             : "border-slate-200 bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {getStatusLabel(question.status)}
+                        {question.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
                       </Badge>
                     </div>
 
-                    <h3 className="text-sm font-semibold leading-relaxed text-slate-800">
+                    <p className="text-sm font-medium leading-relaxed text-slate-800">
                       {question.questionText}
-                    </h3>
+                    </p>
 
-                    {/* INFORMASI RINGKAS */}
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
-                      {question.isRequired && (
-                        <span className="flex items-center gap-1">
-                          <CheckCircle2 className="size-3.5 text-emerald-600" />
-                          Wajib diisi
-                        </span>
-                      )}
-
-                      {question.photoRequirement === "REQUIRED" && (
-                        <span className="flex items-center gap-1">
-                          <Camera className="size-3.5 text-indigo-600" />
-                          Wajib foto
-                        </span>
-                      )}
-
-                      {question.photoRequirement === "CONDITIONAL" && (
-                        <span className="flex items-center gap-1">
-                          <Camera className="size-3.5 text-amber-600" />
-                          Foto kondisional
-                        </span>
-                      )}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                      <span>
+                        {question.isRequired ? "Wajib diisi" : "Opsional"}
+                      </span>
 
                       <span className="flex items-center gap-1">
-                        <MapPin className="size-3.5 text-blue-500" />
+                        <Camera className="size-3.5" />
+                        {question.photoRequirement === "REQUIRED"
+                          ? "Wajib foto"
+                          : question.photoRequirement === "CONDITIONAL"
+                            ? "Foto kondisional"
+                            : "Foto opsional"}
+                      </span>
+
+                      <span className="flex items-center gap-1">
+                        <MapPin className="size-3.5" />
                         {question._count?.pointQuestions ?? 0} Patrol Point
                       </span>
 
                       {question.questionType === "SINGLE_CHOICE" && (
-                        <span className="text-slate-400">
-                          {question.options?.length ?? 0} pilihan
-                        </span>
+                        <span>{question.options?.length ?? 0} pilihan</span>
                       )}
                     </div>
                   </div>
+                </div>
 
-                  {/* ACTIONS */}
-                  <div className="flex shrink-0 items-center gap-1 border-t border-slate-100 pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+                <div className="flex flex-wrap items-center gap-1 border-t border-slate-100 pt-2 sm:border-0 sm:pt-0">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 rounded px-2.5 text-xs text-blue-700 hover:bg-blue-50"
+                    disabled={question.status !== "ACTIVE"}
+                    onClick={() => handleOpenAssignment(question)}
+                  >
+                    <Settings2 className="mr-1.5 size-3.5" />
+                    Tautkan Area
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 rounded px-2.5 text-xs text-slate-600 hover:bg-slate-100"
+                    onClick={() => handleOpenEdit(question)}
+                  >
+                    <Pencil className="mr-1.5 size-3.5" />
+                    Edit
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 rounded px-2.5 text-xs text-slate-600 hover:bg-slate-100"
+                    disabled={createQuestionMutation.isPending}
+                    onClick={() => handleDuplicateQuestion(question)}
+                  >
+                    <Copy className="mr-1.5 size-3.5" />
+                    Duplikasi
+                  </Button>
+
+                  {question.status === "ACTIVE" ? (
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      className="h-8 rounded-md border-blue-200 px-2.5 text-xs text-blue-700 hover:bg-blue-50"
-                      disabled={question.status !== "ACTIVE"}
-                      onClick={() => handleOpenAssignment(question)}
+                      className="h-8 rounded px-2.5 text-xs text-rose-600 hover:bg-rose-50"
+                      onClick={() => setDeletingQuestion(question)}
                     >
-                      <Settings2 className="mr-1.5 size-3.5" />
-                      Patrol Point
+                      <Trash2 className="mr-1.5 size-3.5" />
+                      Nonaktifkan
                     </Button>
-
+                  ) : (
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon"
-                      className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-blue-600"
-                      title="Edit pertanyaan"
-                      onClick={() => handleOpenEdit(question)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                      title="Duplikasi pertanyaan"
-                      disabled={createQuestionMutation.isPending}
-                      onClick={() => handleDuplicateQuestion(question)}
-                    >
-                      <Copy className="size-4" />
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className={`size-8 rounded-md ${
-                        question.status === "ACTIVE"
-                          ? "text-rose-500 hover:bg-rose-50"
-                          : "text-emerald-600 hover:bg-emerald-50"
-                      }`}
-                      title={
-                        question.status === "ACTIVE"
-                          ? "Nonaktifkan pertanyaan"
-                          : "Aktifkan pertanyaan"
-                      }
-                      disabled={
-                        deactivateQuestionMutation.isPending ||
-                        activateQuestionMutation.isPending
-                      }
+                      size="sm"
+                      className="h-8 rounded px-2.5 text-xs text-emerald-700 hover:bg-emerald-50"
+                      disabled={activateQuestionMutation.isPending}
                       onClick={() => handleToggleStatus(question)}
                     >
-                      {question.status === "ACTIVE" ? (
-                        <Trash2 className="size-4" />
-                      ) : (
-                        <CheckCircle2 className="size-4" />
-                      )}
+                      <CheckCircle2 className="mr-1.5 size-3.5" />
+                      Aktifkan
                     </Button>
-                  </div>
+                  )}
                 </div>
               </div>
             ))
@@ -1259,16 +1177,16 @@ export const QuestionBuilderView: React.FC = () => {
           if (!open) closeFormDialog();
         }}
       >
-        <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden rounded p-0">
-          <DialogHeader className="border-b border-slate-200 px-6 py-4 text-left">
-            <DialogTitle className="text-base font-semibold text-slate-900">
+        <DialogContent className="flex max-h-[90vh] max-w-xl flex-col gap-0 overflow-hidden rounded-lg p-0">
+          <DialogHeader className="border-b px-5 py-4 text-left">
+            <DialogTitle className="text-base font-semibold">
               {editingQuestion
                 ? `Edit Pertanyaan ${editingQuestion.code}`
-                : "Tambah Pertanyaan Patroli"}
+                : "Tambah Pertanyaan"}
             </DialogTitle>
 
-            <DialogDescription className="text-xs text-slate-500">
-              Atur pertanyaan, tipe jawaban, dan konfigurasi checklist.
+            <DialogDescription className="text-xs">
+              Atur teks pertanyaan, tipe jawaban, dan pengaturannya.
             </DialogDescription>
           </DialogHeader>
 
@@ -1276,11 +1194,22 @@ export const QuestionBuilderView: React.FC = () => {
             onSubmit={editingQuestion ? handleSaveEdit : handleCreateQuestion}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+              {editingQuestion && (
+                <div className="flex items-start gap-2 border-b border-amber-100 pb-3 text-xs text-amber-700">
+                  <Info className="mt-0.5 size-4 shrink-0" />
+                  <p>
+                    Perubahan akan diterapkan pada pertanyaan dengan kode{" "}
+                    <strong>{editingQuestion.code}</strong>. Jawaban lama tidak
+                    otomatis dikonversi ke format baru.
+                  </p>
+                </div>
+              )}
+
               <QuestionFormFields {...formProps} />
             </div>
 
-            <DialogFooter className="border-t border-slate-200 px-6 py-4">
+            <DialogFooter className="border-t px-5 py-3">
               <Button
                 type="button"
                 variant="outline"
@@ -1293,8 +1222,8 @@ export const QuestionBuilderView: React.FC = () => {
 
               <Button
                 type="submit"
-                disabled={isSaving}
                 className="rounded bg-blue-600 text-white hover:bg-blue-700"
+                disabled={isSaving}
               >
                 {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
 
@@ -1305,112 +1234,92 @@ export const QuestionBuilderView: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* =====================================================
-          ASSIGN / UNASSIGN PATROL POINT DIALOG
-      ===================================================== */}
-
       <Dialog
         open={Boolean(assignmentQuestion)}
         onOpenChange={(open) => {
           if (!open) handleCloseAssignment();
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto rounded">
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto rounded-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Link2 className="size-5 text-blue-600" />
-              Atur Patrol Point
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Settings2 className="size-5 text-blue-600" />
+              Pengaturan Patrol Point
             </DialogTitle>
 
             <DialogDescription>
-              Hubungkan atau lepaskan pertanyaan dari Patrol Point.
+              Atur hubungan pertanyaan dengan Patrol Point.
             </DialogDescription>
           </DialogHeader>
 
           {assignmentQuestion && (
-            <div className="rounded border border-blue-100 bg-blue-50 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="border-blue-200 bg-white text-blue-700"
-                >
+            <div className="border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-slate-400">
                   {assignmentQuestion.code}
-                </Badge>
+                </span>
 
                 <Badge
                   variant="outline"
-                  className="border-emerald-200 bg-white text-emerald-700"
+                  className={`rounded ${getTypeStyle(
+                    assignmentQuestion.questionType,
+                  )}`}
                 >
                   {getInputTypeLabel(assignmentQuestion.questionType)}
                 </Badge>
               </div>
 
-              <p className="mt-2 text-sm font-semibold text-slate-900">
+              <p className="mt-2 text-sm font-medium text-slate-800">
                 {assignmentQuestion.questionText}
               </p>
             </div>
           )}
 
-          {/* ASSIGNMENT ERROR */}
-
           {assignmentError && (
-            <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            <div className="flex items-start gap-2 text-sm text-rose-600">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              <span>{assignmentError}</span>
+              {assignmentError}
             </div>
           )}
-
-          {/* PATROL POINT SELECT */}
 
           <div className="space-y-2">
             <Label>Pilih Patrol Point</Label>
 
             {patrolPointsQuery.isLoading ? (
-              <div className="flex items-center gap-2 rounded border p-3 text-sm text-slate-500">
+              <div className="flex items-center gap-2 py-3 text-sm text-slate-500">
                 <Loader2 className="size-4 animate-spin" />
-                Memuat daftar Patrol Point...
+                Memuat Patrol Point...
               </div>
             ) : patrolPointsQuery.isError ? (
-              <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+              <div className="text-sm text-rose-600">
                 Gagal mengambil data Patrol Point.
                 <Button
                   type="button"
                   variant="link"
-                  className="h-auto p-1 text-rose-700"
+                  className="h-auto p-1"
                   onClick={() => patrolPointsQuery.refetch()}
                 >
                   Coba lagi
                 </Button>
               </div>
             ) : activePatrolPoints.length === 0 ? (
-              <div className="rounded border border-dashed p-5 text-center text-sm text-slate-500">
+              <p className="py-3 text-sm text-slate-500">
                 Tidak ada Patrol Point aktif.
-              </div>
+              </p>
             ) : (
               <Select
                 value={selectedPatrolPointId}
-                onValueChange={(value) => handleSelectPatrolPoint(value ?? "")}
+                onValueChange={(value) => {
+                  setSelectedPatrolPointId(value ?? "");
+                  setAssignmentError(null);
+                }}
                 disabled={isAssignmentSaving}
               >
-                <SelectTrigger className="rounded w-full">
-                  <SelectValue placeholder="Pilih Patrol Point...">
-                    {activePatrolPoints.find(
-                      (point) => point.id === selectedPatrolPointId,
-                    )
-                      ? `${
-                          activePatrolPoints.find(
-                            (point) => point.id === selectedPatrolPointId,
-                          )?.code
-                        } - ${
-                          activePatrolPoints.find(
-                            (point) => point.id === selectedPatrolPointId,
-                          )?.name
-                        }`
-                      : undefined}
-                  </SelectValue>
+                <SelectTrigger className="w-full rounded">
+                  <SelectValue placeholder="Pilih Patrol Point..." />
                 </SelectTrigger>
 
-                <SelectContent className={`w-full`}>
+                <SelectContent>
                   {activePatrolPoints.map((point) => (
                     <SelectItem key={point.id} value={point.id}>
                       {point.code} - {point.name}
@@ -1419,86 +1328,61 @@ export const QuestionBuilderView: React.FC = () => {
                 </SelectContent>
               </Select>
             )}
-
-            <p className="text-xs text-slate-500">
-              Hanya Patrol Point dengan status aktif yang dapat menerima
-              pertanyaan.
-            </p>
           </div>
 
-          {/* ASSIGNMENT STATUS */}
-
           {selectedPatrolPointId && (
-            <div className="space-y-3">
-              <div className="border-t border-slate-200 pt-3">
-                <p className="text-sm font-semibold text-slate-900">
-                  Status Keterhubungan
-                </p>
-
-                <p className="mt-1 text-xs text-slate-500">
-                  Status hubungan pertanyaan pada Patrol Point yang dipilih.
-                </p>
-              </div>
-
+            <div className="border-t border-slate-200 pt-4">
               {isAssignmentsLoading ? (
-                <div className="flex items-center justify-center rounded border p-6 text-sm text-slate-500">
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Memeriksa keterhubungan...
+                <div className="flex items-center gap-2 py-4 text-sm text-slate-500">
+                  <Loader2 className="size-4 animate-spin" />
+                  Memeriksa hubungan pertanyaan...
                 </div>
               ) : isAssignmentsError ? (
-                <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                  Gagal memeriksa hubungan pertanyaan:{" "}
+                <div className="text-sm text-rose-600">
                   {getErrorMessage(pointAssignmentsError)}
+
                   <Button
                     type="button"
                     variant="link"
-                    className="h-auto p-1 text-rose-700"
+                    className="h-auto p-1"
                     onClick={() => refetchPointAssignments()}
                   >
                     Coba lagi
                   </Button>
                 </div>
               ) : currentAssignment ? (
-                <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                      <CheckCircle2 className="size-5" />
-                    </div>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 size-5 text-emerald-600" />
 
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-emerald-800">
+                    <div>
+                      <p className="text-sm font-medium text-emerald-700">
                         Pertanyaan sudah terhubung
                       </p>
 
-                      <p className="mt-1 text-xs text-emerald-700">
-                        Pertanyaan ini sudah tersedia pada Patrol Point yang
-                        dipilih.
+                      <p className="mt-1 text-xs text-slate-500">
+                        Pertanyaan tersedia pada Patrol Point ini.
                       </p>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge className="rounded bg-white text-emerald-700 hover:bg-white">
-                          {currentAssignment.patrolPoint?.code ??
-                            activePatrolPoints.find(
-                              (point) => point.id === selectedPatrolPointId,
-                            )?.code}
-                        </Badge>
-
-                        <Badge
-                          variant="outline"
-                          className="border-emerald-300 text-emerald-700"
-                        >
-                          {currentAssignment.isRequired
-                            ? "Wajib Diisi"
-                            : "Opsional"}
-                        </Badge>
-                      </div>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <MapPin className="size-3.5" />
+
+                    {currentAssignment.patrolPoint?.code ??
+                      activePatrolPoints.find(
+                        (point) => point.id === selectedPatrolPointId,
+                      )?.code}
+
+                    <span>•</span>
+
+                    {currentAssignment.isRequired ? "Wajib diisi" : "Opsional"}
                   </div>
 
                   <Button
                     type="button"
                     variant="outline"
-                    className="mt-4 w-full rounded border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    className="w-full rounded text-rose-600 hover:bg-rose-50"
                     disabled={isAssignmentSaving}
                     onClick={handleUnassignQuestion}
                   >
@@ -1511,27 +1395,24 @@ export const QuestionBuilderView: React.FC = () => {
                   </Button>
                 </div>
               ) : (
-                <div className="rounded border border-amber-200 bg-amber-50 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                      <Link2 className="size-5" />
-                    </div>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <Info className="mt-0.5 size-5 text-amber-600" />
 
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-amber-800">
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">
                         Belum terhubung
                       </p>
 
-                      <p className="mt-1 text-xs text-amber-700">
-                        Pertanyaan ini belum tersedia pada Patrol Point yang
-                        dipilih.
+                      <p className="mt-1 text-xs text-slate-500">
+                        Pertanyaan belum tersedia pada Patrol Point ini.
                       </p>
                     </div>
                   </div>
 
                   <Button
                     type="button"
-                    className="mt-4 w-full rounded bg-blue-600 text-white hover:bg-blue-700"
+                    className="w-full rounded bg-blue-600 text-white hover:bg-blue-700"
                     disabled={isAssignmentSaving}
                     onClick={handleAssignQuestion}
                   >
@@ -1540,7 +1421,7 @@ export const QuestionBuilderView: React.FC = () => {
                     ) : (
                       <Link2 className="mr-2 size-4" />
                     )}
-                    Hubungkan ke Patrol Point
+                    Hubungkan Pertanyaan
                   </Button>
                 </div>
               )}
@@ -1548,17 +1429,9 @@ export const QuestionBuilderView: React.FC = () => {
           )}
 
           {!selectedPatrolPointId && (
-            <div className="rounded border border-dashed border-slate-300 p-5 text-center">
-              <MapPin className="mx-auto size-7 text-slate-300" />
-
-              <p className="mt-2 text-sm font-medium text-slate-700">
-                Pilih Patrol Point
-              </p>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Pilih Patrol Point untuk melihat status hubungan pertanyaan.
-              </p>
-            </div>
+            <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">
+              Pilih Patrol Point untuk melihat status hubungan pertanyaan.
+            </p>
           )}
 
           <DialogFooter>
@@ -1575,17 +1448,13 @@ export const QuestionBuilderView: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* =====================================================
-          DEACTIVATE CONFIRMATION
-      ===================================================== */}
-
       <AlertDialog
         open={Boolean(deletingQuestion)}
         onOpenChange={(open) => {
           if (!open) setDeletingQuestion(null);
         }}
       >
-        <AlertDialogContent className="max-w-md rounded">
+        <AlertDialogContent className="max-w-md rounded-lg">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-base">
               <Trash2 className="size-5 text-rose-600" />
@@ -1593,18 +1462,18 @@ export const QuestionBuilderView: React.FC = () => {
             </AlertDialogTitle>
 
             <AlertDialogDescription>
-              Pertanyaan ini tidak akan digunakan pada checklist patroli aktif.
-              Data pertanyaan dan riwayat jawabannya tetap tersimpan.
+              Pertanyaan tidak akan digunakan pada checklist patroli berikutnya.
+              Data pertanyaan dan riwayat jawaban tetap tersimpan.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           {deletingQuestion && (
-            <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <p className="font-mono text-xs font-semibold text-blue-700">
+            <div className="border-y border-slate-200 py-3">
+              <p className="font-mono text-xs text-slate-400">
                 {deletingQuestion.code}
               </p>
 
-              <p className="mt-1 text-sm font-medium text-slate-900">
+              <p className="mt-1 text-sm font-medium text-slate-800">
                 {deletingQuestion.questionText}
               </p>
             </div>
@@ -1629,7 +1498,7 @@ export const QuestionBuilderView: React.FC = () => {
               {deactivateQuestionMutation.isPending && (
                 <Loader2 className="mr-2 size-4 animate-spin" />
               )}
-              Nonaktifkan
+              Ya, Nonaktifkan
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
