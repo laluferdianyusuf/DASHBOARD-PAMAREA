@@ -72,6 +72,7 @@ export const getPatrolHistoryGroupedByUser = async (
       },
     },
   );
+  console.log("RESPONSE", response);
 
   return response.data;
 };

@@ -43,9 +43,11 @@ import {
   useExportPatrolHistory,
   usePatrolHistoryGroupedByUser,
 } from "../hooks/schedule/usePatrolHistory";
+
 import { getPatrolHistoryGroupedByUser } from "../services/patrol/patrol-history.service";
 import { getPhotoUrl } from "../utils/getPhoto";
 import { PaginationComponent } from "./PaginationComponent";
+
 interface RiwayatPatroliViewProps {
   selectedSite: string;
 }
@@ -56,8 +58,29 @@ type PatrolHistoryResponse = Awaited<
 
 type PatrolGroup = PatrolHistoryResponse["data"][number];
 
-type PatrolRecord = PatrolGroup["patrols"][number] & {
+type BasePatrolRecord = PatrolGroup["patrols"][number];
+
+type AnswerEvaluation = {
+  isSafe: boolean | null;
+  status: "SAFE" | "UNSAFE" | "UNKNOWN";
+  reason: string | null;
+};
+
+type AnswerSummary = {
+  total: number;
+  safe: number;
+  unsafe: number;
+  unknown: number;
+};
+
+type PatrolAnswer = BasePatrolRecord["answers"][number] & {
+  evaluation?: AnswerEvaluation;
+};
+
+type PatrolRecord = Omit<BasePatrolRecord, "answers"> & {
   user: PatrolGroup["user"];
+  answers: PatrolAnswer[];
+  answerSummary?: AnswerSummary;
 };
 
 const formatDateTime = (value?: string | Date | null) => {
@@ -158,23 +181,57 @@ const getStatusBadge = (status?: string) => {
   }
 };
 
-const downloadExportFile = (blob: Blob) => {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
+const getGpsBadge = (status?: string | null) => {
+  if (status === "VALID") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-200 bg-emerald-50 text-emerald-700"
+      >
+        Valid
+      </Badge>
+    );
+  }
 
-  link.href = url;
-  link.download = `Laporan-Patroli-${new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Makassar",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date())}.zip`;
+  if (status === "INVALID") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-rose-200 bg-rose-50 text-rose-700"
+      >
+        Tidak Valid
+      </Badge>
+    );
+  }
 
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  return <Badge variant="outline">{status ?? "-"}</Badge>;
+};
 
-  window.URL.revokeObjectURL(url);
+const getAnswerEvaluationBadge = (evaluation?: AnswerEvaluation) => {
+  if (evaluation?.status === "UNSAFE") {
+    return (
+      <Badge className="border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-100">
+        <AlertCircle className="mr-1 size-3" />
+        Tidak Sesuai
+      </Badge>
+    );
+  }
+
+  if (evaluation?.status === "SAFE") {
+    return (
+      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+        <CheckCircle2 className="mr-1 size-3" />
+        Sesuai
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge className="border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100">
+      <AlertCircle className="mr-1 size-3" />
+      Belum Dievaluasi
+    </Badge>
+  );
 };
 
 interface PhotoItem {
@@ -244,6 +301,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
     useState<PatrolRecord | null>(null);
 
   const [isExportDateDialogOpen, setIsExportDateDialogOpen] = useState(false);
+
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
 
@@ -251,7 +309,9 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
     () => ({
       page: currentPage,
       limit: Number(pageSize),
+
       ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
+
       ...(selectedStatus !== "all"
         ? {
             status: selectedStatus as NonNullable<
@@ -268,9 +328,12 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
     isLoading,
     isError,
     isFetching,
+    error,
     refetch,
   } = usePatrolHistoryGroupedByUser(queryParams);
+
   const exportMutation = useExportPatrolHistory();
+
   const isExporting = exportMutation.isPending;
 
   const logs = useMemo<PatrolRecord[]>(() => {
@@ -291,7 +354,6 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
   }, [logs, selectedSite]);
 
   const totalItems = patrolHistory?.pagination?.total ?? 0;
-
   const totalPages = patrolHistory?.pagination?.totalPages ?? 1;
 
   const resetFilters = () => {
@@ -321,32 +383,6 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
     setPageSize(value);
     setCurrentPage(1);
-  };
-
-  const getGpsBadge = (status?: string | null) => {
-    if (status === "VALID") {
-      return (
-        <Badge
-          variant="outline"
-          className="border-emerald-200 bg-emerald-50 text-emerald-700"
-        >
-          Valid
-        </Badge>
-      );
-    }
-
-    if (status === "INVALID") {
-      return (
-        <Badge
-          variant="outline"
-          className="border-rose-200 bg-rose-50 text-rose-700"
-        >
-          Tidak Valid
-        </Badge>
-      );
-    }
-
-    return <Badge variant="outline">{status ?? "-"}</Badge>;
   };
 
   const handleExportExcel = () => {
@@ -381,6 +417,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
       const link = document.createElement("a");
 
       link.href = url;
+
       link.download = `Laporan-Patroli-${new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Makassar",
         year: "numeric",
@@ -397,9 +434,34 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
       }, 1000);
 
       setIsExportDateDialogOpen(false);
-    } catch (error) {
+    } catch {
       alert("Gagal membuat laporan Excel. Silakan coba kembali.");
     }
+  };
+
+  const getAnswerSummary = (log: PatrolRecord): AnswerSummary => {
+    if (log.answerSummary) {
+      return log.answerSummary;
+    }
+
+    const total = log.answers.length;
+
+    const safe = log.answers.filter(
+      (answer) => answer.evaluation?.status === "SAFE",
+    ).length;
+
+    const unsafe = log.answers.filter(
+      (answer) => answer.evaluation?.status === "UNSAFE",
+    ).length;
+
+    const unknown = total - safe - unsafe;
+
+    return {
+      total,
+      safe,
+      unsafe,
+      unknown,
+    };
   };
 
   return (
@@ -409,6 +471,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">
             Riwayat Patroli
           </h1>
+
           <p className="mt-1 text-sm text-muted-foreground">
             Arsip pelaksanaan patroli dan catatan audit keamanan.
           </p>
@@ -427,6 +490,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
             ) : (
               <Download className="size-4" />
             )}
+
             {isExporting ? "Menyiapkan Excel..." : "Download Excel"}
           </Button>
 
@@ -461,7 +525,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
         <Separator />
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center my-2">
+        <div className="my-2 flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 
@@ -534,47 +598,49 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
             </Button>
           </div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50 hover:bg-slate-50">
-                    <TableHead className="whitespace-nowrap">ID Sesi</TableHead>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50 hover:bg-slate-50">
+                  <TableHead className="whitespace-nowrap">ID Sesi</TableHead>
 
-                    <TableHead className="whitespace-nowrap">Site</TableHead>
+                  <TableHead className="whitespace-nowrap">Site</TableHead>
 
-                    <TableHead className="whitespace-nowrap">
-                      Security
-                    </TableHead>
+                  <TableHead className="whitespace-nowrap">Security</TableHead>
 
-                    <TableHead className="whitespace-nowrap">
-                      Titik Patroli
-                    </TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    Titik Patroli
+                  </TableHead>
 
-                    <TableHead className="whitespace-nowrap">
-                      Waktu Mulai
-                    </TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    Waktu Mulai
+                  </TableHead>
 
-                    {/* <TableHead className="whitespace-nowrap">GPS</TableHead> */}
+                  <TableHead className="whitespace-nowrap">Status</TableHead>
 
-                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    Tidak Sesuai
+                  </TableHead>
 
-                    <TableHead className="text-right">Aksi</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {filteredLogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="h-32 text-center text-muted-foreground"
+                    >
+                      Tidak ada riwayat patroli yang ditemukan.
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
+                ) : (
+                  filteredLogs.map((log) => {
+                    const summary = getAnswerSummary(log);
 
-                <TableBody>
-                  {filteredLogs.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={8}
-                        className="h-32 text-center text-muted-foreground"
-                      >
-                        Tidak ada riwayat patroli yang ditemukan.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredLogs.map((log) => (
+                    return (
                       <TableRow key={log.id}>
                         <TableCell className="whitespace-nowrap font-mono text-xs font-medium text-blue-700">
                           {log.reportNumber}
@@ -585,6 +651,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                             <p className="font-medium text-slate-900">
                               {log.site?.name ?? "-"}
                             </p>
+
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {log.patrolPoint?.code ?? "-"}
                             </p>
@@ -596,6 +663,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                             <p className="font-medium text-slate-900">
                               {log.user?.fullName ?? "-"}
                             </p>
+
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {log.user?.employeeNumber ?? "-"}
                             </p>
@@ -607,6 +675,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                             <p className="font-medium text-slate-900">
                               {log.patrolPoint?.name ?? "-"}
                             </p>
+
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {log.patrolPoint?.code ?? "-"}
                             </p>
@@ -617,17 +686,30 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                           <p className="font-medium text-slate-900">
                             {formatDateTime(log.startedAt)}
                           </p>
+
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             Durasi:{" "}
                             {formatDuration(log.startedAt, log.completedAt)}
                           </p>
                         </TableCell>
 
-                        {/* <TableCell>
-                          {getGpsBadge(log.gpsValidationStatus)}
-                        </TableCell> */}
-
                         <TableCell>{getStatusBadge(log.status)}</TableCell>
+
+                        <TableCell>
+                          {summary.unsafe > 0 ? (
+                            <Badge className="border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-100">
+                              <AlertCircle className="mr-1 size-3" />
+                              {summary.unsafe} jawaban
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                            >
+                              <CheckCircle2 className="mr-1 size-3" />0
+                            </Badge>
+                          )}
+                        </TableCell>
 
                         <TableCell className="text-right">
                           <Button
@@ -639,12 +721,12 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
 
@@ -723,7 +805,9 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     dateStyle: "long",
                     timeZone: "Asia/Makassar",
                   }).format(new Date(`${exportStartDate}T12:00:00+08:00`))}
+
                   {" - "}
+
                   {new Intl.DateTimeFormat("id-ID", {
                     dateStyle: "long",
                     timeZone: "Asia/Makassar",
@@ -790,6 +874,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                 <div className="grid grid-cols-2 gap-x-4 gap-y-4 border p-4">
                   <div>
                     <p className="text-xs text-muted-foreground">ID Sesi</p>
+
                     <p className="mt-1 break-all font-mono text-sm font-medium text-slate-900">
                       {selectedDetailLog.reportNumber}
                     </p>
@@ -797,6 +882,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
                   <div>
                     <p className="text-xs text-muted-foreground">Status</p>
+
                     <div className="mt-1">
                       {getStatusBadge(selectedDetailLog.status)}
                     </div>
@@ -804,6 +890,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
                   <div>
                     <p className="text-xs text-muted-foreground">Site</p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.site?.name ?? "-"}
                     </p>
@@ -811,9 +898,11 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
                   <div>
                     <p className="text-xs text-muted-foreground">Security</p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.user?.fullName ?? "-"}
                     </p>
+
                     <p className="text-xs text-muted-foreground">
                       {selectedDetailLog.user?.employeeNumber ?? "-"}
                     </p>
@@ -823,9 +912,11 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     <p className="text-xs text-muted-foreground">
                       Titik Patroli
                     </p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.patrolPoint?.name ?? "-"}
                     </p>
+
                     <p className="text-xs text-muted-foreground">
                       {selectedDetailLog.patrolPoint?.code ?? "-"}
                     </p>
@@ -835,6 +926,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     <p className="text-xs text-muted-foreground">
                       Urutan Titik
                     </p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.checkpoint?.sequence ?? "-"}
                     </p>
@@ -842,6 +934,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
                   <div>
                     <p className="text-xs text-muted-foreground">Waktu Mulai</p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {formatDateTime(selectedDetailLog.startedAt)}
                     </p>
@@ -851,6 +944,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     <p className="text-xs text-muted-foreground">
                       Waktu Selesai
                     </p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {formatDateTime(selectedDetailLog.completedAt)}
                     </p>
@@ -858,6 +952,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
                   <div>
                     <p className="text-xs text-muted-foreground">Durasi</p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {formatDuration(
                         selectedDetailLog.startedAt,
@@ -870,6 +965,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     <p className="text-xs text-muted-foreground">
                       Status Checkpoint
                     </p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.checkpoint?.status ?? "-"}
                     </p>
@@ -879,6 +975,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     <p className="text-xs text-muted-foreground">
                       Validasi GPS
                     </p>
+
                     <div className="mt-1">
                       {getGpsBadge(selectedDetailLog.gpsValidationStatus)}
                     </div>
@@ -888,6 +985,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     <p className="text-xs text-muted-foreground">
                       Validasi NFC
                     </p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.nfcValidationStatus ?? "-"}
                     </p>
@@ -895,6 +993,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
                   <div>
                     <p className="text-xs text-muted-foreground">Akurasi GPS</p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.gpsAccuracy != null
                         ? `${selectedDetailLog.gpsAccuracy} meter`
@@ -906,6 +1005,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     <p className="text-xs text-muted-foreground">
                       Jarak dari Titik
                     </p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.distanceFromPoint != null
                         ? `${selectedDetailLog.distanceFromPoint} meter`
@@ -915,6 +1015,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
 
                   <div>
                     <p className="text-xs text-muted-foreground">NFC Bypass</p>
+
                     <p className="mt-1 font-medium text-slate-900">
                       {selectedDetailLog.nfcBypass ? "Ya" : "Tidak"}
                     </p>
@@ -926,6 +1027,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                         <p className="text-xs text-muted-foreground">
                           Alasan NFC Bypass
                         </p>
+
                         <p className="mt-1 font-medium text-slate-900">
                           {selectedDetailLog.nfcBypassReason ?? "-"}
                         </p>
@@ -935,6 +1037,7 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                         <p className="text-xs text-muted-foreground">
                           Catatan NFC Bypass
                         </p>
+
                         <p className="mt-1 font-medium text-slate-900">
                           {selectedDetailLog.nfcBypassNote ?? "-"}
                         </p>
@@ -944,41 +1047,170 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                 </div>
 
                 <div>
-                  <h3 className="mb-2 text-sm font-semibold text-slate-900">
-                    Jawaban Pertanyaan
-                  </h3>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Jawaban Pertanyaan
+                    </h3>
+
+                    <Badge variant="outline">
+                      {getAnswerSummary(selectedDetailLog).total} Jawaban
+                    </Badge>
+                  </div>
 
                   {selectedDetailLog.answers.length === 0 ? (
                     <div className="border bg-slate-50 p-3 text-sm text-muted-foreground">
                       Tidak ada jawaban.
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {selectedDetailLog.answers.map((answer) => (
-                        <div key={answer.id} className="border p-3">
-                          <p className="text-sm font-medium text-slate-900">
-                            {answer.questionTextSnapshot}
-                          </p>
+                    <>
+                      {(() => {
+                        const summary = getAnswerSummary(selectedDetailLog);
 
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {answer.answerLabelSnapshot ??
-                              answer.answerValue ??
-                              "-"}
-                          </p>
+                        return (
+                          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div className="rounded-lg border bg-slate-50 p-3">
+                              <p className="text-xs text-muted-foreground">
+                                Total Jawaban
+                              </p>
 
-                          <div className="mt-3">
-                            <PhotoGallery
-                              photos={answer.photos}
-                              onPreview={(url, name) =>
-                                setPreviewPhoto({ url, name })
-                              }
-                            />
+                              <p className="mt-1 text-xl font-bold text-slate-900">
+                                {summary.total}
+                              </p>
+                            </div>
+
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                              <p className="text-xs text-emerald-700">Sesuai</p>
+
+                              <p className="mt-1 text-xl font-bold text-emerald-700">
+                                {summary.safe}
+                              </p>
+                            </div>
+
+                            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                              <p className="text-xs text-rose-700">
+                                Tidak Sesuai
+                              </p>
+
+                              <p className="mt-1 text-xl font-bold text-rose-700">
+                                {summary.unsafe}
+                              </p>
+                            </div>
+
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                              <p className="text-xs text-amber-700">
+                                Belum Dievaluasi
+                              </p>
+
+                              <p className="mt-1 text-xl font-bold text-amber-700">
+                                {summary.unknown}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        );
+                      })()}
+
+                      <div className="space-y-3">
+                        {selectedDetailLog.answers.map((answer, index) => {
+                          const evaluation = answer.evaluation;
+
+                          const isUnsafe = evaluation?.status === "UNSAFE";
+
+                          const isSafe = evaluation?.status === "SAFE";
+
+                          const isUnknown =
+                            !evaluation || evaluation.status === "UNKNOWN";
+
+                          return (
+                            <div
+                              key={answer.id}
+                              className={`rounded-lg border p-3 ${
+                                isUnsafe
+                                  ? "border-rose-300 bg-rose-50/40"
+                                  : "border-slate-200 bg-white"
+                              }`}
+                            >
+                              <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                                <div className="flex gap-2">
+                                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                                    {index + 1}
+                                  </span>
+
+                                  <p className="text-sm font-medium text-slate-900">
+                                    {answer.questionTextSnapshot}
+                                  </p>
+                                </div>
+
+                                <div className="shrink-0">
+                                  {getAnswerEvaluationBadge(evaluation)}
+                                </div>
+                              </div>
+
+                              <div className="ml-8 mt-3">
+                                <p className="text-xs text-muted-foreground">
+                                  Jawaban Petugas
+                                </p>
+
+                                <p
+                                  className={`mt-1 text-sm font-semibold ${
+                                    isUnsafe
+                                      ? "text-rose-700"
+                                      : isSafe
+                                        ? "text-emerald-700"
+                                        : "text-slate-700"
+                                  }`}
+                                >
+                                  {answer.answerLabelSnapshot ??
+                                    answer.answerValue ??
+                                    "-"}
+                                </p>
+
+                                {isUnsafe && evaluation?.reason && (
+                                  <div className="mt-3 flex gap-2 rounded-md border border-rose-200 bg-rose-100/70 p-3">
+                                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-rose-600" />
+
+                                    <div>
+                                      <p className="text-xs font-semibold text-rose-700">
+                                        Alasan Tidak Sesuai
+                                      </p>
+
+                                      <p className="mt-1 text-sm text-rose-700">
+                                        {evaluation.reason}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {isUnknown && (
+                                  <p className="mt-2 text-xs text-amber-700">
+                                    Jawaban ini belum memiliki hasil evaluasi
+                                    otomatis.
+                                  </p>
+                                )}
+
+                                <div className="mt-3">
+                                  <p className="mb-2 text-xs font-medium text-slate-700">
+                                    Foto Jawaban
+                                  </p>
+
+                                  <PhotoGallery
+                                    photos={answer.photos}
+                                    onPreview={(url, name) =>
+                                      setPreviewPhoto({
+                                        url,
+                                        name,
+                                      })
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
                   )}
                 </div>
+
                 <div>
                   <h3 className="mb-2 text-sm font-semibold text-slate-900">
                     Temuan Patroli
@@ -1029,7 +1261,10 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                             <PhotoGallery
                               photos={finding.photos}
                               onPreview={(url, name) =>
-                                setPreviewPhoto({ url, name })
+                                setPreviewPhoto({
+                                  url,
+                                  name,
+                                })
                               }
                             />
                           </div>
@@ -1038,13 +1273,16 @@ export const RiwayatPatroliView: React.FC<RiwayatPatroliViewProps> = ({
                     </div>
                   )}
                 </div>
+
                 <div className="border p-3">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="size-5 text-emerald-600" />
+
                     <div>
                       <p className="text-xs text-muted-foreground">
                         Validasi Pelaksanaan
                       </p>
+
                       <p className="mt-0.5 text-sm font-medium text-slate-900">
                         GPS dan NFC tercatat pada sesi patroli.
                       </p>
