@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import PLNLOGO from "../assets/54891.png";
 import pamareaLogo from "../assets/PAMAREA.png";
 import { useLogin } from "../hooks/auth";
@@ -20,6 +20,14 @@ export default function LoginForm() {
   const [rememberMe, setRememberMe] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const from = location.state?.from;
+
+  const redirectPath =
+    from?.pathname && typeof from.pathname === "string"
+      ? `${from.pathname}${from.search ?? ""}${from.hash ?? ""}`
+      : "/";
 
   const handleLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -37,7 +45,7 @@ export default function LoginForm() {
       },
       {
         onSuccess: () => {
-          navigate("/", { replace: true });
+          navigate(redirectPath, { replace: true });
         },
         onError: () => {
           setError("Username atau password tidak valid.");

@@ -34,6 +34,7 @@ import { KalenderShiftView } from "./components/KalenderShiftView";
 import { KelolaPenggunaView } from "./components/KelolaPenggunaView";
 import LoginForm from "./components/LoginForm";
 import ManajemenRondeView from "./components/ManajemenRondeView";
+import PatrolWarningDetailPage from "./components/PatrolWarningDetailPage";
 import { QuestionBuilderView } from "./components/QuestionBuilderView";
 import { RiwayatPatroliView } from "./components/RiwayatPatroliView";
 import { TagNfcView } from "./components/TagNfcView";
@@ -48,6 +49,12 @@ import { useMe } from "./hooks/auth";
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
+
+  const isPatrolWarningPage = location.pathname.startsWith("/patrol-warnings/");
+
+  const patrolId = isPatrolWarningPage
+    ? location.pathname.split("/")[2]
+    : undefined;
 
   const hasAccessToken = Boolean(localStorage.getItem("accessToken"));
   const { data, isPending, isError } = useMe(hasAccessToken);
@@ -64,13 +71,25 @@ export default function App() {
 
   useEffect(() => {
     if (!hasAccessToken && location.pathname !== "/login") {
-      navigate("/login", { replace: true });
+      navigate("/login", {
+        replace: true,
+        state: {
+          from: location,
+        },
+      });
+
+      return;
     }
 
     if (hasAccessToken && location.pathname === "/login") {
-      navigate("/", { replace: true });
+      const from = location.state?.from;
+
+      navigate(
+        from ? `${from.pathname}${from.search || ""}${from.hash || ""}` : "/",
+        { replace: true },
+      );
     }
-  }, [hasAccessToken, location.pathname, navigate]);
+  }, [hasAccessToken, location, navigate]);
 
   const [leaveRecords, setLeaveRecords] = useState<SecurityLeaveRecord[]>([
     {
@@ -205,101 +224,113 @@ export default function App() {
               </div>
 
               {/* Workspace */}
+
               <main className="w-full flex-1 px-6 py-6 lg:px-8 bg-slate-100">
-                {/* DASHBOARD */}
-                {currentTab === "dashboard" && <DashboardView />}
+                {isPatrolWarningPage && patrolId ? (
+                  <PatrolWarningDetailPage patrolId={patrolId} />
+                ) : (
+                  <>
+                    {/* DASHBOARD */}
+                    {currentTab === "dashboard" && <DashboardView />}
 
-                {/* MONITORING */}
-                {currentTab === "monitoring" && (
-                  <MonitoringView
-                    selectedSite={siteId}
-                    onNavigate={setCurrentTab}
-                  />
-                )}
+                    {/* MONITORING */}
+                    {currentTab === "monitoring" && (
+                      <MonitoringView
+                        selectedSite={siteId}
+                        onNavigate={setCurrentTab}
+                      />
+                    )}
 
-                {/* JADWAL PATROLI */}
-                {currentTab === "jadwal" && (
-                  <JadwalPatroliView
-                    selectedSite={siteId}
-                    onNavigate={setCurrentTab}
-                    schedules={schedules}
-                    onUpdateSchedules={setSchedules}
-                    onAddScheduleAndSyncCalendar={
-                      handleAddScheduleAndSyncCalendar
-                    }
-                  />
-                )}
+                    {/* JADWAL PATROLI */}
+                    {currentTab === "jadwal" && (
+                      <JadwalPatroliView
+                        selectedSite={siteId}
+                        onNavigate={setCurrentTab}
+                        schedules={schedules}
+                        onUpdateSchedules={setSchedules}
+                        onAddScheduleAndSyncCalendar={
+                          handleAddScheduleAndSyncCalendar
+                        }
+                      />
+                    )}
 
-                {/* KALENDER SHIFT */}
-                {currentTab === "kalender" && (
-                  <KalenderShiftView
-                    onNavigate={setCurrentTab}
-                    siteId={selectedSite}
-                  />
-                )}
+                    {/* KALENDER SHIFT */}
+                    {currentTab === "kalender" && (
+                      <KalenderShiftView
+                        onNavigate={setCurrentTab}
+                        siteId={selectedSite}
+                      />
+                    )}
 
-                {/* TAMBAH JADWAL */}
-                {currentTab === "tambah-jadwal" && (
-                  <TambahJadwalShiftView
-                    onNavigate={setCurrentTab}
-                    onAddDateRangeScheduleAndSyncCalendar={
-                      handleAddDateRangeScheduleAndSyncCalendar
-                    }
-                    calendarDays={calendarDays}
-                  />
-                )}
+                    {/* TAMBAH JADWAL */}
+                    {currentTab === "tambah-jadwal" && (
+                      <TambahJadwalShiftView
+                        onNavigate={setCurrentTab}
+                        onAddDateRangeScheduleAndSyncCalendar={
+                          handleAddDateRangeScheduleAndSyncCalendar
+                        }
+                      />
+                    )}
 
-                {/* TUKAR SHIFT */}
-                {currentTab === "tukar-shift" && (
-                  <TukarShiftView onNavigate={setCurrentTab} />
-                )}
+                    {/* TUKAR SHIFT */}
+                    {currentTab === "tukar-shift" && (
+                      <TukarShiftView onNavigate={setCurrentTab} />
+                    )}
 
-                {/* CUTI & IZIN */}
-                {currentTab === "cuti-izin" && (
-                  <CutiIzinView
-                    selectedSite={siteId}
-                    onNavigate={setCurrentTab}
-                    calendarDays={calendarDays}
-                    leaveRecords={leaveRecords}
-                    onSubmitLeave={handleSubmitLeaveRecord}
-                  />
-                )}
+                    {/* CUTI & IZIN */}
+                    {currentTab === "cuti-izin" && (
+                      <CutiIzinView
+                        selectedSite={siteId}
+                        onNavigate={setCurrentTab}
+                        calendarDays={calendarDays}
+                        leaveRecords={leaveRecords}
+                        onSubmitLeave={handleSubmitLeaveRecord}
+                      />
+                    )}
 
-                {currentTab === "manajemen-ronde" && (
-                  <ManajemenRondeView selectedSite={siteId} />
-                )}
+                    {/* MANAJEMEN RONDE */}
+                    {currentTab === "manajemen-ronde" && (
+                      <ManajemenRondeView selectedSite={siteId} />
+                    )}
 
-                {/* TITIK PATROLI */}
-                {currentTab === "titik" && (
-                  <TitikPatroliView selectedSite={siteId} />
-                )}
+                    {/* TITIK PATROLI */}
+                    {currentTab === "titik" && (
+                      <TitikPatroliView selectedSite={siteId} />
+                    )}
 
-                {/* PERANGKAT NFC */}
-                {currentTab === "nfc" && <TagNfcView selectedSite={siteId} />}
+                    {/* PERANGKAT NFC */}
+                    {currentTab === "nfc" && (
+                      <TagNfcView selectedSite={siteId} />
+                    )}
 
-                {/* CHECKLIST */}
-                {currentTab === "question-builder" && <QuestionBuilderView />}
+                    {/* CHECKLIST */}
+                    {currentTab === "question-builder" && (
+                      <QuestionBuilderView />
+                    )}
 
-                {/* RIWAYAT PATROLI */}
-                {currentTab === "riwayat" && (
-                  <RiwayatPatroliView selectedSite={siteId} />
-                )}
+                    {/* RIWAYAT PATROLI */}
+                    {currentTab === "riwayat" && (
+                      <RiwayatPatroliView selectedSite={siteId} />
+                    )}
 
-                {/* TEMUAN PATROLI */}
-                {currentTab === "temuan" && (
-                  <TemuanPatroliView selectedSite={siteId} />
-                )}
+                    {/* TEMUAN PATROLI */}
+                    {currentTab === "temuan" && (
+                      <TemuanPatroliView selectedSite={siteId} />
+                    )}
 
-                {/* KELOLA PENGGUNA */}
-                {currentTab === "pengguna" && (
-                  <KelolaPenggunaView selectedSite={siteId} />
-                )}
+                    {/* KELOLA PENGGUNA */}
+                    {currentTab === "pengguna" && (
+                      <KelolaPenggunaView selectedSite={siteId} />
+                    )}
 
-                {/* ANALITIK & AUDIT */}
-                {currentTab === "analytic-audit" && (
-                  <AnalyticAuditView selectedSite={siteId} />
+                    {/* ANALITIK & AUDIT */}
+                    {currentTab === "analytic-audit" && (
+                      <AnalyticAuditView selectedSite={siteId} />
+                    )}
+                  </>
                 )}
               </main>
+
               <Toaster position="bottom-right" richColors />
             </SidebarInset>
           </div>
