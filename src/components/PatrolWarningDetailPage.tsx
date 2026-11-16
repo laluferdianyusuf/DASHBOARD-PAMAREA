@@ -17,7 +17,6 @@ import { formatDateFull } from "../helpers/dateTime";
 import { usePatrolWarning } from "../hooks/point-questions/usePatrolWarning";
 import { getPhotoUrl } from "../utils/getPhoto";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,32 +77,79 @@ export default function PatrolWarningDetailPage({ patrolId }: Props) {
   }
 
   if (isError || !data) {
+    const status = (error as any)?.response?.status;
+
+    if (status === 404 || (!data && !isError)) {
+      return (
+        <main className="flex min-h-[70vh] items-center justify-center p-4 md:p-6">
+          <Card className="w-full max-w-md border-0 shadow-none">
+            <CardContent className="flex flex-col items-center px-6 py-12 text-center">
+              <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-emerald-50">
+                <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+              </div>
+
+              <Badge variant="secondary" className="mb-4">
+                Tidak ada temuan
+              </Badge>
+
+              <h2 className="text-xl font-semibold tracking-tight">
+                Data Warning Tidak Ditemukan
+              </h2>
+
+              <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
+                Data patrol warning yang kamu cari tidak tersedia atau sudah
+                tidak ditemukan. Tidak ada informasi temuan yang dapat
+                ditampilkan.
+              </p>
+
+              <div className="mt-8 flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
+                <Button onClick={() => navigate("/")}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Kembali ke Dashboard
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                >
+                  {isFetching ? "Memuat..." : "Coba Lagi"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+      );
+    }
+
     return (
-      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate("/")}
-          className="-ml-3"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Kembali ke dashboard
-        </Button>
+      <main className="flex min-h-[70vh] items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="flex flex-col items-center px-6 py-10 text-center">
+            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-destructive/10">
+              <AlertTriangle className="h-10 w-10 text-destructive" />
+            </div>
 
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Detail patrol warning gagal dimuat</AlertTitle>
-          <AlertDescription className="mt-2">
-            {error instanceof Error
-              ? error.message
-              : "Terjadi kesalahan saat mengambil data patroli."}
-          </AlertDescription>
-        </Alert>
+            <h2 className="text-xl font-semibold">Gagal Memuat Data</h2>
 
-        <Button onClick={() => refetch()} disabled={isFetching}>
-          {isFetching ? "Memuat..." : "Coba lagi"}
-        </Button>
-      </div>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Terjadi kendala saat mengambil informasi patrol warning. Silakan
+              coba beberapa saat lagi.
+            </p>
+
+            <div className="mt-6 flex w-full flex-col gap-2">
+              <Button onClick={() => refetch()} disabled={isFetching}>
+                {isFetching ? "Memuat..." : "Coba Lagi"}
+              </Button>
+
+              <Button variant="outline" onClick={() => navigate("/")}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Kembali ke Dashboard
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
     );
   }
 

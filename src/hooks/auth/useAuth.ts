@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-  register,
-  login,
-  refreshToken,
   getMe,
+  login,
   logout,
   logoutAll,
+  refreshToken,
+  register,
 } from "../../services/auth/auth.service";
 
 import type {
